@@ -7,10 +7,10 @@ import aiClient from './aiClient.service.js';
 export async function runAnalysis(reviews) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
-  // 1) 멀티라벨 분류 (규칙 + 애매한 건 LLM)
+  // 1) 멀티라벨 분류 (규칙 + 애매한 부정 리뷰만 LLM)
   const classifications = await classifyAll(reviews, aiClient);
 
-  // 2) 상품·카테고리별 이슈 클러스터
+  // 2) 상품·카테고리·세부이슈 클러스터 + 근거 리뷰 선별
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
 
   // 3) 상품별 집계
@@ -23,48 +23,56 @@ export async function runAnalysis(reviews) {
     const productClusters = clusters.filter((cl) => cl.productName === productName);
 
     const negativeReviews = productCls.filter((c) => c.sentiment === 'negative').length;
+    const total = productReviews.length;
+    const negativeRatio = total ? Number((negativeReviews / total).toFixed(3)) : 0;
     const ratings = productReviews.map((r) => r.rating).filter((n) => typeof n === 'number');
     const averageRating = ratings.length
       ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
       : undefined;
 
-    // topIssues: 클러스터를 count 내림차순
+    // topIssues: count 우선, 동률이면 평균 신뢰도
     const topIssues = productClusters
-      .sort((a, b) => b.count - a.count)
+      .sort((a, b) => b.count - a.count || b.avgConfidence - a.avgConfidence)
       .slice(0, 5)
       .map((cl) => ({
         category: cl.category,
-        issueLabel: cl.label,
+        issueLabel: cl.issueLabel,
         count: cl.count,
-        ratio: Number((cl.count / productReviews.length).toFixed(3)),
+        ratio: total ? Number((cl.count / total).toFixed(3)) : 0,
+        confidence: cl.avgConfidence,
         evidenceReviews: cl.evidenceReviews,
-        recommendedAction: '', // 아래 LLM 리포트에서 채움
+        recommendedAction: cl.action,
         source: cl.source,
       }));
 
-    // 4) LLM(또는 mock) 상품 리포트
-    const report = await aiClient.generateProductImprovementReport({ productName, topIssues });
+    // 상세페이지 액션 = 상위 이슈의 추천 액션(중복 제거)
+    const detailPageActions = [...new Set(topIssues.map((i) => i.recommendedAction).filter(Boolean))];
 
-    // recommendedAction 매핑 (detailPageActions와 1:1 정렬)
-    topIssues.forEach((iss, idx) => {
-      iss.recommendedAction = report.detailPageActions?.[idx] || '';
+    // 4) 자연어 요약 (LLM/mock)
+    const report = await aiClient.generateProductImprovementReport({
+      productName,
+      totalReviews: total,
+      negativeReviews,
+      negativeRatio,
+      topIssues,
     });
 
-    // 5) 답글 템플릿 (이슈별)
+    // 5) 답글 템플릿 (상위 이슈별)
     const replyTemplates = [];
     for (const iss of topIssues.slice(0, 3)) {
-      const tpls = await aiClient.generateReplyTemplates({ category: iss.category, issueLabel: iss.issueLabel });
-      replyTemplates.push({ issueLabel: iss.issueLabel, variants: tpls });
+      const variants = await aiClient.generateReplyTemplates({ category: iss.category, issueLabel: iss.issueLabel });
+      replyTemplates.push({ issueLabel: iss.issueLabel, variants });
     }
 
     products.push({
       productKey: productName,
       productName,
-      totalReviews: productReviews.length,
+      totalReviews: total,
       negativeReviews,
+      negativeRatio,
       averageRating,
       topIssues,
-      detailPageActions: report.detailPageActions || [],
+      detailPageActions: detailPageActions.length ? detailPageActions : report.detailPageActions || [],
       replyTemplates,
       summary: report.summary || '',
     });
@@ -78,10 +86,9 @@ export async function runAnalysis(reviews) {
     ? Number((allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(2))
     : undefined;
 
-  // 카테고리 분포 (불만 기준: 긍정 리뷰 제외, 리뷰당 카테고리 1회)
+  // 카테고리 분포 (불만 매칭 기준, 리뷰당 카테고리 1회)
   const categoryCount = Object.fromEntries(FASHION_CATEGORIES.map((c) => [c, 0]));
   for (const c of classifications) {
-    if (c.sentiment === 'positive') continue;
     const seen = new Set();
     for (const cat of c.categories) {
       if (!seen.has(cat.name)) {
@@ -104,6 +111,7 @@ export async function runAnalysis(reviews) {
   const overall = await aiClient.generateMonthlyReport({
     totalReviews,
     negativeReviews,
+    negativeRatio: totalReviews ? Number((negativeReviews / totalReviews).toFixed(3)) : 0,
     topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
   });
 

@@ -98,10 +98,15 @@ export async function generateReplyTemplates(issueSummary) {
 // ===================================================================
 export async function generateMonthlyReport(overallSummary) {
   if (aiMode === 'mock') {
-    const { totalReviews, negativeReviews, topCategories = [] } = overallSummary;
-    const topNames = topCategories.slice(0, 3).map((c) => c.name).join(', ');
+    const { totalReviews, negativeReviews, negativeRatio = 0, topCategories = [] } = overallSummary;
+    const pct = Math.round((negativeRatio || (negativeReviews / Math.max(totalReviews, 1))) * 100);
+    const topNames = topCategories
+      .filter((c) => c.name !== '기타')
+      .slice(0, 3)
+      .map((c) => c.name)
+      .join(', ');
     return {
-      summary: `총 ${totalReviews}건 리뷰 중 ${negativeReviews}건이 부정적입니다. 주요 불만은 ${topNames || '특이사항 없음'} 영역에 집중되어 있습니다. 해당 영역의 상세페이지 보강을 우선 검토하세요.`,
+      summary: `총 ${totalReviews}건 리뷰 중 ${negativeReviews}건(${pct}%)에서 불만이 확인됐습니다. 불만은 주로 ${topNames || '특정 없음'} 영역에 집중돼 있어, 해당 영역의 상세페이지 보강과 출고 검수를 우선 점검하길 권합니다.`,
     };
   }
   const prompt = `다음 요약 데이터로 셀러를 위한 3문장 운영 코멘트를 작성. JSON {"summary":"..."} 만 출력.\n${JSON.stringify(overallSummary)}`;
@@ -112,37 +117,47 @@ export async function generateMonthlyReport(overallSummary) {
 // ===================================================================
 // Mock 헬퍼 (실제 응답 형태와 동일하게 유지)
 // ===================================================================
-function categoryAction(category) {
-  const map = {
-    사이즈: '상세페이지 상단에 실측 사이즈표(평균 오차 포함)와 모델 착용 사이즈를 명시하세요.',
-    '핏/실루엣': '다양한 체형의 착용컷과 정면/측면/후면 사진을 추가하세요.',
-    '색상/화면 차이': '자연광/실내조명 등 환경별 색상 비교컷과 "모니터에 따라 색상이 다를 수 있음" 안내를 추가하세요.',
-    '소재/두께': '원단 두께·비침 여부·신축성 정보를 표로 정리하고 클로즈업 컷을 추가하세요.',
-    '마감/불량': '출고 전 검수 기준을 강화하고, 교환/반품 절차 안내를 명확히 노출하세요.',
-    착용감: '착용감 관련 소재 특성과 이너 착용 권장 여부를 안내하세요.',
-    '세탁/내구성': '세탁 방법(손세탁/드라이 등)과 관리 주의사항을 상세페이지에 추가하세요.',
-    '배송/포장': '평균 출고/배송 소요일과 포장 방식을 안내하고 구김 방지 포장을 검토하세요.',
-    '가격/가성비': '제품의 차별점(소재/봉제 품질)을 강조하는 콘텐츠를 보강하세요.',
-    기타: '반복 언급되는 의견을 모니터링하고 상세페이지 FAQ에 반영하세요.',
-  };
-  return map[category] || '상세페이지 안내 문구를 보강하세요.';
-}
-
 function mockProductReport(productSummary) {
   const { productName, topIssues = [] } = productSummary;
-  const detailPageActions = topIssues.slice(0, 5).map((i) => categoryAction(i.category));
-  const summary = topIssues.length
-    ? `${productName}의 주요 불만은 ${topIssues.slice(0, 3).map((i) => i.issueLabel).join(', ')} 입니다. 상세페이지 보강과 검수 강화로 개선할 수 있습니다.`
-    : `${productName}는 두드러진 반복 불만이 적습니다. 긍정 리뷰를 상세페이지에 노출해 전환을 높이세요.`;
-  return { detailPageActions: [...new Set(detailPageActions)], summary };
+  const detailPageActions = [...new Set(topIssues.map((i) => i.recommendedAction).filter(Boolean))];
+
+  if (!topIssues.length) {
+    return {
+      detailPageActions,
+      summary: `${productName}는 반복되는 불만이 거의 없습니다. 긍정 리뷰를 상세페이지 상단에 노출해 구매 전환을 높여보세요.`,
+    };
+  }
+
+  const top = topIssues[0];
+  const pct = Math.round((top.ratio || 0) * 100);
+  const others = topIssues.slice(1, 3).map((i) => i.issueLabel).filter(Boolean);
+  let summary = `'${productName}'에서 가장 많이 지적된 점은 '${top.issueLabel}'(으)로, 전체 리뷰의 약 ${pct}%(${top.count}건)에서 언급됐습니다.`;
+  if (others.length) summary += ` 이어서 ${others.map((o) => `'${o}'`).join(', ')} 의견도 반복적으로 나타납니다.`;
+  summary += ' 상세페이지에 관련 정보를 보강하고 출고 검수를 강화하면 반품·문의를 줄일 수 있습니다.';
+  return { detailPageActions, summary };
 }
 
+// 카테고리별 구체적 개선 약속 (답글에 자연스럽게 삽입)
+const REPLY_PROMISE = {
+  사이즈: '사이즈 정보를 더 정확하게 안내드리도록 상세페이지를 보완하겠습니다',
+  '핏/실루엣': '다양한 착용컷으로 실제 핏을 더 잘 보여드리겠습니다',
+  '색상/화면 차이': '실물에 가까운 색상 컷과 안내를 추가하겠습니다',
+  '소재/두께': '소재와 두께 정보를 더 상세히 기재하겠습니다',
+  '마감/불량': '검수 과정을 강화하고, 원하시면 교환·반품을 바로 도와드리겠습니다',
+  착용감: '착용감 관련 안내를 보완하겠습니다',
+  '세탁/내구성': '세탁·관리 방법을 더 명확히 안내드리겠습니다',
+  '배송/포장': '배송과 포장 과정을 점검해 개선하겠습니다',
+  '가격/가성비': '가격에 걸맞은 가치를 드릴 수 있도록 노력하겠습니다',
+  기타: '주신 의견을 꼼꼼히 반영하겠습니다',
+};
+
 function mockReplyTemplates(issueSummary) {
-  const label = issueSummary.issueLabel || issueSummary.category || '불편';
+  const label = issueSummary.issueLabel || issueSummary.category || '불편하셨던 점';
+  const promise = REPLY_PROMISE[issueSummary.category] || REPLY_PROMISE['기타'];
   const tones = {
-    기본: `안녕하세요 고객님, 소중한 후기 감사합니다. 말씀해주신 '${label}' 관련 내용 확인하여 개선에 반영하겠습니다. 불편을 드려 죄송합니다.`,
-    정중: `안녕하세요 고객님, 먼저 불편을 드려 진심으로 죄송합니다. '${label}' 관련해 주신 의견은 담당 부서에 전달하여 신중히 검토하겠습니다. 교환/반품이 필요하시면 언제든 도와드리겠습니다.`,
-    친근: `고객님 안녕하세요! 후기 남겨주셔서 정말 감사해요 :) '${label}' 부분 불편하셨다니 속상하네요. 더 좋은 상품으로 보답할 수 있도록 꼭 개선할게요!`,
+    기본: `안녕하세요 고객님, 소중한 후기 감사합니다. '${label}' 관련해 불편을 드려 죄송합니다. ${promise}.`,
+    정중: `안녕하세요 고객님, 먼저 불편을 드려 진심으로 죄송합니다. '${label}'에 대한 의견을 담당 부서에 전달했으며, ${promise}. 교환·반품이 필요하시면 언제든 편히 말씀해 주세요.`,
+    친근: `고객님 안녕하세요! 후기 남겨주셔서 정말 감사해요 :) '${label}' 때문에 불편하셨다니 속상하네요. ${promise}! 다음엔 꼭 더 만족하실 수 있게 할게요.`,
   };
   return [
     { issueLabel: label, tone: '기본', template: tones.기본 },

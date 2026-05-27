@@ -1,37 +1,167 @@
-// 패션 리뷰 멀티라벨 분류 (규칙 기반 1차 + 애매한 건 LLM 위임)
+// 패션 리뷰 멀티라벨 분류 엔진
+// 절(clause) 단위로 쪼개 카테고리·세부이슈를 매칭하고, 부정어/극성을 반영한다.
 import { safeStr } from '../utils/textUtils.js';
+import {
+  FASHION_CATEGORIES,
+  SUBISSUE_RULES,
+  CATEGORY_ACTIONS,
+  ISSUE_ACTIONS,
+} from './fashionLexicon.js';
 
-// 고정 상위 카테고리
-export const FASHION_CATEGORIES = [
-  '사이즈',
-  '핏/실루엣',
-  '색상/화면 차이',
-  '소재/두께',
-  '마감/불량',
-  '착용감',
-  '세탁/내구성',
-  '배송/포장',
-  '가격/가성비',
-  '기타',
-];
+export { FASHION_CATEGORIES };
 
-// 카테고리별 키워드 규칙
-const KEYWORDS = {
-  // '품'은 '상품/제품/반품'과 충돌이 잦아 제외 (품 관련 불만은 어깨/소매/허리로 충분히 포착)
-  사이즈: ['작', '크', '사이즈', '타이트', '낑', '껴', '헐렁', '기장', '허리', '어깨', '소매', '길이'],
-  '핏/실루엣': ['핏', '라인', '부해', '모델핏', '실루엣', '예쁘게 안', '떨어지는', '핏감'],
-  '색상/화면 차이': ['색', '색상', '화면', '사진', '밝', '어둡', '톤', '실물', '차이', '카키', '베이지'],
-  '소재/두께': ['원단', '소재', '얇', '두껍', '비침', '까슬', '부드럽', '신축', '촉감', '재질'],
-  '마감/불량': ['실밥', '마감', '박음질', '지퍼', '단추', '불량', '뜯', '터짐', '구멍'],
-  착용감: ['불편', '답답', '까끌', '무거', '가려', '따가', '착용감'],
-  '세탁/내구성': ['세탁', '보풀', '물빠짐', '줄어', '변형', '늘어', '수축'],
-  '배송/포장': ['배송', '늦', '빠르', '포장', '구김', '택배', '박스', '누락'],
-  '가격/가성비': ['가격', '비싸', '가성비', '값', '돈', '저렴', '퀄리티 대비'],
+// 카테고리만 언급되고 세부 이슈는 안 잡힐 때 쓰는 generic 토큰
+const CATEGORY_GENERIC = {
+  사이즈: ['사이즈', '치수', '핏이 안 맞', '사이즈가 안'],
+  '핏/실루엣': ['핏이', '실루엣', '라인이'],
+  '색상/화면 차이': ['색상', '색감', '컬러'],
+  '소재/두께': ['원단', '소재', '재질', '촉감'],
+  '마감/불량': ['마감', '봉제', '바느질'],
+  착용감: ['착용감'],
+  '세탁/내구성': ['세탁', '내구성'],
+  '배송/포장': ['배송', '택배', '포장'],
+  '가격/가성비': ['가격', '가성비'],
 };
 
-// 긍정 신호 (부정 키워드 매칭을 완화하기 위함)
-const POSITIVE_HINTS = ['좋', '만족', '예뻐', '예쁘', '딱', '추천', '재구매', '최고', '편하', '맘에', '마음에', '굿'];
-const NEGATIVE_HINTS = ['아쉬', '별로', '실망', '불만', '안좋', '나쁘', '환불', '반품', '하자', '안맞'];
+// 극성 판단용 어휘
+const POS_TERMS = [
+  '예뻐', '예쁘', '이뻐', '이쁘', '이쁨', '예쁨', '만족', '마음에', '맘에', '좋아', '좋네', '좋고', '좋습니',
+  '좋은', '좋았', '편하', '편해', '부드럽', '적당', '딱 맞', '잘 맞', '딱이', '딱', '추천', '재구매', '최고',
+  '굿', '시원', '세련', '고급', '가벼워', '가볍', '튼튼',
+];
+const NEG_TERMS = [
+  '작아', '작게', '작음', '짧', '좁', '헐렁', '비침', '비쳐', '까슬', '뻣뻣', '불량', '하자', '터', '뜯', '구멍',
+  '실밥', '보풀', '줄어', '늘어', '물빠짐', '이염', '늦', '지연', '구겨', '구김', '누락', '파손', '무거', '답답',
+  '불편', '따가', '가려', '비싸', '아깝', '어둡', '칙칙', '차이', '달라', '다르', '별로', '아쉬', '실망', '후회',
+  '환불', '반품', '최악', '안 맞', '안맞', '엉성', '부해',
+];
+const INTENSIFIERS = ['너무', '진짜', '완전', '정말', '매우', '심하게', '상당히', '엄청', '너무너무'];
+const DIMINISHERS = ['약간', '살짝', '조금', '다소', '그닥'];
+
+// 항상 불만으로 보는 라벨(불량/누락 등) — 긍정 단어가 있어도 불만으로 인정
+const ALWAYS_NEG_LABEL = /(불량|하자|누락|파손|지연|물빠짐|보풀|실밥|터짐|구멍|부실)/;
+
+// 더 구체적인 라벨이 있으면 제거할 포괄 라벨 (사이즈)
+const SIZE_GENERIC_LABELS = new Set(['전반적으로 작게 나옴', '전반적으로 크게 나옴']);
+// 같은 카테고리에서 더 구체적인 라벨이 있을 때 후순위로 밀리는 약한 라벨
+const WEAK_LABELS = new Set([
+  '실물 색상이 화면과 차이가 있음',
+  '색상이 생각보다 어두움',
+  '착용감이 불편함',
+  '제품 불량(하자)',
+  '마감 상태가 미흡함',
+  '핏/실루엣이 기대와 다름',
+]);
+
+const CONJUNCTIONS = ['그런데', '근데', '하지만', '그러나', '그리고', '다만', '그래도'];
+
+function splitClauses(text) {
+  let s = safeStr(text).replace(/\n+/g, '. ');
+  for (const c of CONJUNCTIONS) s = s.split(c).join('§');
+  return s
+    .split(/[.!?,~§]+/)
+    .map((c) => c.trim())
+    .filter((c) => c.length >= 2);
+}
+
+// 토큰 출현 위치가 부정문맥인지 (없/안/않 등)
+function isNegated(clause, idx, len) {
+  const before = clause.slice(Math.max(0, idx - 3), idx);
+  const after = clause.slice(idx + len, idx + len + 8);
+  if (/없|아니|않|안\s?나|안\s?생|안\s?들|안\s?나오/.test(after)) return true;
+  if (/안\s$/.test(before)) return true;
+  return false;
+}
+
+// 그룹(토큰 배열) 중 부정되지 않은 첫 매칭 토큰 반환
+function matchGroup(clause, tokens) {
+  for (const tk of tokens) {
+    let from = 0;
+    let idx;
+    while ((idx = clause.indexOf(tk, from)) !== -1) {
+      if (!isNegated(clause, idx, tk.length)) return tk;
+      from = idx + tk.length;
+    }
+  }
+  return null;
+}
+
+function hasAny(clause, tokens) {
+  return tokens.some((t) => clause.includes(t));
+}
+
+function clauseIsPositive(clause) {
+  const neg = /별로|아쉬|실망|않|안 좋|안좋/.test(clause);
+  const pos = POS_TERMS.some((t) => clause.includes(t));
+  return pos && !neg && !hasAny(clause, NEG_TERMS);
+}
+
+function clauseHasNegative(clause) {
+  return hasAny(clause, NEG_TERMS);
+}
+
+function intensityBonus(clause) {
+  if (hasAny(clause, INTENSIFIERS)) return 0.1;
+  if (hasAny(clause, DIMINISHERS)) return -0.1;
+  return 0;
+}
+
+// 한 절에서 매칭되는 세부 이슈들 (카테고리별 중복 제거 + 제너릭)
+function matchClause(clause) {
+  const positive = clauseIsPositive(clause);
+  const ib = intensityBonus(clause);
+
+  // 1) 규칙별 raw 매칭 수집 (트리거 토큰 + 규칙 순서 기록)
+  const byCategory = new Map();
+  SUBISSUE_RULES.forEach((rule, ruleIndex) => {
+    const triggers = [];
+    for (const group of rule.all) {
+      const tk = matchGroup(clause, group);
+      if (!tk) return;
+      triggers.push(tk);
+    }
+    const alwaysNeg = ALWAYS_NEG_LABEL.test(rule.label);
+    if (positive && !alwaysNeg) return; // 긍정 절에서는 애매한 이슈 제외
+
+    const groups = rule.all.length;
+    const confidence = Math.max(0.4, Math.min(0.95, 0.62 + 0.12 * (groups - 1) + ib));
+    const strength = groups * 2 + (ib > 0 ? 1 : 0) + 1;
+    const list = byCategory.get(rule.cat) || [];
+    list.push({ category: rule.cat, label: rule.label, strength, confidence, triggers, ruleIndex });
+    byCategory.set(rule.cat, list);
+  });
+
+  // 2) 카테고리별로 트리거가 겹치지 않는(서로 다른 부위/측면) 이슈만 남김.
+  //    강도 높은(구체적인) 규칙 우선 → 트리거를 공유하는 약한 규칙은 흡수.
+  const results = [];
+  for (const list of byCategory.values()) {
+    list.sort((a, b) => b.strength - a.strength || a.ruleIndex - b.ruleIndex);
+    const usedTriggers = new Set();
+    for (const m of list) {
+      if (m.triggers.some((t) => usedTriggers.has(t))) continue;
+      m.triggers.forEach((t) => usedTriggers.add(t));
+      results.push(m);
+    }
+  }
+
+  // 3) 제너릭: 세부 이슈가 전혀 안 잡힌 카테고리만 (부정 단서 있을 때)
+  if (!positive && clauseHasNegative(clause)) {
+    for (const [cat, tokens] of Object.entries(CATEGORY_GENERIC)) {
+      if (byCategory.has(cat)) continue;
+      if (matchGroup(clause, tokens)) {
+        results.push({ category: cat, label: null, strength: 1, confidence: 0.42 });
+      }
+    }
+  }
+
+  return results.map((r) => ({
+    category: r.category,
+    label: r.label,
+    strength: r.strength,
+    confidence: r.confidence,
+    evidence: clause,
+  }));
+}
 
 export function detectSentiment(review) {
   if (typeof review.rating === 'number') {
@@ -39,105 +169,141 @@ export function detectSentiment(review) {
     if (review.rating === 3) return 'neutral';
     return 'positive';
   }
-  // rating 없으면 텍스트 기반 추정
-  const t = safeStr(review.content);
-  const pos = POSITIVE_HINTS.filter((w) => t.includes(w)).length;
-  const neg = NEGATIVE_HINTS.filter((w) => t.includes(w)).length;
+  const clauses = splitClauses(`${safeStr(review.title)}. ${safeStr(review.content)}`);
+  let pos = 0;
+  let neg = 0;
+  for (const c of clauses) {
+    if (clauseIsPositive(c)) pos++;
+    else if (clauseHasNegative(c)) neg++;
+  }
   if (neg > pos) return 'negative';
   if (pos > neg) return 'positive';
   return 'neutral';
 }
 
-// 규칙 기반 카테고리 매칭 (멀티라벨)
-function ruleMatch(review) {
-  const text = `${safeStr(review.title)} ${safeStr(review.content)}`;
-  const matched = [];
-  for (const [cat, words] of Object.entries(KEYWORDS)) {
-    const hits = words.filter((w) => text.includes(w));
-    if (hits.length > 0) {
-      // confidence: 매칭 키워드 수 기반 (0.5 ~ 0.9)
-      const confidence = Math.min(0.9, 0.5 + hits.length * 0.13);
-      matched.push({
-        name: cat,
-        hits,
-        confidence: Number(confidence.toFixed(2)),
-        evidence: review.content.slice(0, 120),
-        source: 'rule',
-      });
-    }
-  }
-  return matched;
+function resolveAction(category, label) {
+  return (label && ISSUE_ACTIONS[label]) || CATEGORY_ACTIONS[category] || CATEGORY_ACTIONS['기타'];
 }
 
-// 단일 리뷰 분류 → ReviewClassification
-// 부정/중립 리뷰만 카테고리 부여 (긍정 리뷰는 불만 분석 대상에서 제외하되 sentiment는 기록)
+// 단일 리뷰 분석 → ReviewClassification (멀티라벨)
 export function classifyReview(review) {
   const sentiment = detectSentiment(review);
-  let categories = ruleMatch(review).map((m) => ({
-    name: m.name,
-    issue: null, // issueLabel은 이슈 탐지 단계에서 생성
-    confidence: m.confidence,
-    evidence: m.evidence,
-    source: m.source,
-    _hits: m.hits,
+  const text = `${safeStr(review.title)}. ${safeStr(review.content)}`;
+  const clauses = splitClauses(text);
+
+  // (category||label) -> best match
+  const best = new Map();
+  for (const clause of clauses) {
+    for (const m of matchClause(clause)) {
+      const key = `${m.category}||${m.label || '__'}`;
+      const prev = best.get(key);
+      if (!prev || m.strength > prev.strength) best.set(key, m);
+    }
+  }
+
+  // 같은 카테고리에 구체 라벨이 있으면 제너릭(label=null)은 제거
+  const catsWithLabel = new Set([...best.values()].filter((m) => m.label).map((m) => m.category));
+  for (const [key, m] of best) {
+    if (!m.label && catsWithLabel.has(m.category)) best.delete(key);
+  }
+
+  // 카테고리별 정리: 사이즈는 부위별 복수 허용(포괄 라벨만 제거),
+  // 그 외 카테고리는 리뷰당 1개(유사 이슈 중복 방지, weak 라벨은 후순위)
+  const byCat = new Map();
+  for (const m of best.values()) {
+    if (!byCat.has(m.category)) byCat.set(m.category, []);
+    byCat.get(m.category).push(m);
+  }
+  const finalMatches = [];
+  for (const [cat, list] of byCat.entries()) {
+    if (cat === '사이즈') {
+      const specific = list.filter((m) => m.label && !SIZE_GENERIC_LABELS.has(m.label));
+      finalMatches.push(...(specific.length ? specific : list));
+    } else {
+      list.sort(
+        (a, b) =>
+          Number(WEAK_LABELS.has(a.label)) - Number(WEAK_LABELS.has(b.label)) ||
+          b.strength - a.strength ||
+          b.confidence - a.confidence,
+      );
+      finalMatches.push(list[0]);
+    }
+  }
+
+  const categories = finalMatches.map((m) => ({
+    name: m.category,
+    issue: m.label,
+    confidence: Number(m.confidence.toFixed(2)),
+    evidence: m.evidence.slice(0, 140),
+    source: 'rule',
+    action: resolveAction(m.category, m.label),
+    strength: m.strength,
   }));
 
-  // 긍정 리뷰는 불만 카테고리에서 제외 (단, 매칭이 강하면 유지)
-  if (sentiment === 'positive') {
-    categories = categories.filter((c) => c.confidence >= 0.75);
-  }
-
-  // 카테고리가 하나도 없는데 부정/중립이면 '기타'로
-  const ambiguous = categories.length === 0 && sentiment !== 'positive';
-  if (ambiguous) {
-    categories.push({
-      name: '기타',
-      issue: null,
-      confidence: 0.3,
-      evidence: review.content.slice(0, 120),
-      source: 'rule',
-      _hits: [],
-    });
-  }
+  const ambiguous = categories.length === 0 && sentiment === 'negative';
 
   return {
     reviewId: review.id,
     productName: review.productName,
+    rating: review.rating,
     sentiment,
-    ambiguous, // LLM 분류 대상 여부 (confidence 낮음)
+    ambiguous,
     categories,
   };
 }
 
-// 전체 분류. ambiguous 한 건은 LLM에게 위임 가능.
+// 전체 분류 + 애매한 부정 리뷰만 LLM 위임
 export async function classifyAll(reviews, aiClient) {
   const classifications = reviews.map(classifyReview);
+  const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
   const ambiguous = classifications.filter((c) => c.ambiguous);
   if (ambiguous.length > 0 && aiClient) {
     try {
-      const reviewMap = new Map(reviews.map((r) => [r.id, r]));
       const llmResults = await aiClient.classifyAmbiguousReviews(
         ambiguous.map((c) => ({ id: c.reviewId, content: reviewMap.get(c.reviewId)?.content })),
         FASHION_CATEGORIES,
       );
-      const byId = new Map(llmResults.map((r) => [r.reviewId, r]));
+      const byId = new Map((llmResults || []).map((r) => [r.reviewId, r]));
       for (const c of classifications) {
+        if (!c.ambiguous) continue;
         const llm = byId.get(c.reviewId);
+        const content = reviewMap.get(c.reviewId)?.content || '';
         if (llm && Array.isArray(llm.categories) && llm.categories.length) {
-          c.categories = llm.categories.map((cat) => ({
-            name: FASHION_CATEGORIES.includes(cat.name) ? cat.name : '기타',
-            issue: cat.issue || null,
-            confidence: cat.confidence ?? 0.6,
-            evidence: reviewMap.get(c.reviewId)?.content.slice(0, 120) || '',
-            source: 'llm',
-            _hits: [],
-          }));
+          c.categories = llm.categories.map((cat) => {
+            const name = FASHION_CATEGORIES.includes(cat.name) ? cat.name : '기타';
+            return {
+              name,
+              issue: cat.issue || null,
+              confidence: cat.confidence ?? 0.55,
+              evidence: content.slice(0, 140),
+              source: 'llm',
+              action: resolveAction(name, cat.issue || null),
+              strength: 2,
+            };
+          });
         }
       }
     } catch (e) {
-      // LLM 실패 시 규칙 결과 유지
       console.warn('[classify] LLM fallback:', e.message);
+    }
+  }
+
+  // LLM 으로도 못 채운 애매 부정 리뷰는 '기타'로
+  for (const c of classifications) {
+    if (c.ambiguous && c.categories.length === 0) {
+      const content = reviewMap.get(c.reviewId)?.content || '';
+      c.categories = [
+        {
+          name: '기타',
+          issue: null,
+          confidence: 0.35,
+          evidence: content.slice(0, 140),
+          source: 'rule',
+          action: CATEGORY_ACTIONS['기타'],
+          strength: 1,
+        },
+      ];
     }
   }
 
