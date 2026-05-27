@@ -184,10 +184,11 @@ LLM_TIMEOUT_MS=20000
 - 충돌 방지를 위해 `content → productName → ...` 우선순위로 컬럼을 1:1 배정.
 
 ### 개인정보 처리 / 마스킹 (`privacyMasking.service.js`)
-- **원본 파일 바이너리는 저장하지 않습니다**(multer memoryStorage로 메모리 파싱).
-- **파싱 직후 모든 행의 모든 문자열 값에 마스킹을 적용**(`maskRows`)한 뒤에만 `upload_files.rows`(JSON)에 저장합니다. 컬럼 매핑 미리보기(sampleRows)도 마스킹된 값입니다.
+- **업로드 파일 원본(바이너리)은 디스크에 저장하지 않습니다**(multer memoryStorage로 메모리에서만 파싱).
+- **파싱된 rows도 DB 저장 전에 `maskRows`로 마스킹**한 뒤에만 `upload_files.rows`(JSON)에 저장합니다. 컬럼 매핑 미리보기(sampleRows)와 자동 매핑도 마스킹된 값 기준입니다.
 - 마스킹 항목: 전화번호 `[전화번호]`, 이메일 `[이메일]`, 10자리 이상 숫자 `[주문번호]`, 주소 `[주소]`. 작성자명은 첫 글자만 남김.
-- **rows 수명 관리**: 분석이 완료되면 `upload_files.rows`를 `NULL`로 비웁니다(정규화된 `reviews`만 유지). 또한 서버가 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 주기적으로 비웁니다(`purgeStaleUploadRows`). → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
+- **분석 완료 후 `upload_files.rows`는 `NULL`로 비웁니다**(정규화된 `reviews`만 유지). 또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`). → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
+- **AI 기본 동작은 mock**입니다(`LLM_PROVIDER=mock`이 기본값). 실제 OpenAI/Gemini/Claude 연동 코드는 포함되어 있으나 키를 설정해야 활성화되며, 키가 없거나 실패하면 mock으로 동작합니다.
 
 ### 하이브리드 분석 (`reviewClassification` + `issueDetection` + `productAnalysis`)
 - **비용 절감**을 위해 LLM에 전체 리뷰를 넣지 않습니다.

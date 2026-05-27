@@ -90,6 +90,9 @@ export default function DashboardPage() {
 
         <div className="card">
           <div className="section-title">부정 리뷰가 많은 상품 TOP 10</div>
+          <p className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 12 }}>
+            <strong>부정 리뷰</strong>는 별점·감성 기준으로 부정적인 리뷰 수입니다.
+          </p>
           <ProductIssueTable
             valueLabel="부정 리뷰 수"
             rows={(summary.productRankingByNegative || []).map((p) => ({
@@ -104,16 +107,18 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
-        <div className="section-title">반복 이슈가 많은 상품 TOP 10</div>
+        <div className="section-title">개선 이슈가 많은 상품 TOP 10</div>
         <p className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 12 }}>
-          상품명을 클릭하면 주요 이슈, 근거 리뷰, 상세페이지 수정안, CS 답글 초안을 볼 수 있습니다.
+          <strong>개선 이슈</strong>는 분석으로 발견된 불만 항목(사이즈·색상·소재 등)이 1개 이상 있는 리뷰 수로,
+          위의 부정 리뷰 수와는 다른 개념입니다. 상품명을 클릭하면 상세 리포트를 볼 수 있습니다.
         </p>
         <ProductIssueTable
-          valueLabel="반복 이슈 건수"
+          valueLabel="개선 이슈 발견 리뷰"
           rows={(summary.productRankingByIssues || []).map((p) => ({
             productKey: p.productKey,
             productName: p.productName,
-            value: p.issueTotal,
+            value: p.issueReviewCount,
+            sub: `· 총 이슈 ${p.totalIssueCount}개`,
           }))}
           onSelect={goProduct}
         />

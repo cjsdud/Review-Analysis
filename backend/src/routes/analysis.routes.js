@@ -117,6 +117,8 @@ router.get('/:id/products', (req, res) => {
       productName: p.productName,
       totalReviews: p.totalReviews,
       negativeReviews: p.negativeReviews,
+      issueReviewCount: p.issueReviewCount,
+      totalIssueCount: p.totalIssueCount,
       averageRating: p.averageRating,
       topIssue: p.topIssues[0] || null,
     })),

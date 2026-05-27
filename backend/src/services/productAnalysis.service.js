@@ -113,11 +113,10 @@ export async function runAnalysis(reviews) {
     (c) => c.count > 0,
   );
 
-  // 상품 랭킹
+  // 상품 랭킹: 부정 리뷰(별점·감성) 기준 / 개선 이슈(분석으로 발견된 불만) 기준
   const byNegative = [...products].sort((a, b) => b.negativeReviews - a.negativeReviews).slice(0, 10);
   const byIssues = [...products]
-    .map((p) => ({ ...p, issueTotal: p.topIssues.reduce((s, i) => s + i.count, 0) }))
-    .sort((a, b) => b.issueTotal - a.issueTotal)
+    .sort((a, b) => b.issueReviewCount - a.issueReviewCount || b.totalIssueCount - a.totalIssueCount)
     .slice(0, 10);
 
   const overall = await aiClient.generateMonthlyReport({
@@ -146,7 +145,9 @@ export async function runAnalysis(reviews) {
     productRankingByIssues: byIssues.map((p) => ({
       productKey: p.productKey,
       productName: p.productName,
-      issueTotal: p.issueTotal,
+      issueReviewCount: p.issueReviewCount,
+      totalIssueCount: p.totalIssueCount,
+      totalReviews: p.totalReviews,
     })),
     aiComment: overall.summary,
     aiMode: aiClient.aiMode,
