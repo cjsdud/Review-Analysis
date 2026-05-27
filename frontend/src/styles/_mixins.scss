@@ -1,0 +1,29 @@
+@use 'tokens' as *;
+
+// 표면 카드 기본
+@mixin surface($pad: $sp-5) {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  box-shadow: $shadow-sm;
+  padding: $pad;
+}
+
+// 한 줄 말줄임
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// 키보드 포커스 링
+@mixin focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba($brand, 0.25);
+}

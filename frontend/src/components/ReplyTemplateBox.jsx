@@ -23,17 +23,19 @@ export default function ReplyTemplateBox({ issueLabel, variants = [] }) {
 
   return (
     <div className="reply-box">
-      <div style={{ fontWeight: 700, marginBottom: 10 }}>“{issueLabel}” 답글 초안</div>
-      <div className="reply-box__tones">
-        {(tones.length ? tones : [current?.tone]).map((t) => (
-          <button key={t} className={`reply-box__tone${active === t ? ' active' : ''}`} onClick={() => setActive(t)}>
-            {t}
-          </button>
-        ))}
+      <div className="reply-box__head">
+        <div className="reply-box__title">“{issueLabel}”</div>
+        <div className="segmented">
+          {(tones.length ? tones : [current?.tone]).map((t) => (
+            <button key={t} className={`segmented__btn${active === t ? ' is-active' : ''}`} onClick={() => setActive(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="reply-box__text">{current?.template}</div>
       <button className="btn btn--ghost btn--sm reply-box__copy" onClick={copy}>
-        {copied ? '✓ 복사됨' : '복사하기'}
+        {copied ? '✓ 복사됨' : '📋 복사하기'}
       </button>
     </div>
   );

@@ -1,0 +1,253 @@
+@use 'tokens' as *;
+@use 'mixins' as *;
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+// ===== 사이드바 =====
+.sidebar {
+  width: $sidebar-width;
+  flex-shrink: 0;
+  background: $surface;
+  border-right: 1px solid $border;
+  padding: $sp-5 $sp-4;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px $sp-5;
+
+    &-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, $brand, #60a5fa);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      box-shadow: 0 4px 10px rgba($brand, 0.35);
+    }
+    &-name {
+      font-weight: 800;
+      font-size: 15px;
+      line-height: 1.1;
+    }
+    &-sub {
+      font-size: 11px;
+      color: $ink-400;
+    }
+  }
+
+  &__nav-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: $ink-400;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: $sp-4 10px 6px;
+  }
+
+  &__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: $r-sm;
+    color: $ink-500;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background $transition, color $transition;
+
+    .ico {
+      font-size: 16px;
+    }
+    &:hover {
+      background: $brand-50;
+      color: $brand-700;
+    }
+    &.active {
+      background: $brand-50;
+      color: $brand-700;
+      box-shadow: inset 3px 0 0 $brand;
+    }
+  }
+
+  &__flow {
+    margin-top: $sp-5;
+    padding: $sp-4;
+    border-radius: $r-md;
+    background: linear-gradient(160deg, $brand-50, $surface);
+    border: 1px solid $border;
+  }
+  &__flow-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: $ink-500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: $sp-2;
+  }
+
+  &__footer {
+    margin-top: auto;
+    font-size: 11px;
+    color: $ink-400;
+    padding: $sp-3 10px 0;
+    border-top: 1px solid $border;
+    line-height: 1.6;
+  }
+}
+
+// ===== 메인/탑바 =====
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 60px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid $border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $sp-8;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  &__crumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: $ink-400;
+
+    .here {
+      font-weight: 700;
+      color: $ink-900;
+    }
+    .sep {
+      color: $ink-400;
+    }
+  }
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: $ink-500;
+  }
+}
+
+.content {
+  padding: $sp-8;
+  max-width: $content-max;
+  width: 100%;
+  margin: 0 auto;
+}
+
+// ===== 페이지 헤더 =====
+.page-head {
+  @include flex-between;
+  gap: $sp-4;
+  flex-wrap: wrap;
+  margin-bottom: $sp-6;
+
+  &__title {
+    font-size: 21px;
+    font-weight: 800;
+  }
+  &__sub {
+    font-size: 13px;
+    color: $ink-500;
+    margin-top: 3px;
+  }
+  &__actions {
+    display: flex;
+    gap: $sp-2;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+}
+
+// ===== 스텝퍼 (업로드 → 매핑 → 분석) =====
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: $sp-6;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  box-shadow: $shadow-xs;
+  padding: 14px $sp-5;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  &__dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    border: 2px solid $border-strong;
+    color: $ink-400;
+    background: $surface;
+    transition: all $transition;
+  }
+  &__label {
+    font-size: 13px;
+    font-weight: 700;
+    color: $ink-400;
+  }
+  &__bar {
+    flex: 1 1 auto;
+    height: 2px;
+    background: $border;
+    margin: 0 14px;
+    min-width: 24px;
+    border-radius: 2px;
+  }
+
+  &__item.is-active {
+    .stepper__dot {
+      border-color: $brand;
+      color: #fff;
+      background: $brand;
+      box-shadow: 0 2px 8px rgba($brand, 0.4);
+    }
+    .stepper__label {
+      color: $brand-700;
+    }
+  }
+  &__item.is-done {
+    .stepper__dot {
+      border-color: $success;
+      color: #fff;
+      background: $success;
+    }
+    .stepper__label {
+      color: $ink-700;
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReplyTemplateBox from '../components/ReplyTemplateBox.jsx';
 import IssueCard from '../components/IssueCard.jsx';
+import SectionCard from '../components/SectionCard.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 
@@ -59,35 +60,34 @@ export default function ProductDetailPage() {
       )}
 
       {/* 주요 이슈 */}
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="section-title">주요 이슈 TOP {Math.min(product.topIssues.length, 5)}</div>
+      <SectionCard
+        title={`주요 이슈 TOP ${Math.min(product.topIssues.length, 5)}`}
+        subtitle="각 카드에서 분류를 직접 수정할 수 있습니다."
+        className="mb-5"
+      >
         {product.topIssues.length === 0 && <div className="muted">두드러진 반복 불만이 발견되지 않았습니다. 👍</div>}
         {product.topIssues.map((iss, i) => (
           <IssueCard key={i} issue={iss} analysisId={analysisId} productKey={productKey} />
         ))}
-      </div>
+      </SectionCard>
 
       <div className="dash-grid">
-        {/* 상세페이지 개선 체크리스트 */}
-        <div className="card">
-          <div className="section-title">상세페이지 개선 체크리스트</div>
+        <SectionCard title="상세페이지 개선 체크리스트">
           {product.detailPageActions.length === 0 ? (
             <div className="muted">제안할 개선 액션이 없습니다.</div>
           ) : (
             <ul className="checklist">
               {product.detailPageActions.map((a, i) => (
                 <li key={i}>
-                  <span className="checklist__check">☑</span>
+                  <span className="checklist__check">✓</span>
                   <span>{a}</span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </SectionCard>
 
-        {/* CS 답글 초안 */}
-        <div className="card">
-          <div className="section-title">CS 답글 초안</div>
+        <SectionCard title="CS 답글 초안">
           {product.replyTemplates.length === 0 ? (
             <div className="muted">답글 초안이 없습니다.</div>
           ) : (
@@ -95,7 +95,7 @@ export default function ProductDetailPage() {
               <ReplyTemplateBox key={i} issueLabel={rt.issueLabel} variants={rt.variants} />
             ))
           )}
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

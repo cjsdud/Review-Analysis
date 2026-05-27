@@ -54,8 +54,11 @@ export default function IssueCard({ issue, analysisId, productKey }) {
     }
   }
 
+  const ratio = issue.ratio || 0;
+  const sev = ratio >= 0.2 ? 'is-high' : ratio >= 0.1 ? 'is-mid' : 'is-low';
+
   return (
-    <div className="issue-card">
+    <div className={`issue-card ${sev}`}>
       <div className="issue-card__head">
         <div>
           <span className="tag tag--danger" style={{ marginRight: 8 }}>
@@ -63,10 +66,10 @@ export default function IssueCard({ issue, analysisId, productKey }) {
           </span>
           <span className="issue-card__label">{current.issueLabel}</span>
         </div>
-        <div className="page-actions">
+        <div className="issue-card__meta">
           <SourceTag source={current.source} />
           <span className="tag tag--neutral">
-            {issue.count}건 · {Math.round(issue.ratio * 100)}%
+            {issue.count}건 · {Math.round(ratio * 100)}%
           </span>
           {!editing && (
             <button className="btn btn--ghost btn--sm" onClick={openEdit}>

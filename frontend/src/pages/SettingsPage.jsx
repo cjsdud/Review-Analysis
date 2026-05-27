@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 import { getMappingTemplates } from '../api/uploadApi.js';
 import { FASHION_CATEGORIES } from '../constants.js';
 
@@ -22,7 +23,8 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: 18 }}>
+      <PageHeader title="매핑 템플릿" subtitle="저장한 컬럼 매핑과 분석 카테고리를 확인합니다." />
+      <div className="card mb-5">
         <div className="section-title">저장된 컬럼 매핑 템플릿</div>
         {loading ? (
           <LoadingState title="불러오는 중..." />

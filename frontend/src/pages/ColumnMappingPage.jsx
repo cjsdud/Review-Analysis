@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ColumnMappingTable from '../components/ColumnMappingTable.jsx';
 import LoadingState from '../components/LoadingState.jsx';
+import Stepper from '../components/Stepper.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import SectionCard from '../components/SectionCard.jsx';
 import { getUpload, saveMapping } from '../api/uploadApi.js';
 import { runAnalysis } from '../api/analysisApi.js';
 
@@ -68,29 +71,18 @@ export default function ColumnMappingPage() {
 
   return (
     <div>
-      <div className="steps">
-        <div className="steps__item done">
-          <span className="steps__num">✓</span> 업로드
-        </div>
-        <span className="steps__arrow">→</span>
-        <div className="steps__item active">
-          <span className="steps__num">2</span> 컬럼 매핑
-        </div>
-        <span className="steps__arrow">→</span>
-        <div className="steps__item">
-          <span className="steps__num">3</span> 분석 결과
-        </div>
-      </div>
+      <PageHeader
+        title="컬럼 매핑 확인"
+        subtitle={`${upload.originalName} · 총 ${upload.rowCount}개 행을 읽었습니다. 자동 매핑 결과를 확인하고 필요하면 수정하세요.`}
+      />
+      <Stepper current={2} />
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="card">
-        <div className="section-title">컬럼이 올바르게 인식됐는지 확인하세요</div>
-        <p className="muted" style={{ marginTop: -8, marginBottom: 16, fontSize: 13 }}>
-          <strong>{upload.originalName}</strong> · 총 {upload.rowCount}개 행을 읽었습니다. 자동 매핑 결과를 확인하고
-          필요하면 수정하세요. <span style={{ color: '#ef4444' }}>*</span> 표시는 필수 항목입니다.
-        </p>
-
+      <SectionCard
+        title="컬럼이 올바르게 인식됐는지 확인하세요"
+        subtitle="* 표시는 필수 항목입니다. 매칭 신뢰도가 낮으면 직접 골라주세요."
+      >
         <ColumnMappingTable
           fields={upload.fields}
           headers={upload.headers}
@@ -119,7 +111,7 @@ export default function ColumnMappingPage() {
                 placeholder="템플릿 이름 (예: 스마트스토어 기본)"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                style={{ padding: '6px 10px', border: '1px solid #e5e9f2', borderRadius: 7, fontSize: 13 }}
+                style={{ padding: '6px 10px', border: '1px solid #d7dded', borderRadius: 7, fontSize: 13 }}
               />
             )}
           </label>
@@ -132,7 +124,7 @@ export default function ColumnMappingPage() {
             </button>
           </div>
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 }

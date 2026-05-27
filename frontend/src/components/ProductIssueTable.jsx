@@ -15,7 +15,9 @@ export default function ProductIssueTable({ rows = [], valueLabel = '값', onSel
       <tbody>
         {rows.map((r, i) => (
           <tr key={r.productKey} onClick={() => onSelect?.(r.productKey)}>
-            <td className="muted">{i + 1}</td>
+            <td>
+              <span className="rank">{i + 1}</span>
+            </td>
             <td style={{ fontWeight: 600 }}>
               {r.productName}
               {r.sub && (

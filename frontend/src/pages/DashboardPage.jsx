@@ -5,6 +5,8 @@ import CategoryChart from '../components/CategoryChart.jsx';
 import ProductIssueTable from '../components/ProductIssueTable.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import SectionCard from '../components/SectionCard.jsx';
 import { getAnalysis, exportCsvUrl } from '../api/analysisApi.js';
 
 export default function DashboardPage() {
@@ -37,29 +39,27 @@ export default function DashboardPage() {
   if (!summary || summary.totalReviews === 0)
     return <EmptyState title="분석된 리뷰가 없습니다" actionLabel="리뷰 업로드하기" actionTo="/upload" />;
 
+  const modeLabel = summary.aiMode === 'mock' ? '규칙 기반 + Mock AI' : `규칙 기반 + ${summary.aiMode}`;
+
   return (
     <div>
-      <div
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}
-      >
-        <div>
-          <h2 style={{ fontSize: 20 }}>분석 대시보드</h2>
-          <span className="muted" style={{ fontSize: 13 }}>
-            분석 방식: {summary.aiMode === 'mock' ? '규칙 기반 + Mock AI' : `규칙 기반 + ${summary.aiMode}`}
-          </span>
-        </div>
-        <div className="page-actions">
-          <a className="btn btn--ghost btn--sm" href={exportCsvUrl(analysisId)}>
-            ⬇️ CSV 다운로드
-          </a>
-          <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
-            🖨️ 인쇄 / PDF
-          </button>
-          <button className="btn btn--primary btn--sm" onClick={() => navigate('/upload')}>
-            새 분석
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="분석 대시보드"
+        subtitle={`분석 방식: ${modeLabel}`}
+        actions={
+          <>
+            <a className="btn btn--ghost btn--sm" href={exportCsvUrl(analysisId)}>
+              ⬇️ CSV
+            </a>
+            <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
+              🖨️ 인쇄 / PDF
+            </button>
+            <button className="btn btn--primary btn--sm" onClick={() => navigate('/upload')}>
+              + 새 분석
+            </button>
+          </>
+        }
+      />
 
       {summary.aiComment && (
         <div className="ai-comment">
@@ -71,28 +71,23 @@ export default function DashboardPage() {
       <SummaryCards summary={summary} />
 
       <div className="dash-grid">
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div className="section-title" style={{ marginBottom: 0 }}>
-              카테고리별 불만 분포
-            </div>
-            <div className="reply-box__tones" style={{ marginBottom: 0 }}>
-              <button className={`reply-box__tone${chartType === 'bar' ? ' active' : ''}`} onClick={() => setChartType('bar')}>
+        <SectionCard
+          title="카테고리별 불만 분포"
+          action={
+            <div className="segmented">
+              <button className={`segmented__btn${chartType === 'bar' ? ' is-active' : ''}`} onClick={() => setChartType('bar')}>
                 막대
               </button>
-              <button className={`reply-box__tone${chartType === 'pie' ? ' active' : ''}`} onClick={() => setChartType('pie')}>
+              <button className={`segmented__btn${chartType === 'pie' ? ' is-active' : ''}`} onClick={() => setChartType('pie')}>
                 원형
               </button>
             </div>
-          </div>
+          }
+        >
           <CategoryChart distribution={summary.categoryDistribution} type={chartType} />
-        </div>
+        </SectionCard>
 
-        <div className="card">
-          <div className="section-title">부정 리뷰가 많은 상품 TOP 10</div>
-          <p className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 12 }}>
-            <strong>부정 리뷰</strong>는 별점·감성 기준으로 부정적인 리뷰 수입니다.
-          </p>
+        <SectionCard title="부정 리뷰가 많은 상품 TOP 10" subtitle="별점·감성 기준으로 부정적인 리뷰 수입니다.">
           <ProductIssueTable
             valueLabel="부정 리뷰 수"
             rows={(summary.productRankingByNegative || []).map((p) => ({
@@ -103,15 +98,13 @@ export default function DashboardPage() {
             }))}
             onSelect={goProduct}
           />
-        </div>
+        </SectionCard>
       </div>
 
-      <div className="card">
-        <div className="section-title">개선 이슈가 많은 상품 TOP 10</div>
-        <p className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 12 }}>
-          <strong>개선 이슈</strong>는 분석으로 발견된 불만 항목(사이즈·색상·소재 등)이 1개 이상 있는 리뷰 수로,
-          위의 부정 리뷰 수와는 다른 개념입니다. 상품명을 클릭하면 상세 리포트를 볼 수 있습니다.
-        </p>
+      <SectionCard
+        title="개선 이슈가 많은 상품 TOP 10"
+        subtitle="분석으로 발견된 불만 항목(사이즈·색상·소재 등)이 1개 이상 있는 리뷰 수 — 위 부정 리뷰 수와는 다른 개념입니다. 클릭하면 상세 리포트로 이동합니다."
+      >
         <ProductIssueTable
           valueLabel="개선 이슈 발견 리뷰"
           rows={(summary.productRankingByIssues || []).map((p) => ({
@@ -122,7 +115,7 @@ export default function DashboardPage() {
           }))}
           onSelect={goProduct}
         />
-      </div>
+      </SectionCard>
     </div>
   );
 }

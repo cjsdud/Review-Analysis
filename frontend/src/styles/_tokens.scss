@@ -1,0 +1,67 @@
+// 디자인 토큰 (색상/간격/모서리/그림자). 다른 partial에서 `@use 'tokens' as *;`로 사용.
+
+// 브랜드 (파란색 계열)
+$brand: #2563eb;
+$brand-700: #1d4ed8;
+$brand-600: #2563eb;
+$brand-200: #bfdbfe;
+$brand-100: #dbeafe;
+$brand-50: #eff6ff;
+
+// 잉크(텍스트) / 표면 / 라인
+$ink-900: #0f172a;
+$ink-700: #334155;
+$ink-500: #64748b;
+$ink-400: #94a3b8;
+$bg: #f6f8fc;
+$surface: #ffffff;
+$surface-2: #fafbfe;
+$border: #e6eaf2;
+$border-strong: #d7dded;
+
+// 상태색
+$danger: #ef4444;
+$danger-soft: #fef2f2;
+$danger-border: #fecaca;
+$warning: #f59e0b;
+$warning-soft: #fffbeb;
+$success: #10b981;
+$success-soft: #ecfdf5;
+
+// 별칭(기존 코드 호환)
+$text: $ink-900;
+$text-muted: $ink-500;
+$text-soft: $ink-400;
+$brand-dark: $brand-700;
+$brand-light: $brand-100;
+$brand-soft: $brand-50;
+
+// 모서리
+$r-sm: 8px;
+$r-md: 12px;
+$r-lg: 16px;
+$r-pill: 999px;
+$radius: $r-md;
+$radius-sm: $r-sm;
+
+// 그림자
+$shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+$shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+$shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+$shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.12);
+$shadow: $shadow-sm;
+
+// 간격 스케일
+$sp-1: 4px;
+$sp-2: 8px;
+$sp-3: 12px;
+$sp-4: 16px;
+$sp-5: 20px;
+$sp-6: 24px;
+$sp-8: 32px;
+$sp-10: 40px;
+
+// 레이아웃
+$sidebar-width: 248px;
+$content-max: 1180px;
+$transition: 0.15s ease;
