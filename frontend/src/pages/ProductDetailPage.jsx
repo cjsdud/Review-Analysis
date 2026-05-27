@@ -43,10 +43,9 @@ export default function ProductDetailPage() {
           <div className="page-actions" style={{ marginTop: 8 }}>
             <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
             <span className="tag tag--danger">부정 리뷰 {product.negativeReviews}건 ({negRatio}%)</span>
-            <span className="tag">
-              개선 이슈 발견 {product.issueReviewCount ?? 0}건
-              {product.issueRatio != null ? ` (${Math.round(product.issueRatio * 100)}%)` : ''}
-            </span>
+            <span className="tag">개선 이슈 리뷰 {product.issueReviewCount ?? 0}건</span>
+            <span className="tag">총 이슈 {product.totalIssueCount ?? 0}건</span>
+            <span className="tag">이슈 비율 {Math.round((product.issueRatio ?? 0) * 100)}%</span>
             {product.averageRating != null && <span className="tag">평균 ★ {product.averageRating.toFixed(2)}</span>}
           </div>
         </div>

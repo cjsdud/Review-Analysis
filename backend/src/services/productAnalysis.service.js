@@ -4,6 +4,10 @@ import { classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 
+// 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외).
+// 입력: classification 1건. 출력: '기타'를 제외한 categories 배열.
+const meaningfulCategories = (c) => (c.categories || []).filter((cat) => cat.name && cat.name !== '기타');
+
 // 입력: reviews(ReviewNormalized[]) — 정규화·마스킹 완료된 리뷰 배열
 // 출력: { analysisId, summary(전체 지표/분포/랭킹), products(ProductAnalysis[]), classifications }
 export async function runAnalysis(reviews) {
@@ -27,9 +31,9 @@ export async function runAnalysis(reviews) {
     const negativeReviews = productCls.filter((c) => c.sentiment === 'negative').length;
     const total = productReviews.length;
     const negativeRatio = total ? Number((negativeReviews / total).toFixed(3)) : 0;
-    // 지표 분리: 별점/감성 부정 vs 개선 이슈 발견
-    const issueReviewCount = productCls.filter((c) => c.categories.length > 0).length;
-    const totalIssueCount = productCls.reduce((s, c) => s + c.categories.length, 0);
+    // 지표 분리: 별점/감성 부정 vs 개선 이슈 발견 ('기타' 제외)
+    const issueReviewCount = productCls.filter((c) => meaningfulCategories(c).length > 0).length;
+    const totalIssueCount = productCls.reduce((s, c) => s + meaningfulCategories(c).length, 0);
     const issueRatio = total ? Number((issueReviewCount / total).toFixed(3)) : 0;
     const ratings = productReviews.map((r) => r.rating).filter((n) => typeof n === 'number');
     const averageRating = ratings.length
@@ -90,8 +94,8 @@ export async function runAnalysis(reviews) {
   // 6) 전체 요약 + 카테고리 분포
   const totalReviews = reviews.length;
   const negativeReviews = classifications.filter((c) => c.sentiment === 'negative').length;
-  const issueReviewCount = classifications.filter((c) => c.categories.length > 0).length;
-  const totalIssueCount = classifications.reduce((s, c) => s + c.categories.length, 0);
+  const issueReviewCount = classifications.filter((c) => meaningfulCategories(c).length > 0).length;
+  const totalIssueCount = classifications.reduce((s, c) => s + meaningfulCategories(c).length, 0);
   const issueRatio = totalReviews ? Number((issueReviewCount / totalReviews).toFixed(3)) : 0;
   const allRatings = reviews.map((r) => r.rating).filter((n) => typeof n === 'number');
   const averageRating = allRatings.length
