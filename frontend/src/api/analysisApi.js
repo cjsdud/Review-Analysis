@@ -28,3 +28,10 @@ export async function generateReplyTemplates(issueLabel, category) {
   const { data } = await client.post('/ai/reply-templates', { issueLabel, category });
   return data.templates;
 }
+
+// 사용자 분류 수정 저장
+// payload: { productKey, category, issueLabel, newCategory, newIssueLabel, reviewIds? }
+export async function saveCorrection(analysisId, payload) {
+  const { data } = await client.post(`/analysis/${analysisId}/corrections`, payload);
+  return data;
+}

@@ -14,4 +14,17 @@ db.pragma('journal_mode = WAL');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
 db.exec(schema);
 
+// 일정 시간(ttlMinutes)이 지난 업로드의 파싱 rows(JSON)를 비워 PII 잔존을 줄인다.
+// 정규화된 reviews 테이블은 유지되므로 분석에는 영향이 없다.
+// 입력: ttlMinutes(number). 출력: 비워진 행 수(number).
+export function purgeStaleUploadRows(ttlMinutes = 60) {
+  const info = db
+    .prepare(
+      `UPDATE upload_files SET rows = NULL
+       WHERE rows IS NOT NULL AND created_at <= datetime('now', ?)`,
+    )
+    .run(`-${Math.max(1, Math.floor(ttlMinutes))} minutes`);
+  return info.changes;
+}
+
 export default db;

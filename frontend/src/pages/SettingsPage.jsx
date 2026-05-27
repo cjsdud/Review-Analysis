@@ -2,19 +2,7 @@ import { useEffect, useState } from 'react';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { getMappingTemplates } from '../api/uploadApi.js';
-
-const FASHION_CATEGORIES = [
-  '사이즈',
-  '핏/실루엣',
-  '색상/화면 차이',
-  '소재/두께',
-  '마감/불량',
-  '착용감',
-  '세탁/내구성',
-  '배송/포장',
-  '가격/가성비',
-  '기타',
-];
+import { FASHION_CATEGORIES } from '../constants.js';
 
 export default function SettingsPage() {
   const [templates, setTemplates] = useState([]);

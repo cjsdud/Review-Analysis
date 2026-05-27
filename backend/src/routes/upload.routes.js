@@ -9,25 +9,37 @@ import db from '../db/database.js';
 import { parseFile } from '../services/fileParser.service.js';
 import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid } from '../services/columnMapping.service.js';
 import { normalizeReviews } from '../services/normalizeReview.service.js';
+import { maskRows } from '../services/privacyMasking.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = Router();
 
-// 파싱 결과를 upload_files에 저장하고 응답 페이로드를 만드는 공용 헬퍼
+// 파싱 결과를 마스킹해 upload_files에 저장하고 응답 페이로드를 만드는 공용 헬퍼.
+// 입력: { originalName, source, headers, rows(원본 파싱 행) }
+// 처리: 모든 행의 string 값에 PII 마스킹 적용 → maskedRows만 DB/응답에 사용 (원본 rows는 저장 안 함)
 function persistUpload({ originalName, source, headers, rows }) {
-  const mappingSuggestion = autoMapColumns(headers, rows);
+  const maskedRows = maskRows(rows); // ★ 저장 전 개인정보 마스킹
+  const mappingSuggestion = autoMapColumns(headers, maskedRows);
   const uploadId = nanoid();
   db.prepare(
     `INSERT INTO upload_files (id, original_name, source, row_count, headers, rows, mapping_suggestion)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(uploadId, originalName, source, rows.length, JSON.stringify(headers), JSON.stringify(rows), JSON.stringify(mappingSuggestion));
+  ).run(
+    uploadId,
+    originalName,
+    source,
+    maskedRows.length,
+    JSON.stringify(headers),
+    JSON.stringify(maskedRows),
+    JSON.stringify(mappingSuggestion),
+  );
 
   return {
     uploadId,
     originalName,
-    rowCount: rows.length,
+    rowCount: maskedRows.length,
     headers,
-    sampleRows: rows.slice(0, 5),
+    sampleRows: maskedRows.slice(0, 5),
     mappingSuggestion,
     fields: FIELDS,
     fieldCandidates: FIELD_CANDIDATES,
@@ -92,7 +104,8 @@ router.get('/:id', (req, res) => {
     source: row.source,
     rowCount: row.row_count,
     headers: JSON.parse(row.headers),
-    sampleRows: JSON.parse(row.rows).slice(0, 5),
+    // rows가 만료(null)되면 미리보기는 빈 배열
+    sampleRows: row.rows ? JSON.parse(row.rows).slice(0, 5) : [],
     mappingSuggestion: JSON.parse(row.mapping_suggestion),
     fields: FIELDS,
     fieldCandidates: FIELD_CANDIDATES,
@@ -120,6 +133,9 @@ router.post('/:id/mapping', (req, res) => {
 
   const uploadRow = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);
   if (!uploadRow) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!uploadRow.rows) {
+    return res.status(410).json({ error: '업로드 데이터가 만료되어 다시 업로드가 필요합니다.' });
+  }
 
   const rows = JSON.parse(uploadRow.rows);
   const reviews = normalizeReviews(rows, cleanMapping, {

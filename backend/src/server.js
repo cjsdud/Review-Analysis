@@ -7,10 +7,12 @@ import uploadRoutes from './routes/upload.routes.js';
 import analysisRoutes from './routes/analysis.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import { aiMode } from './services/aiClient.service.js';
+import { purgeStaleUploadRows } from './db/database.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const UPLOAD_ROWS_TTL_MIN = Number(process.env.UPLOAD_ROWS_TTL_MIN || 60);
 
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json({ limit: '2mb' }));
@@ -33,6 +35,11 @@ app.use((err, _req, res, _next) => {
   if (err) return res.status(400).json({ error: err.message || '요청 처리 중 오류가 발생했습니다.' });
   res.status(500).json({ error: 'Unknown error' });
 });
+
+// 업로드 파싱 rows TTL 청소: 시작 시 1회 + 30분마다 (PII 잔존 최소화)
+purgeStaleUploadRows(UPLOAD_ROWS_TTL_MIN);
+const purgeTimer = setInterval(() => purgeStaleUploadRows(UPLOAD_ROWS_TTL_MIN), 30 * 60 * 1000);
+purgeTimer.unref?.();
 
 app.listen(PORT, () => {
   console.log(`[review-insight] backend on http://localhost:${PORT} (AI mode: ${aiMode})`);

@@ -11,7 +11,9 @@ function toRating(v) {
   return n;
 }
 
-// rows + 확정 매핑 → ReviewNormalized[] (마스킹 적용)
+// 파싱된 rows를 확정 매핑에 따라 공통 스키마로 정규화한다.
+// 입력: rows(object[]), mapping({field: columnName}), opts({source, storeId, uploadId})
+// 출력: ReviewNormalized[] (content 비어있으면 제외, 마스킹 적용)
 export function normalizeReviews(rows, mapping, { source = 'custom', storeId, uploadId } = {}) {
   const out = [];
   for (const row of rows) {

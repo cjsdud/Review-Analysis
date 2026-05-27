@@ -185,7 +185,10 @@ function resolveAction(category, label) {
   return (label && ISSUE_ACTIONS[label]) || CATEGORY_ACTIONS[category] || CATEGORY_ACTIONS['기타'];
 }
 
-// 단일 리뷰 분석 → ReviewClassification (멀티라벨)
+// 단일 리뷰를 멀티라벨로 분류한다.
+// 입력: review(ReviewNormalized)
+// 출력: { reviewId, productName, rating, sentiment, ambiguous,
+//        categories:[{ name, issue, confidence, evidence, source, action, strength }] }
 export function classifyReview(review) {
   const sentiment = detectSentiment(review);
   const text = `${safeStr(review.title)}. ${safeStr(review.content)}`;
@@ -252,7 +255,9 @@ export function classifyReview(review) {
   };
 }
 
-// 전체 분류 + 애매한 부정 리뷰만 LLM 위임
+// 전체 리뷰 분류 + 애매한 부정 리뷰만 LLM(또는 mock)에 위임.
+// 입력: reviews(ReviewNormalized[]), aiClient(LLM 추상화 모듈)
+// 출력: ReviewClassification[] (classifyReview 결과 배열)
 export async function classifyAll(reviews, aiClient) {
   const classifications = reviews.map(classifyReview);
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));

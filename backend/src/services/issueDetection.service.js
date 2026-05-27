@@ -48,7 +48,9 @@ function pickEvidence(items, max = 4) {
   return chosen;
 }
 
-// classifications: classifyReview 결과. reviewMap: id -> review(정규화/마스킹 완료)
+// 분류 결과를 (상품·카테고리·세부이슈) 단위로 묶고 대표 근거 리뷰를 선별한다.
+// 입력: classifications(ReviewClassification[]), reviewMap(id→ReviewNormalized), aiClient
+// 출력: 클러스터 배열 [{ productName, category, issueLabel, action, source, count, reviewIds, evidenceReviews, avgConfidence }]
 export async function buildIssueClusters(classifications, reviewMap, aiClient) {
   // key: product||category||label  ->  items[]
   const groups = new Map();

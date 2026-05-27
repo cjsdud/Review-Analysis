@@ -1,0 +1,14 @@
+{
+  "name": "review-insight-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "패션 셀러용 리뷰 기반 상품 개선 리포트 MVP (monorepo)",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "check": "npm --prefix backend run check",
+    "build:frontend": "npm --prefix frontend run build",
+    "seed:xlsx": "npm --prefix backend run seed:xlsx"
+  }
+}

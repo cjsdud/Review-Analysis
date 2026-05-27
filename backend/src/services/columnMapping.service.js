@@ -49,7 +49,9 @@ function dataBonus(field, values) {
   return 0;
 }
 
-// 헤더 목록 + 샘플 행으로 필드별 최적 컬럼 후보 산출
+// 헤더 목록 + 샘플 행으로 필드별 최적 컬럼 후보를 점수화해 산출한다.
+// 입력: headers(string[]), rows(object[] — 마스킹된 행이어도 무방)
+// 출력: { field: { column: string|null, score: number } } (이름 점수 + 데이터 패턴 가산점)
 export function autoMapColumns(headers, rows) {
   const columnValues = {};
   for (const h of headers) columnValues[h] = rows.map((r) => r[h]);

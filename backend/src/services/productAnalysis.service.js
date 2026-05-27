@@ -4,6 +4,8 @@ import { classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 
+// 입력: reviews(ReviewNormalized[]) — 정규화·마스킹 완료된 리뷰 배열
+// 출력: { analysisId, summary(전체 지표/분포/랭킹), products(ProductAnalysis[]), classifications }
 export async function runAnalysis(reviews) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
@@ -25,6 +27,10 @@ export async function runAnalysis(reviews) {
     const negativeReviews = productCls.filter((c) => c.sentiment === 'negative').length;
     const total = productReviews.length;
     const negativeRatio = total ? Number((negativeReviews / total).toFixed(3)) : 0;
+    // 지표 분리: 별점/감성 부정 vs 개선 이슈 발견
+    const issueReviewCount = productCls.filter((c) => c.categories.length > 0).length;
+    const totalIssueCount = productCls.reduce((s, c) => s + c.categories.length, 0);
+    const issueRatio = total ? Number((issueReviewCount / total).toFixed(3)) : 0;
     const ratings = productReviews.map((r) => r.rating).filter((n) => typeof n === 'number');
     const averageRating = ratings.length
       ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
@@ -70,6 +76,9 @@ export async function runAnalysis(reviews) {
       totalReviews: total,
       negativeReviews,
       negativeRatio,
+      issueReviewCount,
+      totalIssueCount,
+      issueRatio,
       averageRating,
       topIssues,
       detailPageActions: detailPageActions.length ? detailPageActions : report.detailPageActions || [],
@@ -81,6 +90,9 @@ export async function runAnalysis(reviews) {
   // 6) 전체 요약 + 카테고리 분포
   const totalReviews = reviews.length;
   const negativeReviews = classifications.filter((c) => c.sentiment === 'negative').length;
+  const issueReviewCount = classifications.filter((c) => c.categories.length > 0).length;
+  const totalIssueCount = classifications.reduce((s, c) => s + c.categories.length, 0);
+  const issueRatio = totalReviews ? Number((issueReviewCount / totalReviews).toFixed(3)) : 0;
   const allRatings = reviews.map((r) => r.rating).filter((n) => typeof n === 'number');
   const averageRating = allRatings.length
     ? Number((allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(2))
@@ -119,6 +131,9 @@ export async function runAnalysis(reviews) {
     totalReviews,
     negativeReviews,
     negativeRatio: totalReviews ? Number((negativeReviews / totalReviews).toFixed(3)) : 0,
+    issueReviewCount,
+    totalIssueCount,
+    issueRatio,
     averageRating,
     productCount: productNames.length,
     categoryDistribution,
