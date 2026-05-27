@@ -1,0 +1,30 @@
+import client from './client.js';
+
+export async function runAnalysis(uploadId) {
+  const { data } = await client.post('/analysis', { uploadId });
+  return data;
+}
+
+export async function getAnalysis(analysisId) {
+  const { data } = await client.get(`/analysis/${analysisId}`);
+  return data;
+}
+
+export async function getProducts(analysisId) {
+  const { data } = await client.get(`/analysis/${analysisId}/products`);
+  return data;
+}
+
+export async function getProductDetail(analysisId, productKey) {
+  const { data } = await client.get(`/analysis/${analysisId}/products/${productKey}`);
+  return data;
+}
+
+export function exportCsvUrl(analysisId) {
+  return `/api/analysis/${analysisId}/export.csv`;
+}
+
+export async function generateReplyTemplates(issueLabel, category) {
+  const { data } = await client.post('/ai/reply-templates', { issueLabel, category });
+  return data.templates;
+}

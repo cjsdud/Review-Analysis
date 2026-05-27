@@ -1,0 +1,23 @@
+{
+  "name": "review-insight-backend",
+  "version": "0.1.0",
+  "description": "리뷰 기반 상품 개선 리포트 MVP 백엔드",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed:xlsx": "node scripts/makeSampleXlsx.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "nanoid": "^5.0.7",
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.8"
+  }
+}

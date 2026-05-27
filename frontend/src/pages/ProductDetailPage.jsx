@@ -1,0 +1,130 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import EvidenceReviewList from '../components/EvidenceReviewList.jsx';
+import ReplyTemplateBox from '../components/ReplyTemplateBox.jsx';
+import LoadingState from '../components/LoadingState.jsx';
+import { getProductDetail } from '../api/analysisApi.js';
+
+function sourceTag(source) {
+  if (source === 'llm') return <span className="tag">AI 생성</span>;
+  if (source === 'rule') return <span className="tag tag--neutral">규칙 기반</span>;
+  return <span className="tag tag--neutral">자동 묶음</span>;
+}
+
+export default function ProductDetailPage() {
+  const { analysisId, productKey } = useParams();
+  const navigate = useNavigate();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getProductDetail(analysisId, productKey);
+        setProduct(data);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [analysisId, productKey]);
+
+  if (loading) return <LoadingState title="상품 리포트를 불러오는 중..." />;
+  if (error) return <div className="error-banner">{error}</div>;
+  if (!product) return null;
+
+  const negRatio = product.totalReviews ? Math.round((product.negativeReviews / product.totalReviews) * 100) : 0;
+
+  return (
+    <div>
+      <span className="back-link" onClick={() => navigate(`/dashboard/${analysisId}`)} style={{ cursor: 'pointer' }}>
+        ← 대시보드로 돌아가기
+      </span>
+
+      <div className="product-header">
+        <div>
+          <div className="product-header__title">{product.productName}</div>
+          <div className="page-actions" style={{ marginTop: 8 }}>
+            <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
+            <span className="tag tag--danger">부정 {product.negativeReviews}건 ({negRatio}%)</span>
+            {product.averageRating != null && <span className="tag">평균 ★ {product.averageRating.toFixed(2)}</span>}
+          </div>
+        </div>
+      </div>
+
+      {product.summary && (
+        <div className="ai-comment">
+          <span className="ai-comment__ico">📌</span>
+          <div className="ai-comment__text">{product.summary}</div>
+        </div>
+      )}
+
+      {/* 주요 이슈 */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="section-title">주요 이슈 TOP {Math.min(product.topIssues.length, 5)}</div>
+        {product.topIssues.length === 0 && <div className="muted">두드러진 반복 불만이 발견되지 않았습니다. 👍</div>}
+        {product.topIssues.map((iss, i) => (
+          <div className="issue-card" key={i}>
+            <div className="issue-card__head">
+              <div>
+                <span className="tag tag--danger" style={{ marginRight: 8 }}>
+                  {iss.category}
+                </span>
+                <span className="issue-card__label">{iss.issueLabel}</span>
+              </div>
+              <div className="page-actions">
+                {sourceTag(iss.source)}
+                <span className="tag tag--neutral">
+                  {iss.count}건 · {Math.round(iss.ratio * 100)}%
+                </span>
+              </div>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+              근거 리뷰
+            </div>
+            <EvidenceReviewList reviews={iss.evidenceReviews} />
+            {iss.recommendedAction && (
+              <div className="issue-card__action">
+                <strong>👉 추천 조치: </strong>
+                {iss.recommendedAction}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="dash-grid">
+        {/* 상세페이지 개선 체크리스트 */}
+        <div className="card">
+          <div className="section-title">상세페이지 개선 체크리스트</div>
+          {product.detailPageActions.length === 0 ? (
+            <div className="muted">제안할 개선 액션이 없습니다.</div>
+          ) : (
+            <ul className="checklist">
+              {product.detailPageActions.map((a, i) => (
+                <li key={i}>
+                  <span className="checklist__check">☑</span>
+                  <span>{a}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* CS 답글 초안 */}
+        <div className="card">
+          <div className="section-title">CS 답글 초안</div>
+          {product.replyTemplates.length === 0 ? (
+            <div className="muted">답글 초안이 없습니다.</div>
+          ) : (
+            product.replyTemplates.map((rt, i) => (
+              <ReplyTemplateBox key={i} issueLabel={rt.issueLabel} variants={rt.variants} />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

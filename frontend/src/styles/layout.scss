@@ -1,0 +1,158 @@
+@use './variables' as *;
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: $sidebar-width;
+  background: $surface;
+  border-right: 1px solid $border;
+  padding: 22px 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px 20px;
+
+    &-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, $brand, #60a5fa);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+    }
+    &-name {
+      font-weight: 800;
+      font-size: 15px;
+      line-height: 1.1;
+    }
+    &-sub {
+      font-size: 11px;
+      color: $text-soft;
+    }
+  }
+
+  &__nav-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: $text-soft;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 14px 10px 6px;
+  }
+
+  &__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: $radius-sm;
+    color: $text-muted;
+    font-weight: 600;
+    font-size: 14px;
+
+    &:hover {
+      background: $brand-soft;
+      color: $brand-dark;
+    }
+    &.active {
+      background: $brand-light;
+      color: $brand-dark;
+    }
+  }
+
+  &__footer {
+    margin-top: auto;
+    font-size: 11px;
+    color: $text-soft;
+    padding: 10px;
+    border-top: 1px solid $border;
+  }
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 60px;
+  background: $surface;
+  border-bottom: 1px solid $border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  &__title {
+    font-weight: 700;
+    font-size: 15px;
+  }
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: $text-muted;
+  }
+}
+
+.content {
+  padding: 28px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+// 단계 표시 (업로드 → 매핑 → 분석)
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: $text-soft;
+    font-weight: 600;
+    font-size: 13px;
+
+    &.active {
+      color: $brand;
+    }
+    &.done {
+      color: $success;
+    }
+  }
+  &__num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+  }
+  &__arrow {
+    color: $text-soft;
+  }
+}
