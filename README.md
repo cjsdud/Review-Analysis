@@ -145,15 +145,22 @@ MAX_UPLOAD_BYTES=10485760        # 10MB
 DB_PATH=./data/app.db
 UPLOAD_ROWS_TTL_MIN=60           # 업로드 파싱 rows 보관 시간(분). 경과 시 비움(PII 잔존 최소화)
 
-# AI_PROVIDER: mock | openai | gemini | claude
-# 키가 없거나 mock 이면 mock 응답으로 동작
-AI_PROVIDER=mock
-AI_API_KEY=
-AI_MODEL=
+# LLM_PROVIDER: mock | openai | gemini | claude
+# 키가 없거나 호출/파싱 실패 시 자동으로 mock 으로 fallback 합니다.
+LLM_PROVIDER=mock
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+LLM_API_KEY=                     # 공통 키 (provider별 키 미설정 시 사용)
+LLM_MODEL=                       # 미지정 시 provider 기본값
+LLM_TIMEOUT_MS=20000
+# (구버전 호환) AI_PROVIDER / AI_API_KEY / AI_MODEL 도 인식
 ```
 
-> **AI 연결 상태**: 현재는 **Mock AI**로 동작합니다. 실제 OpenAI / Gemini / Claude API 연결은 **3차 작업에서 진행 예정**입니다.
-> 연결 시 `backend/src/services/aiClient.service.js` 의 `callLLM()` 안에서 provider별 호출부만 구현하면 되고, 나머지 함수 시그니처는 그대로 유지됩니다.
+> **AI 연결 상태**: 실제 LLM 연결이 구현되어 있습니다. `LLM_PROVIDER`로 **openai / gemini / claude** 중 하나를 고르고 해당 키를 넣으면 실제 호출하며,
+> 키가 없거나 호출/JSON 파싱이 실패하면 **자동으로 mock 으로 fallback** 합니다(앱은 항상 동작).
+> 기본 모델: openai=`gpt-4o-mini`, gemini=`gemini-1.5-flash`, claude=`claude-sonnet-4-6` (`LLM_MODEL`로 변경).
+> 실제 호출 지점은 `backend/src/services/aiClient.service.js`의 `callOpenAI/callGemini/callClaude` 입니다.
 
 ---
 
@@ -208,9 +215,12 @@ AI_MODEL=
 `사이즈 · 핏/실루엣 · 색상/화면 차이 · 소재/두께 · 마감/불량 · 착용감 · 세탁/내구성 · 배송/포장 · 가격/가성비 · 기타`
 
 ### LLM 추상화 (`aiClient.service.js`)
-- `classifyAmbiguousReviews / generateIssueLabel / generateProductImprovementReport / generateReplyTemplates / generateMonthlyReport`
-- API 키가 없으면 **mock** 응답 반환 → 로컬에서 완전 동작.
-- LLM 응답은 항상 JSON으로 받고, **파싱 실패 시 fallback/기본 템플릿**으로 대체.
+- 함수: `classifyAmbiguousReviews / generateIssueLabel / generateProductImprovementReport / generateReplyTemplates / generateMonthlyReport`
+- **provider 선택**: `LLM_PROVIDER`(mock|openai|gemini|claude). 실제 호출은 `callOpenAI`(chat completions, `response_format=json_object`) / `callGemini`(`responseMimeType=application/json`) / `callClaude`(messages API)로 구현.
+- **안전장치**:
+  - 키가 없으면 처음부터 `mock` 모드.
+  - 모든 응답을 `parseJsonSafe`로 파싱하고, 호출 실패·JSON 파싱 실패·형식 불일치면 **함수별 mock 기본값** 반환 → 앱이 항상 동작.
+  - 호출 타임아웃(`LLM_TIMEOUT_MS`, AbortController), **401/403 발생 시 이후 호출은 즉시 mock**으로 차단(비용/지연 방지).
 
 ---
 
@@ -243,8 +253,9 @@ AI_MODEL=
 ---
 
 ## 9. 앞으로 확장할 기능 목록 (TODO)
-- **[3차] 실제 LLM 연동**: OpenAI / Gemini / Claude 중 택1을 `aiClient.callLLM()`에 연결 (현재 Mock).
-- **[3차] user correction 재학습/재집계**: 저장된 `user_corrections`를 분석 파이프라인에 반영(룰 보정/재집계).
+- **[완료] 실제 LLM 연동**: `LLM_PROVIDER`로 OpenAI / Gemini / Claude 연결(키 없거나 실패 시 mock fallback).
+- **[다음] 프롬프트 캐싱 / 배치 호출**: 상품·이슈별 호출이 많아질 때 비용·지연 최적화(특히 분류·답글 배치).
+- **[다음] user correction 재학습/재집계**: 저장된 `user_corrections`를 분석 파이프라인에 반영(룰 보정/재집계).
 - **[3차] DB 계층 추상화 + fallback**: better-sqlite3 설치 불가 환경을 위한 `node:sqlite` 또는 JSON 파일 스토리지 fallback.
 - **카페24 OAuth 연동**: 게시판 목록 조회 → 리뷰 게시판(board_no) 선택 → articles/comments 조회. (현재 `source` 필드와 서비스 레이어가 확장 지점)
 - **임베딩 기반 클러스터링**: 현재 규칙+자카드 → 문장 임베딩으로 세부 이슈 정밀도 향상 (`issueDetection.service.js` 교체).
