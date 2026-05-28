@@ -73,6 +73,11 @@ export default function DashboardPage() {
       <div className="dash-grid">
         <SectionCard
           title="카테고리별 불만 분포"
+          subtitle={
+            summary.otherCount > 0
+              ? `'기타' ${summary.otherCount}건은 보조 항목으로 차트에서 제외했습니다.`
+              : undefined
+          }
           action={
             <div className="segmented">
               <button className={`segmented__btn${chartType === 'bar' ? ' is-active' : ''}`} onClick={() => setChartType('bar')}>

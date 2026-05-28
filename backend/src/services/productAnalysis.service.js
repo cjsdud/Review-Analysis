@@ -113,8 +113,11 @@ export async function runAnalysis(reviews) {
       }
     }
   }
+  // 카테고리 분포 (대시보드 표시용): '기타'는 포괄 라벨이라 시각화에서 제외해 핵심 불만 영역에 집중.
+  // 보조 참고용으로 '기타' 카운트는 summary.otherCount 로 별도 노출.
+  const otherCount = categoryCount['기타'] || 0;
   const categoryDistribution = FASHION_CATEGORIES.map((name) => ({ name, count: categoryCount[name] || 0 })).filter(
-    (c) => c.count > 0,
+    (c) => c.count > 0 && c.name !== '기타',
   );
 
   // 상품 랭킹: 부정 리뷰(별점·감성) 기준 / 개선 이슈(분석으로 발견된 불만) 기준
@@ -140,6 +143,7 @@ export async function runAnalysis(reviews) {
     averageRating,
     productCount: productNames.length,
     categoryDistribution,
+    otherCount,
     productRankingByNegative: byNegative.map((p) => ({
       productKey: p.productKey,
       productName: p.productName,

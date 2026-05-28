@@ -160,6 +160,9 @@ LLM_TIMEOUT_MS=20000
 > **AI 연결 상태**: 실제 LLM 연결이 구현되어 있습니다. `LLM_PROVIDER`로 **openai / gemini / claude** 중 하나를 고르고 해당 키를 넣으면 실제 호출하며,
 > 키가 없거나 호출/JSON 파싱이 실패하면 **자동으로 mock 으로 fallback** 합니다(앱은 항상 동작).
 > 기본 모델: openai=`gpt-4o-mini`, gemini=`gemini-1.5-flash`, claude=`claude-sonnet-4-6` (`LLM_MODEL`로 변경).
+> **모델 ID는 provider마다 자주 갱신됩니다.** 사용 전 [OpenAI](https://platform.openai.com/docs/models) /
+> [Gemini](https://ai.google.dev/gemini-api/docs/models) / [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models) 공식 문서에서
+> 현재 사용 가능한 정확한 모델 ID를 확인하고 `LLM_MODEL`에 명시하세요. 잘못된 모델 ID는 호출이 실패하지만 mock 으로 자동 fallback 됩니다.
 > 실제 호출 지점은 `backend/src/services/aiClient.service.js`의 `callOpenAI/callGemini/callClaude` 입니다.
 
 ---
