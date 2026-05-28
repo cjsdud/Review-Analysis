@@ -118,21 +118,35 @@ cd frontend && npm run dev
 코드를 받은 직후/수정 후 정상 동작을 빠르게 확인하는 방법입니다.
 
 ```bash
-# 1) 백엔드 핵심 모듈 import + 파이프라인 점검 (DB/서버 불필요)
+# 1) mock 기반 로컬 핵심 로직 점검 (DB/서버/네트워크 불필요)
 npm run check
 #   → privacyMasking / fileParser / columnMapping / reviewClassification /
 #     issueDetection+productAnalysis / export / aiClient 각 항목 ✓ 출력
 
-# 2) 프론트엔드 빌드 성공 여부
+# 2) 프론트 빌드 점검 (타입/임포트/SCSS 오류 검출)
 npm run build:frontend
-#   → "✓ built in ..." 출력되면 정상 (타입/임포트 오류 시 실패)
+#   → "✓ built in ..." 출력되면 정상
 
-# 3) (선택) 서버 띄우고 헬스 체크
+# 3) 실제 LLM provider / API 키 연결 점검 (네트워크 필요)
+npm run check:llm
+#   → LLM_PROVIDER=mock 이면 "mock mode, skip real LLM call" 후 종료
+#   → openai/gemini/claude 면 실제 호출해 JSON 응답 파싱 성공 여부 확인
+#   → 실패해도 프로세스를 죽이지 않으며 어떤 키가 필요한지 안내
+
+# 4) (선택) 서버 띄우고 헬스 체크
 npm run dev:backend
 curl http://localhost:4000/api/health      # {"ok":true,"aiMode":"mock"}
 ```
 
-루트에서 `npm run check`는 `backend`의 check를 호출합니다.
+세 명령의 역할 요약:
+
+| 명령 | 무엇을 점검 | 네트워크 |
+|---|---|---|
+| `npm run check` | mock 기반 분석 파이프라인이 정상 동작하는지 | 불필요 |
+| `npm run build:frontend` | 프론트가 빌드 오류 없이 번들되는지 | 불필요 |
+| `npm run check:llm` | 실제 LLM provider 연결 + JSON 응답 수신 | 필요 |
+
+> 중요: **`check:llm`이 실패해도 앱은 정상 동작합니다.** aiClient의 함수별 mock fallback이 호출 실패/JSON 파싱 실패/형식 불일치를 모두 흡수하기 때문입니다(키 없음·401/403·타임아웃 포함).
 
 ---
 
@@ -159,10 +173,9 @@ LLM_TIMEOUT_MS=20000
 
 > **AI 연결 상태**: 실제 LLM 연결이 구현되어 있습니다. `LLM_PROVIDER`로 **openai / gemini / claude** 중 하나를 고르고 해당 키를 넣으면 실제 호출하며,
 > 키가 없거나 호출/JSON 파싱이 실패하면 **자동으로 mock 으로 fallback** 합니다(앱은 항상 동작).
-> 기본 모델: openai=`gpt-4o-mini`, gemini=`gemini-1.5-flash`, claude=`claude-sonnet-4-6` (`LLM_MODEL`로 변경).
-> **모델 ID는 provider마다 자주 갱신됩니다.** 사용 전 [OpenAI](https://platform.openai.com/docs/models) /
-> [Gemini](https://ai.google.dev/gemini-api/docs/models) / [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models) 공식 문서에서
-> 현재 사용 가능한 정확한 모델 ID를 확인하고 `LLM_MODEL`에 명시하세요. 잘못된 모델 ID는 호출이 실패하지만 mock 으로 자동 fallback 됩니다.
+> 기본 모델: openai=`gpt-4o-mini`, gemini=`gemini-2.5-flash`, claude=`claude-sonnet-4-6` (`LLM_MODEL`로 변경).
+> **모델 ID는 provider마다 자주 갱신·종료됩니다.** 특히 **Gemini 모델명은 자주 바뀌므로** 실제 사용 전 [Google AI Studio](https://aistudio.google.com/) 또는 [Gemini API 모델 문서](https://ai.google.dev/gemini-api/docs/models)에서 현재 사용 가능한 정확한 모델 ID를 확인하고 `LLM_MODEL`에 명시하세요. OpenAI/Anthropic도 마찬가지([OpenAI](https://platform.openai.com/docs/models) / [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models)).
+> 잘못된 모델 ID로 호출이 실패해도 앱은 **mock 으로 자동 fallback** 되어 정상 동작합니다.
 > 실제 호출 지점은 `backend/src/services/aiClient.service.js`의 `callOpenAI/callGemini/callClaude` 입니다.
 
 ---
@@ -175,6 +188,27 @@ LLM_TIMEOUT_MS=20000
 4. **대시보드** → 요약 지표(부정 리뷰 vs 개선 이슈 분리), 카테고리 분포 차트, 상품별 문제 TOP 10
 5. **상품 상세 리포트** → 주요 이슈 + 근거 리뷰 + 상세페이지 수정안 + CS 답글 초안, **각 이슈 “분류 수정”** 가능
 6. **다운로드** → CSV 내보내기 / 인쇄(PDF)
+
+### 5-1. 샘플 플로우 수동 검증 체크리스트
+
+브라우저에서 다음 항목을 순서대로 클릭하며 모두 정상 동작하는지 확인하세요.
+
+- [ ] 랜딩 페이지에서 **“샘플 데이터로 체험하기”** 클릭 → 자동으로 업로드 진행
+- [ ] **컬럼 매핑 화면** 진입 (스텝퍼 `① 업로드 ✓ → ② 컬럼 매핑`)
+- [ ] 자동 매핑 결과 확인 후 **“이 매핑으로 분석하기”** 클릭 → 분석 실행
+- [ ] **대시보드 진입** + 요약 카드 6개 표시 (전체/부정/개선 이슈/총 이슈/평균★/상품 수)
+- [ ] **부정 리뷰 수**와 **개선 이슈 발견 리뷰 수**가 별도 카드로 따로 표시되는지 확인
+- [ ] **카테고리별 불만 분포 차트** 표시(`기타` 제외, 막대/원형 토글)
+- [ ] **부정 리뷰가 많은 상품 TOP 10** 표시
+- [ ] **개선 이슈가 많은 상품 TOP 10** 표시(이슈 발견 리뷰 수 + 총 이슈 수)
+- [ ] 상품명 클릭 → **상품 상세 진입**
+- [ ] 상품 헤더에 이슈 지표 3종 태그(개선 이슈 리뷰/총 이슈/이슈 비율) 표시
+- [ ] **주요 이슈 TOP 5** 각 카드에 **근거 리뷰** 인용 확인
+- [ ] 각 이슈 카드의 **추천 조치(상세페이지 수정안)** 확인
+- [ ] **상세페이지 개선 체크리스트** 표시
+- [ ] **CS 답글 초안** 3종(기본/정중/친근) + 복사하기 버튼 동작
+- [ ] 이슈 카드의 **“분류 수정”** 버튼 → 카테고리/세부 이슈 변경 후 저장 → 새로고침해도 유지
+- [ ] 대시보드 **CSV 내보내기** 버튼 → 파일 다운로드(상품·이슈별 행)
 
 ---
 

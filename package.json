@@ -8,6 +8,7 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "check": "npm --prefix backend run check",
+    "check:llm": "npm --prefix backend run check:llm",
     "build:frontend": "npm --prefix frontend run build",
     "seed:xlsx": "npm --prefix backend run seed:xlsx"
   }

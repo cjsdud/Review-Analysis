@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "check": "node scripts/check.js",
+    "check:llm": "node scripts/checkLlm.js",
     "seed:xlsx": "node scripts/makeSampleXlsx.js"
   },
   "dependencies": {

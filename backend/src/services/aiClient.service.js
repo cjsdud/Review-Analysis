@@ -13,7 +13,7 @@ const KEYS = {
 };
 const DEFAULT_MODEL = {
   openai: 'gpt-4o-mini',
-  gemini: 'gemini-1.5-flash',
+  gemini: 'gemini-2.5-flash',
   claude: 'claude-sonnet-4-6',
 };
 const SUPPORTED = ['openai', 'gemini', 'claude'];
