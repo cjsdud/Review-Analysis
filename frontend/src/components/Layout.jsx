@@ -30,8 +30,8 @@ export default function Layout() {
         <NavLink to="/" className="sidebar__brand">
           <span className="sidebar__brand-logo">R</span>
           <span>
-            <div className="sidebar__brand-name">리뷰 인사이트</div>
-            <div className="sidebar__brand-sub">패션 셀러 리포트</div>
+            <div className="sidebar__brand-name">리뷰핏</div>
+            <div className="sidebar__brand-sub">패션 셀러 리뷰 리포트</div>
           </span>
         </NavLink>
 
@@ -58,7 +58,7 @@ export default function Layout() {
       <div className="main">
         <header className="topbar">
           <div className="topbar__crumbs">
-            <span>리뷰 인사이트</span>
+            <span>리뷰핏</span>
             <span className="sep">/</span>
             <span className="here">{title}</span>
           </div>

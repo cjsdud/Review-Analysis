@@ -1,0 +1,63 @@
+@use 'variables' as *;
+
+// ===== 인쇄 전용 =====
+@media print {
+  body {
+    background: #fff;
+  }
+  .sidebar,
+  .topbar,
+  .page-head__actions,
+  .back-link,
+  .segmented,
+  .issue-card__meta .btn,
+  .reply-box__copy,
+  .ops-note,
+  .upload-hint,
+  .platform-picker,
+  .uploader,
+  .sample-cta,
+  .stepper {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block;
+  }
+  .content {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .card,
+  .section-card,
+  .stat-card,
+  .product-header,
+  .issue-card,
+  .reply-box {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .section-card,
+  .issue-card,
+  .reply-box {
+    margin-bottom: 12px;
+  }
+
+  // 헤더에 브랜드명 출력 (인쇄용)
+  .product-header::before {
+    content: '리뷰핏 · 상품 리포트';
+    display: block;
+    font-size: 11px;
+    color: #6b7280;
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  // 페이지 마진
+  @page {
+    margin: 16mm 14mm;
+  }
+}

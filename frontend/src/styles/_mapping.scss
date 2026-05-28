@@ -1,0 +1,154 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 컬럼 매핑 테이블 =====
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 12px;
+    border-bottom: 1px solid $border;
+    text-align: left;
+    vertical-align: middle;
+  }
+  th {
+    color: $text-sub;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: $surface-2;
+  }
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid $border-strong;
+    border-radius: 7px;
+    font-size: 13px;
+    background: #fff;
+    &:focus-visible {
+      @include focus-ring;
+      border-color: $primary;
+    }
+  }
+
+  &__field {
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  &__desc {
+    font-size: 11px;
+    color: $text-sub;
+    margin-top: 2px;
+    line-height: 1.5;
+  }
+  &__req-badge {
+    background: $danger-soft;
+    color: $danger;
+    border-radius: $r-pill;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  &__opt-badge {
+    background: $surface-2;
+    color: $text-sub;
+    border-radius: $r-pill;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    border: 1px solid $border;
+  }
+  &__score {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: $r-pill;
+    background: $surface-2;
+    border: 1px solid $border;
+    color: $text-sub;
+    &.is-good {
+      background: $success-soft;
+      color: $success;
+      border-color: lighten($success, 35%);
+    }
+    &.is-warn {
+      background: $warning-soft;
+      color: #b45309;
+      border-color: lighten($warning, 35%);
+    }
+  }
+  &__sample {
+    color: $text-sub;
+    max-width: 260px;
+    @include truncate;
+  }
+}
+
+.mapping-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: $sp-4;
+  flex-wrap: wrap;
+  gap: $sp-3;
+
+  &__save {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: $text-sub;
+    font-size: 13px;
+    input[type='text'] {
+      padding: 6px 10px;
+      border: 1px solid $border-strong;
+      border-radius: 7px;
+      font-size: 13px;
+    }
+  }
+}
+
+.issue-edit {
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-sm;
+  padding: $sp-3;
+  margin: $sp-2 0;
+
+  &__row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: $text-sub;
+    }
+    select,
+    input {
+      padding: 8px 10px;
+      border: 1px solid $border-strong;
+      border-radius: 7px;
+      font-size: 13px;
+      background: #fff;
+      min-width: 150px;
+      &:focus-visible {
+        @include focus-ring;
+        border-color: $primary;
+      }
+    }
+  }
+}

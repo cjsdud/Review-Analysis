@@ -1,0 +1,125 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 업로드 페이지 =====
+.upload-hint {
+  @include surface;
+  margin-bottom: $sp-4;
+
+  &__title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: $sp-3;
+  }
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: $sp-3;
+  }
+  &__item {
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    padding: $sp-3 $sp-4;
+    font-size: 13px;
+    line-height: 1.55;
+
+    b {
+      display: block;
+      color: $primary-dark;
+      margin-bottom: 2px;
+    }
+  }
+  &__privacy {
+    background: $primary-soft;
+    border: 1px solid $primary-200;
+    border-radius: $r-md;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: $text-main;
+    margin-top: $sp-3;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+}
+
+.platform-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: $sp-3;
+
+  &__opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid $border;
+    background: $surface;
+    border-radius: $r-md;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all $transition;
+    color: $text-sub;
+
+    .ico {
+      font-size: 18px;
+    }
+    &:hover {
+      border-color: $primary;
+      color: $primary-dark;
+    }
+    &.is-active {
+      background: $primary-soft;
+      border-color: $primary;
+      color: $primary-dark;
+      box-shadow: 0 0 0 2px rgba($primary, 0.12);
+    }
+  }
+}
+
+.uploader {
+  border: 2px dashed $border-strong;
+  border-radius: $r-lg;
+  background: $surface;
+  padding: $sp-10 $sp-6;
+  text-align: center;
+  transition: border-color $transition, background $transition;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $primary-200;
+    background: $primary-soft;
+  }
+  &.drag {
+    border-color: $primary;
+    background: $primary-light;
+  }
+  &__icon {
+    font-size: 44px;
+    margin-bottom: $sp-3;
+  }
+  &__hint {
+    color: $text-sub;
+    font-size: 13px;
+    margin: 8px 0 $sp-5;
+  }
+  &__file {
+    margin-top: $sp-4;
+    font-size: 13px;
+    color: $primary-dark;
+    font-weight: 600;
+  }
+}
+
+.sample-cta {
+  text-align: center;
+  margin: $sp-5 0;
+
+  &__hint {
+    font-size: 13px;
+    color: $text-sub;
+    margin-bottom: $sp-2;
+  }
+}

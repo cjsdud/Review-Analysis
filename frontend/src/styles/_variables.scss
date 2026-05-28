@@ -1,0 +1,83 @@
+// 디자인 토큰 (브랜드: 리뷰핏)
+// 다른 partial 에서 `@use 'variables' as *;` 로 사용.
+
+// ===== 브랜드 컬러 =====
+$primary: #0f7fd9;
+$primary-dark: #075fa8;
+$primary-light: #e8f4ff;
+$primary-soft: #f4faff;
+$primary-200: #c6e3fb;
+
+// ===== 배경/표면 =====
+$bg: #f6f8fb;
+$card: #ffffff;
+$surface: $card;
+$surface-2: #fafbfe;
+$border: #e6eaf2;
+$border-strong: #d7dded;
+
+// ===== 텍스트 =====
+$text-main: #1f2937;
+$text-sub: #6b7280;
+$text-soft: #9ca3af;
+
+// ===== 상태색 =====
+$danger: #ef4444;
+$danger-soft: #fef2f2;
+$danger-border: #fecaca;
+$warning: #f59e0b;
+$warning-soft: #fffbeb;
+$success: #10b981;
+$success-soft: #ecfdf5;
+
+// ===== 별칭(기존 코드 호환) =====
+$brand: $primary;
+$brand-700: $primary-dark;
+$brand-600: $primary;
+$brand-200: $primary-200;
+$brand-100: $primary-light;
+$brand-50: $primary-soft;
+$brand-dark: $primary-dark;
+$brand-light: $primary-light;
+$brand-soft: $primary-soft;
+$ink-900: $text-main;
+$ink-700: #334155;
+$ink-500: $text-sub;
+$ink-400: $text-soft;
+$text: $text-main;
+$text-muted: $text-sub;
+
+// ===== 모서리 =====
+$r-sm: 8px;
+$r-md: 12px;
+$r-lg: 16px;
+$r-pill: 999px;
+$radius: $r-md;
+$radius-sm: $r-sm;
+
+// ===== 그림자 =====
+$shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+$shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+$shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+$shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.12);
+$shadow: $shadow-sm;
+
+// ===== 간격 =====
+$sp-1: 4px;
+$sp-2: 8px;
+$sp-3: 12px;
+$sp-4: 16px;
+$sp-5: 20px;
+$sp-6: 24px;
+$sp-8: 32px;
+$sp-10: 40px;
+
+// ===== 레이아웃 =====
+$sidebar-width: 248px;
+$content-max: 1200px;
+$transition: 0.15s ease;
+
+// ===== 반응형 브레이크포인트 =====
+$bp-laptop: 1024px;
+$bp-tablet: 768px;
+$bp-mobile: 480px;

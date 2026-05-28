@@ -1,4 +1,4 @@
-@use 'tokens' as *;
+@use 'variables' as *;
 @use 'mixins' as *;
 
 .app-shell {
@@ -158,6 +158,55 @@
   max-width: $content-max;
   width: 100%;
   margin: 0 auto;
+
+  @media (max-width: $bp-tablet) {
+    padding: $sp-5 $sp-4;
+  }
+}
+
+// 반응형: 모바일에서 사이드바 단순화
+@media (max-width: $bp-tablet) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    flex-direction: row;
+    align-items: center;
+    gap: $sp-3;
+    padding: $sp-3 $sp-4;
+    border-right: none;
+    border-bottom: 1px solid $border;
+    overflow-x: auto;
+
+    &__brand {
+      padding: 0;
+      flex-shrink: 0;
+    }
+    &__nav-label,
+    &__flow,
+    &__footer {
+      display: none;
+    }
+    &__link {
+      padding: 6px 10px;
+      font-size: 13px;
+      .ico {
+        display: none;
+      }
+    }
+  }
+  .topbar {
+    padding: 0 $sp-4;
+    &__crumbs {
+      font-size: 12px;
+    }
+  }
+  .page-head__title {
+    font-size: 18px;
+  }
 }
 
 // ===== 페이지 헤더 =====

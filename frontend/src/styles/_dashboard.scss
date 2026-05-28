@@ -1,0 +1,330 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 카드 / 섹션 카드 (공통 사용) =====
+.card {
+  @include surface;
+}
+
+.section-card {
+  @include surface($pad: 0);
+  overflow: hidden;
+
+  &__head {
+    @include flex-between;
+    gap: $sp-3;
+    padding: $sp-4 $sp-5;
+    border-bottom: 1px solid $border;
+  }
+  &__title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  &__sub {
+    font-size: 12px;
+    color: $text-sub;
+    margin-top: 2px;
+  }
+  &__actions {
+    display: flex;
+    gap: $sp-2;
+    align-items: center;
+  }
+  &__body {
+    padding: $sp-5;
+  }
+  &--flush &__body {
+    padding: 0;
+  }
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: $sp-5;
+  margin-bottom: $sp-5;
+
+  @media (max-width: $bp-laptop) {
+    grid-template-columns: 1fr;
+  }
+}
+
+// ===== 요약/통계 카드 =====
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: $sp-3;
+  margin-bottom: $sp-6;
+
+  @media (max-width: $bp-tablet) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  @media (max-width: $bp-mobile) {
+    grid-template-columns: 1fr;
+  }
+}
+.stat-card {
+  position: relative;
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  box-shadow: $shadow-xs;
+  padding: $sp-4 $sp-5;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: $primary;
+    opacity: 0.85;
+  }
+  &--danger::before {
+    background: $danger;
+  }
+  &--success::before {
+    background: $success;
+  }
+  &--muted::before {
+    background: $text-soft;
+  }
+
+  &__top {
+    @include flex-between;
+    gap: 8px;
+  }
+  &__label {
+    font-size: 12px;
+    color: $text-sub;
+    font-weight: 600;
+  }
+  &__icon {
+    font-size: 15px;
+    opacity: 0.85;
+  }
+  &__value {
+    font-size: 26px;
+    font-weight: 800;
+    margin-top: 6px;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  &--danger &__value {
+    color: $danger;
+  }
+  &--brand &__value {
+    color: $primary-dark;
+  }
+  &__sub {
+    font-size: 11px;
+    color: $text-soft;
+    margin-top: 2px;
+  }
+  &__desc {
+    font-size: 11px;
+    color: $text-soft;
+    margin-top: $sp-2;
+    padding-top: 8px;
+    border-top: 1px dashed $border;
+    line-height: 1.5;
+  }
+}
+
+// ===== 인사이트 배너 =====
+.ai-comment {
+  display: flex;
+  gap: $sp-3;
+  align-items: flex-start;
+  background: linear-gradient(135deg, $primary-soft, $card 70%);
+  border: 1px solid $primary-light;
+  border-radius: $r-lg;
+  padding: $sp-4 $sp-5;
+  margin-bottom: $sp-5;
+
+  &__ico {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: $primary;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+    box-shadow: 0 3px 8px rgba($primary, 0.35);
+  }
+  &__text {
+    font-size: 14px;
+    color: $text-main;
+    line-height: 1.65;
+  }
+}
+
+// ===== '이번에 먼저 고칠 상품' 강조 카드 =====
+.fix-targets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $sp-3;
+  margin-bottom: $sp-5;
+
+  @media (max-width: $bp-laptop) {
+    grid-template-columns: 1fr;
+  }
+}
+.fix-card {
+  position: relative;
+  background: linear-gradient(160deg, $primary-soft, $card 65%);
+  border: 1px solid $primary-light;
+  border-radius: $r-lg;
+  padding: $sp-4 $sp-5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform $transition, box-shadow $transition;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: $shadow-md;
+    border-color: $primary-200;
+  }
+
+  &__rank {
+    position: absolute;
+    top: $sp-4;
+    right: $sp-4;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: $primary;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 13px;
+  }
+  &__name {
+    font-size: 15px;
+    font-weight: 800;
+    padding-right: 36px;
+    color: $text-main;
+  }
+  &__metrics {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    color: $text-sub;
+    b {
+      color: $text-main;
+      font-weight: 700;
+    }
+  }
+  &__issues {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 4px;
+
+    li {
+      font-size: 13px;
+      color: $text-main;
+      padding-left: 12px;
+      position: relative;
+      &::before {
+        content: '•';
+        position: absolute;
+        left: 0;
+        color: $primary;
+        font-weight: 800;
+      }
+    }
+  }
+  &__cta {
+    margin-top: auto;
+    align-self: flex-start;
+  }
+}
+
+// ===== 데이터 테이블 (상품 랭킹) =====
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 11px 10px;
+    border-bottom: 1px solid $border;
+    text-align: left;
+  }
+  th {
+    color: $text-sub;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tbody tr {
+    cursor: pointer;
+    transition: background $transition;
+    &:hover {
+      background: $primary-soft;
+    }
+    &:last-child td {
+      border-bottom: none;
+    }
+  }
+  .rank {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: $surface-2;
+    border: 1px solid $border;
+    color: $text-sub;
+    font-weight: 700;
+    font-size: 11px;
+    display: inline-grid;
+    place-items: center;
+  }
+  tbody tr:nth-child(1) .rank {
+    background: $primary;
+    color: #fff;
+    border-color: $primary;
+  }
+  tbody tr:nth-child(2) .rank,
+  tbody tr:nth-child(3) .rank {
+    background: $primary-light;
+    color: $primary-dark;
+    border-color: $primary-light;
+  }
+
+  &__bar-track {
+    background: #eef2f7;
+    border-radius: 4px;
+    width: 90px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+    height: 6px;
+  }
+  &__bar {
+    height: 6px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, $primary-200, $primary);
+    display: inline-block;
+    vertical-align: middle;
+  }
+  &__top-issue {
+    font-size: 12px;
+    color: $text-sub;
+    max-width: 220px;
+    @include truncate;
+  }
+}
+
+// 가로 스크롤 허용 (테이블 셀이 많을 때 모바일 대응)
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

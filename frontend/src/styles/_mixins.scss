@@ -1,4 +1,4 @@
-@use 'tokens' as *;
+@use 'variables' as *;
 
 // 표면 카드 기본
 @mixin surface($pad: $sp-5) {

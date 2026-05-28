@@ -1,0 +1,216 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 상품 상세 헤더 =====
+.product-header {
+  @include surface;
+  margin-bottom: $sp-5;
+
+  &__title {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 6px;
+    letter-spacing: -0.02em;
+  }
+  &__lede {
+    font-size: 13px;
+    color: $text-sub;
+    margin-bottom: $sp-3;
+  }
+  &__stats {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}
+
+// ===== 이슈 카드 =====
+.issue-card {
+  position: relative;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-4 $sp-5;
+  margin-bottom: $sp-3;
+  background: $card;
+  border-left: 4px solid $border-strong;
+  transition: box-shadow $transition;
+
+  &:hover {
+    box-shadow: $shadow-sm;
+  }
+  &.is-high {
+    border-left-color: $danger;
+  }
+  &.is-mid {
+    border-left-color: $warning;
+  }
+  &.is-low {
+    border-left-color: $primary;
+  }
+
+  &__head {
+    @include flex-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  &__label {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  &__meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  &__action {
+    background: $primary-soft;
+    border-left: 3px solid $primary;
+    padding: 10px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    margin-top: 10px;
+    color: $text-main;
+  }
+  &__evi-label {
+    font-size: 12px;
+    color: $text-sub;
+    margin: 6px 0 4px;
+    font-weight: 600;
+  }
+}
+
+// ===== 근거 리뷰 인용 카드 =====
+.evidence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+
+  li {
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: 8px;
+    padding: 10px 12px 10px 30px;
+    font-size: 13px;
+    color: $text-main;
+    position: relative;
+    line-height: 1.55;
+
+    &::before {
+      content: '“';
+      position: absolute;
+      left: 10px;
+      top: 4px;
+      color: $primary;
+      font-weight: 800;
+      font-size: 20px;
+    }
+  }
+}
+
+// ===== 답글 템플릿 =====
+.reply-box {
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-4;
+  margin-bottom: $sp-3;
+  background: $card;
+
+  &__title {
+    font-weight: 700;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  &__head {
+    @include flex-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  &__text {
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    color: $text-main;
+  }
+  &__copy {
+    margin-top: 10px;
+  }
+}
+
+// ===== 체크리스트 (체크박스 UI) =====
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px dashed $border;
+    font-size: 13px;
+    color: $text-main;
+    cursor: pointer;
+    user-select: none;
+
+    &:first-child {
+      padding-top: 0;
+    }
+    &:last-child {
+      border-bottom: none;
+    }
+    &.is-checked {
+      color: $text-sub;
+      text-decoration: line-through;
+    }
+  }
+  &__box {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: $card;
+    border: 1.5px solid $border-strong;
+    display: grid;
+    place-items: center;
+    color: transparent;
+    font-weight: 800;
+    font-size: 12px;
+    transition: all $transition;
+
+    .is-checked & {
+      background: $success;
+      border-color: $success;
+      color: #fff;
+    }
+  }
+}
+
+// ===== 운영 메모 =====
+.ops-note {
+  background: $warning-soft;
+  border: 1px solid lighten($warning, 35%);
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.6;
+  margin-top: $sp-4;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+
+  &__ico {
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+}

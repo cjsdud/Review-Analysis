@@ -72,16 +72,16 @@ export default function ColumnMappingPage() {
   return (
     <div>
       <PageHeader
-        title="컬럼 매핑 확인"
-        subtitle={`${upload.originalName} · 총 ${upload.rowCount}개 행을 읽었습니다. 자동 매핑 결과를 확인하고 필요하면 수정하세요.`}
+        title="리뷰 파일의 컬럼을 확인해주세요"
+        subtitle={`${upload.originalName} · 총 ${upload.rowCount}개 리뷰를 읽었습니다.`}
       />
       <Stepper current={2} />
 
       {error && <div className="error-banner">{error}</div>}
 
       <SectionCard
-        title="컬럼이 올바르게 인식됐는지 확인하세요"
-        subtitle="* 표시는 필수 항목입니다. 매칭 신뢰도가 낮으면 직접 골라주세요."
+        title="자동으로 컬럼을 추정했어요"
+        subtitle="틀린 항목이 있으면 직접 바꿔주세요. '필수' 표시 항목은 반드시 선택해야 합니다."
       >
         <ColumnMappingTable
           fields={upload.fields}
@@ -92,26 +92,16 @@ export default function ColumnMappingPage() {
           onChange={handleChange}
         />
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginTop: 18,
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <label className="muted" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+        <div className="mapping-footer">
+          <label className="mapping-footer__save">
             <input type="checkbox" checked={saveTemplate} onChange={(e) => setSaveTemplate(e.target.checked)} />
-            이 매핑을 템플릿으로 저장
+            이 매핑을 다음에도 쓰게 저장
             {saveTemplate && (
               <input
                 type="text"
                 placeholder="템플릿 이름 (예: 스마트스토어 기본)"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                style={{ padding: '6px 10px', border: '1px solid #d7dded', borderRadius: 7, fontSize: 13 }}
               />
             )}
           </label>
@@ -120,7 +110,7 @@ export default function ColumnMappingPage() {
               다시 업로드
             </button>
             <button className="btn btn--primary" onClick={handleConfirm}>
-              이 매핑으로 분석하기 →
+              이대로 분석하기 →
             </button>
           </div>
         </div>

@@ -12,6 +12,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [checkedIdx, setCheckedIdx] = useState(() => new Set());
 
   useEffect(() => {
     (async () => {
@@ -26,60 +27,90 @@ export default function ProductDetailPage() {
     })();
   }, [analysisId, productKey]);
 
-  if (loading) return <LoadingState title="상품 리포트를 불러오는 중..." />;
-  if (error) return <div className="error-banner">{error}</div>;
+  function toggleCheck(i) {
+    setCheckedIdx((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
+  if (error)
+    return (
+      <div>
+        <div className="error-banner">리포트를 불러오는 중 문제가 생겼어요: {error}</div>
+        <button className="btn btn--ghost btn--sm" onClick={() => navigate(`/dashboard/${analysisId}`)}>
+          ← 대시보드로 돌아가기
+        </button>
+      </div>
+    );
   if (!product) return null;
 
-  const negRatio = product.totalReviews ? Math.round((product.negativeReviews / product.totalReviews) * 100) : 0;
+  const negPct = product.totalReviews ? Math.round((product.negativeReviews / product.totalReviews) * 100) : 0;
+  const issuePct = Math.round((product.issueRatio ?? 0) * 100);
+
+  // 한 줄 요약: 상품별 운영 코멘트의 첫 문장 또는 자동 생성
+  const lede =
+    product.summary ||
+    `리뷰 ${product.totalReviews}건 중 ${product.issueReviewCount ?? 0}건에서 개선 이슈가 발견됐습니다.`;
 
   return (
     <div>
-      <span className="back-link" onClick={() => navigate(`/dashboard/${analysisId}`)} style={{ cursor: 'pointer' }}>
+      <span
+        className="back-link"
+        onClick={() => navigate(`/dashboard/${analysisId}`)}
+        style={{ cursor: 'pointer' }}
+      >
         ← 대시보드로 돌아가기
       </span>
 
+      {/* 상단 헤더 */}
       <div className="product-header">
-        <div>
-          <div className="product-header__title">{product.productName}</div>
-          <div className="page-actions" style={{ marginTop: 8 }}>
-            <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
-            <span className="tag tag--danger">부정 리뷰 {product.negativeReviews}건 ({negRatio}%)</span>
-            <span className="tag">개선 이슈 리뷰 {product.issueReviewCount ?? 0}건</span>
-            <span className="tag">총 이슈 {product.totalIssueCount ?? 0}건</span>
-            <span className="tag">이슈 비율 {Math.round((product.issueRatio ?? 0) * 100)}%</span>
-            {product.averageRating != null && <span className="tag">평균 ★ {product.averageRating.toFixed(2)}</span>}
-          </div>
+        <div className="product-header__title">{product.productName}</div>
+        <div className="product-header__lede">{lede}</div>
+        <div className="product-header__stats">
+          <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
+          <span className="tag tag--danger">부정 리뷰 {product.negativeReviews}건 · {negPct}%</span>
+          <span className="tag">개선 이슈 리뷰 {product.issueReviewCount ?? 0}건</span>
+          <span className="tag">총 이슈 {product.totalIssueCount ?? 0}건</span>
+          <span className="tag">이슈 비율 {issuePct}%</span>
+          {product.averageRating != null && <span className="tag">평균 ★ {product.averageRating.toFixed(2)}</span>}
         </div>
       </div>
 
-      {product.summary && (
-        <div className="ai-comment">
-          <span className="ai-comment__ico">📌</span>
-          <div className="ai-comment__text">{product.summary}</div>
-        </div>
-      )}
-
-      {/* 주요 이슈 */}
+      {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard
-        title={`주요 이슈 TOP ${Math.min(product.topIssues.length, 5)}`}
-        subtitle="각 카드에서 분류를 직접 수정할 수 있습니다."
+        title="이 상품의 핵심 문제"
+        subtitle="가장 많이 반복된 불만부터 정리했어요. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
         className="mb-5"
       >
-        {product.topIssues.length === 0 && <div className="muted">두드러진 반복 불만이 발견되지 않았습니다. 👍</div>}
-        {product.topIssues.map((iss, i) => (
-          <IssueCard key={i} issue={iss} analysisId={analysisId} productKey={productKey} />
-        ))}
+        {product.topIssues.length === 0 ? (
+          <div className="muted">두드러진 반복 불만이 발견되지 않았습니다. 👍 긍정 리뷰를 상세페이지에 노출해 보세요.</div>
+        ) : (
+          product.topIssues.map((iss, i) => (
+            <IssueCard key={i} issue={iss} analysisId={analysisId} productKey={productKey} />
+          ))
+        )}
       </SectionCard>
 
       <div className="dash-grid">
-        <SectionCard title="상세페이지 개선 체크리스트">
+        {/* 섹션 2: 상세페이지 수정 체크리스트 */}
+        <SectionCard title="상세페이지 수정 체크리스트" subtitle="고치기 좋은 순서로 정리했어요. 체크하며 진행하세요.">
           {product.detailPageActions.length === 0 ? (
-            <div className="muted">제안할 개선 액션이 없습니다.</div>
+            <div className="muted">아직 제안할 수정안이 없어요.</div>
           ) : (
             <ul className="checklist">
               {product.detailPageActions.map((a, i) => (
-                <li key={i}>
-                  <span className="checklist__check">✓</span>
+                <li
+                  key={i}
+                  className={checkedIdx.has(i) ? 'is-checked' : ''}
+                  onClick={() => toggleCheck(i)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span className="checklist__box">✓</span>
                   <span>{a}</span>
                 </li>
               ))}
@@ -87,15 +118,25 @@ export default function ProductDetailPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="CS 답글 초안">
+        {/* 섹션 3: CS 답글 초안 */}
+        <SectionCard title="CS 답글 초안" subtitle="복사해서 바로 사용할 수 있어요. 말투(기본/정중/친근)는 카드별로 고를 수 있습니다.">
           {product.replyTemplates.length === 0 ? (
-            <div className="muted">답글 초안이 없습니다.</div>
+            <div className="muted">답글 초안이 없어요.</div>
           ) : (
             product.replyTemplates.map((rt, i) => (
               <ReplyTemplateBox key={i} issueLabel={rt.issueLabel} variants={rt.variants} />
             ))
           )}
         </SectionCard>
+      </div>
+
+      {/* 섹션 4: 운영 메모 */}
+      <div className="ops-note">
+        <span className="ops-note__ico">ℹ️</span>
+        <div>
+          리뷰핏의 제안은 고객 리뷰에서 반복되는 표현을 기반으로 생성됩니다. 실제 상세페이지 수정 전에는 상품 특성과
+          재고·배송 상황을 함께 확인하세요.
+        </div>
       </div>
     </div>
   );

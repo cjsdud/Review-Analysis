@@ -4,9 +4,9 @@ import { FASHION_CATEGORIES } from '../constants.js';
 import { saveCorrection } from '../api/analysisApi.js';
 
 function SourceTag({ source }) {
-  if (source === 'user') return <span className="tag tag--success">수정됨</span>;
-  if (source === 'llm') return <span className="tag">AI 생성</span>;
-  if (source === 'rule') return <span className="tag tag--neutral">규칙 기반</span>;
+  if (source === 'user') return <span className="tag tag--success">직접 수정함</span>;
+  if (source === 'llm') return <span className="tag">자동 추천 라벨</span>;
+  if (source === 'rule') return <span className="tag tag--neutral">자동 인식</span>;
   return <span className="tag tag--neutral">자동 묶음</span>;
 }
 
@@ -114,10 +114,8 @@ export default function IssueCard({ issue, analysisId, productKey }) {
         </div>
       )}
 
-      <div className="muted" style={{ fontSize: 12, margin: '6px 0 4px' }}>
-        근거 리뷰
-      </div>
-      <EvidenceReviewList reviews={issue.evidenceReviews} />
+      <div className="issue-card__evi-label">근거 리뷰 (실제 고객 코멘트)</div>
+      <EvidenceReviewList reviews={(issue.evidenceReviews || []).slice(0, 3)} />
 
       {issue.recommendedAction && (
         <div className="issue-card__action">
