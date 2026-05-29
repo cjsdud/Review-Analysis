@@ -174,7 +174,14 @@ LLM_TIMEOUT_MS=20000
 > **AI 연결 상태**: 실제 LLM 연결이 구현되어 있습니다. `LLM_PROVIDER`로 **openai / gemini / claude** 중 하나를 고르고 해당 키를 넣으면 실제 호출하며,
 > 키가 없거나 호출/JSON 파싱이 실패하면 **자동으로 mock 으로 fallback** 합니다(앱은 항상 동작).
 > 기본 모델: openai=`gpt-4o-mini`, gemini=`gemini-2.5-flash`, claude=`claude-sonnet-4-6` (`LLM_MODEL`로 변경).
-> **모델 ID는 provider마다 자주 갱신·종료됩니다.** 특히 **Gemini 모델명은 자주 바뀌므로** 실제 사용 전 [Google AI Studio](https://aistudio.google.com/) 또는 [Gemini API 모델 문서](https://ai.google.dev/gemini-api/docs/models)에서 현재 사용 가능한 정확한 모델 ID를 확인하고 `LLM_MODEL`에 명시하세요. OpenAI/Anthropic도 마찬가지([OpenAI](https://platform.openai.com/docs/models) / [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models)).
+> **모델 ID는 provider마다 자주 갱신·종료됩니다.**
+> 특히 **Gemini 모델명은 자주 바뀌므로** 실제 사용 전
+> [Google AI Studio](https://aistudio.google.com/) 또는
+> [Gemini API 모델 문서](https://ai.google.dev/gemini-api/docs/models)에서
+> 현재 사용 가능한 정확한 모델 ID를 확인하고 `LLM_MODEL`에 명시하세요.
+> OpenAI/Anthropic도 마찬가지
+> ([OpenAI](https://platform.openai.com/docs/models) /
+> [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models)).
 > 잘못된 모델 ID로 호출이 실패해도 앱은 **mock 으로 자동 fallback** 되어 정상 동작합니다.
 > 실제 호출 지점은 `backend/src/services/aiClient.service.js`의 `callOpenAI/callGemini/callClaude` 입니다.
 
@@ -239,7 +246,9 @@ LLM_TIMEOUT_MS=20000
 - **업로드 파일 원본(바이너리)은 디스크에 저장하지 않습니다**(multer memoryStorage로 메모리에서만 파싱).
 - **파싱된 rows도 DB 저장 전에 `maskRows`로 마스킹**한 뒤에만 `upload_files.rows`(JSON)에 저장합니다. 컬럼 매핑 미리보기(sampleRows)와 자동 매핑도 마스킹된 값 기준입니다.
 - 마스킹 항목: 전화번호 `[전화번호]`, 이메일 `[이메일]`, 10자리 이상 숫자 `[주문번호]`, 주소 `[주소]`. 작성자명은 첫 글자만 남김.
-- **분석 완료 후 `upload_files.rows`는 `NULL`로 비웁니다**(정규화된 `reviews`만 유지). 또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`). → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
+- **분석 완료 후 `upload_files.rows`는 `NULL`로 비웁니다**(정규화된 `reviews`만 유지).
+  또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`).
+  → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
 - **AI 기본 동작은 mock**입니다(`LLM_PROVIDER=mock`이 기본값). 실제 OpenAI/Gemini/Claude 연동 코드는 포함되어 있으나 키를 설정해야 활성화되며, 키가 없거나 실패하면 mock으로 동작합니다.
 
 ### 하이브리드 분석 (`reviewClassification` + `issueDetection` + `productAnalysis`)
@@ -308,7 +317,11 @@ LLM_TIMEOUT_MS=20000
 | 가방 | 숄더백 |
 | 원피스 | 여름 원피스 |
 
-다양한 케이스 포함: 사이즈/핏/색상/소재/마감 불량/세탁 변형/배송 지연/포장 구김/가성비/핏 예쁨/재구매/보풀/냄새/발볼/쿠션감/뒤꿈치/수납·끈 마감 등. 일부 상품은 부정 리뷰가 많고 일부는 긍정 리뷰가 많도록 의도적으로 불균등하게 구성했으며, **개인정보 마스킹 테스트용 전화번호·이메일·주문번호**도 포함되어 있습니다.
+다양한 케이스 포함: 사이즈 / 핏 / 색상 / 소재 / 마감 불량 / 세탁 변형 / 배송 지연 /
+포장 구김 / 가성비 / 핏 예쁨 / 재구매 / 보풀 / 냄새 / 발볼 / 쿠션감 / 뒤꿈치 / 수납·끈 마감 등.
+
+일부 상품은 부정 리뷰가 많고 일부는 긍정 리뷰가 많도록 의도적으로 불균등하게 구성했으며,
+**개인정보 마스킹 테스트용 전화번호·이메일·주문번호**도 포함되어 있습니다.
 
 ---
 
