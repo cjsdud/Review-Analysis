@@ -25,6 +25,129 @@ await step('fileParser', async () => {
   const m = await import('../src/services/fileParser.service.js');
   const out = m.parseFile(Buffer.from('상품명,리뷰내용\n티셔츠,너무 작아요\n'), 'x.csv');
   assert.equal(out.rows.length, 1, 'CSV 파싱 실패');
+  assert.deepEqual(out.sheets, [], 'CSV 는 sheets 배열이 비어 있어야 함');
+  assert.equal(out.selectedSheetName, null, 'CSV 는 selectedSheetName 이 null');
+});
+
+// XLSX 멀티 시트 / 헤더 행 자동 감지 테스트
+async function buildXlsxBuffer(sheetSpecs) {
+  const { default: xlsx } = await import('xlsx');
+  const wb = xlsx.utils.book_new();
+  for (const spec of sheetSpecs) {
+    const ws = xlsx.utils.aoa_to_sheet(spec.aoa);
+    xlsx.utils.book_append_sheet(wb, ws, spec.name);
+  }
+  return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+await step('XLSX #1 — "리뷰데이터" 시트 자동 추천 (첫 시트일 때)', async () => {
+  const m = await import('../src/services/fileParser.service.js');
+  const buf = await buildXlsxBuffer([
+    {
+      name: '리뷰데이터',
+      aoa: [
+        ['상품명', '옵션', '별점', '리뷰내용', '작성일'],
+        ['셔츠', 'M', 5, '핏이 예뻐요', '2026-01-01'],
+        ['셔츠', 'L', 3, '허리가 살짝 타이트해요', '2026-01-02'],
+      ],
+    },
+    { name: '요약', aoa: [['지표', '값'], ['총합', 2]] },
+    { name: 'README', aoa: [['이 파일은 샘플입니다']] },
+  ]);
+  const out = m.parseFile(buf, 'demo.xlsx');
+  assert.equal(out.selectedSheetName, '리뷰데이터', `자동 추천 실패: ${out.selectedSheetName}`);
+  assert(out.sheets.length === 3, `sheets 개수: ${out.sheets.length}`);
+  assert(out.headers.includes('상품명') && out.headers.includes('리뷰내용'), '헤더 인식 실패');
+  assert.equal(out.rows.length, 2, 'rows 개수 불일치');
+});
+
+await step('XLSX #2 — 첫 시트가 README 여도 "리뷰데이터" 추천', async () => {
+  const m = await import('../src/services/fileParser.service.js');
+  const buf = await buildXlsxBuffer([
+    { name: 'README', aoa: [['리뷰핏 샘플 데이터'], ['아래 데이터는 테스트용']] },
+    {
+      name: '리뷰데이터',
+      aoa: [
+        ['상품명', '옵션', '별점', '리뷰내용', '작성일'],
+        ['셔츠', 'M', 5, '좋아요', '2026-01-01'],
+        ['바지', 'L', 3, '허리가 좀 작아요', '2026-01-02'],
+        ['셔츠', 'L', 4, '핏이 깔끔', '2026-01-03'],
+      ],
+    },
+    { name: '요약', aoa: [['항목', '값'], ['합계', 3]] },
+  ]);
+  const out = m.parseFile(buf, 'demo.xlsx');
+  assert.equal(out.selectedSheetName, '리뷰데이터', `자동 추천 실패: ${out.selectedSheetName}`);
+  assert(out.rows.length === 3, 'rows 개수 불일치');
+});
+
+await step('XLSX #3 — 상단 2행 안내문, 3행이 헤더 (headerRowIndex=2)', async () => {
+  const m = await import('../src/services/fileParser.service.js');
+  const buf = await buildXlsxBuffer([
+    {
+      name: '리뷰',
+      aoa: [
+        ['리뷰핏 샘플 데이터'],
+        ['아래 데이터는 테스트용입니다'],
+        ['상품명', '옵션명', '별점', '리뷰내용', '작성일'],
+        ['셔츠', 'M', 5, '핏이 예뻐요. 만족합니다.', '2026-01-01'],
+        ['셔츠', 'L', 3, '허리가 작아서 불편합니다. 한 사이즈 크게 사세요.', '2026-01-02'],
+      ],
+    },
+  ]);
+  const out = m.parseFile(buf, 'demo.xlsx');
+  const sheet = out.sheets[0];
+  assert.equal(sheet.detectedHeaderRowIndex, 2, `headerRowIndex=2 기대, 실제 ${sheet.detectedHeaderRowIndex}`);
+  assert.deepEqual(out.headers, ['상품명', '옵션명', '별점', '리뷰내용', '작성일'], '헤더 불일치');
+  // 안내문 셀이 headers 에 포함되면 안 됨
+  assert(!out.headers.includes('리뷰핏 샘플 데이터'), '안내문이 headers 에 들어감');
+  assert(!out.headers.includes('아래 데이터는 테스트용입니다'), '안내문이 headers 에 들어감');
+  // 데이터는 4행부터(2행 헤더 다음)
+  assert.equal(out.rows.length, 2, 'rows 개수 불일치');
+});
+
+await step('XLSX #4 — 컬럼 매핑 후보에 제목/안내문이 들어가지 않음', async () => {
+  const fp = await import('../src/services/fileParser.service.js');
+  const cm = await import('../src/services/columnMapping.service.js');
+  const buf = await buildXlsxBuffer([
+    {
+      name: '리뷰데이터',
+      aoa: [
+        ['리뷰핏 샘플 데이터'],
+        ['상품명', '옵션', '별점', '리뷰내용'],
+        ['셔츠', 'M', 5, '좋아요'],
+      ],
+    },
+  ]);
+  const out = fp.parseFile(buf, 'demo.xlsx');
+  const mapping = cm.autoMapColumns(out.headers, out.rows);
+  // 매핑 후보의 컬럼명 값은 모두 headers 안에 있어야 한다
+  for (const [field, info] of Object.entries(mapping)) {
+    if (info.column) {
+      assert(out.headers.includes(info.column),
+        `${field} 매핑이 headers 밖의 값: ${info.column}`);
+    }
+  }
+  // 절대 들어가지 않아야 할 값
+  assert(!out.headers.includes('리뷰핏 샘플 데이터'), '안내문이 headers 에 포함됨');
+  // 데이터 행 셀도 헤더 옵션에 들어가면 안 됨
+  assert(!out.headers.includes('좋아요'), '데이터 셀이 headers 에 포함됨');
+});
+
+await step('XLSX reparse — rowsFromMatrix 로 headerRowIndex 변경 시 다른 헤더 추출', async () => {
+  const m = await import('../src/services/fileParser.service.js');
+  const matrix = [
+    ['안내문 1줄'],
+    ['상품명', '리뷰내용'],
+    ['A', '잘 맞아요'],
+    ['B', '좀 작아요'],
+  ];
+  const r1 = m.rowsFromMatrix(matrix, 1);
+  assert.deepEqual(r1.headers, ['상품명', '리뷰내용'], 'headerRowIndex=1 헤더 불일치');
+  assert.equal(r1.rows.length, 2, 'rows 개수 불일치');
+  const r0 = m.rowsFromMatrix(matrix, 0);
+  assert.equal(r0.headers.length, 1, 'headerRowIndex=0 시 단일 헤더');
+  assert.equal(r0.headers[0], '안내문 1줄');
 });
 
 await step('columnMapping', async () => {

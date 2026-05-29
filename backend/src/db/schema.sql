@@ -15,8 +15,13 @@ CREATE TABLE IF NOT EXISTS upload_files (
   source TEXT DEFAULT 'custom',
   row_count INTEGER DEFAULT 0,
   headers TEXT,            -- JSON 배열
-  rows TEXT,              -- JSON 배열 (파싱 결과, 임시 보관)
+  rows TEXT,              -- JSON 배열 (파싱 결과, 임시 보관, 마스킹 후)
   mapping_suggestion TEXT, -- JSON: 자동 매핑 후보
+  -- XLSX 멀티 시트 / 헤더 행 선택 지원
+  selected_sheet_name TEXT,
+  selected_header_row_index INTEGER DEFAULT 0,
+  sheet_metas TEXT,        -- JSON: SheetMeta[]
+  sheet_parse_results TEXT, -- JSON: { [sheetName]: { headers, rows, matrix, detectedHeaderRowIndex } } (모두 마스킹 후)
   created_at TEXT DEFAULT (datetime('now'))
 );
 

@@ -36,6 +36,14 @@ export function maskRows(rows) {
   return Array.isArray(rows) ? rows.map(maskRow) : [];
 }
 
+// 2차원 셀 배열(matrix) 의 모든 string 셀에 maskText 적용
+export function maskMatrix(matrix) {
+  if (!Array.isArray(matrix)) return [];
+  return matrix.map((row) =>
+    Array.isArray(row) ? row.map((c) => (typeof c === 'string' ? maskText(c) : c)) : row,
+  );
+}
+
 // 작성자명: 분석에 불필요하므로 첫 글자만 남기고 마스킹
 export function maskWriter(name) {
   const s = (name == null ? '' : String(name)).trim();

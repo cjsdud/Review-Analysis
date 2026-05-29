@@ -5,7 +5,8 @@ import LoadingState from '../components/LoadingState.jsx';
 import Stepper from '../components/Stepper.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
-import { getUpload, saveMapping } from '../api/uploadApi.js';
+import SheetSelector from '../components/SheetSelector.jsx';
+import { getUpload, saveMapping, reparseUpload } from '../api/uploadApi.js';
 import { runAnalysis } from '../api/analysisApi.js';
 
 export default function ColumnMappingPage() {
@@ -16,20 +17,25 @@ export default function ColumnMappingPage() {
   const [mapping, setMapping] = useState({});
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [reparsing, setReparsing] = useState(false);
   const [error, setError] = useState('');
   const [saveTemplate, setSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
+
+  function applyUpload(data) {
+    setUpload(data);
+    const initial = {};
+    for (const field of data.fields) {
+      initial[field] = data.mappingSuggestion?.[field]?.column || '';
+    }
+    setMapping(initial);
+  }
 
   useEffect(() => {
     (async () => {
       try {
         const data = await getUpload(uploadId);
-        setUpload(data);
-        const initial = {};
-        for (const field of data.fields) {
-          initial[field] = data.mappingSuggestion?.[field]?.column || '';
-        }
-        setMapping(initial);
+        applyUpload(data);
       } catch (e) {
         setError(e.message);
       } finally {
@@ -37,6 +43,34 @@ export default function ColumnMappingPage() {
       }
     })();
   }, [uploadId]);
+
+  async function handleSheetChange(sheetName) {
+    if (!sheetName || sheetName === upload.selectedSheetName) return;
+    setReparsing(true);
+    setError('');
+    try {
+      const data = await reparseUpload(uploadId, { sheetName });
+      applyUpload(data);
+    } catch (e) {
+      setError(`시트 변경 실패: ${e.message}`);
+    } finally {
+      setReparsing(false);
+    }
+  }
+
+  async function handleHeaderRowChange(headerRowIndex) {
+    if (headerRowIndex === upload.selectedHeaderRowIndex) return;
+    setReparsing(true);
+    setError('');
+    try {
+      const data = await reparseUpload(uploadId, { headerRowIndex });
+      applyUpload(data);
+    } catch (e) {
+      setError(`헤더 행 변경 실패: ${e.message}`);
+    } finally {
+      setReparsing(false);
+    }
+  }
 
   function handleChange(field, value) {
     setMapping((prev) => ({ ...prev, [field]: value }));
@@ -69,6 +103,8 @@ export default function ColumnMappingPage() {
       />
     );
 
+  const hasMultipleSheets = (upload.sheets || []).length >= 2;
+
   return (
     <div>
       <PageHeader
@@ -79,18 +115,45 @@ export default function ColumnMappingPage() {
 
       {error && <div className="error-banner">{error}</div>}
 
+      {hasMultipleSheets && (
+        <SectionCard
+          title="엑셀 파일의 시트 선택"
+          subtitle="엑셀 파일에 여러 시트가 있습니다. 리뷰 데이터가 들어 있는 시트를 선택해주세요."
+        >
+          <SheetSelector
+            sheets={upload.sheets}
+            selectedSheetName={upload.selectedSheetName}
+            selectedHeaderRowIndex={upload.selectedHeaderRowIndex}
+            disabled={reparsing}
+            onSheetChange={handleSheetChange}
+            onHeaderRowChange={handleHeaderRowChange}
+          />
+          <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+            컬럼명이 실제와 다르면 ‘컬럼명으로 사용할 행’을 바꿔주세요.
+          </p>
+        </SectionCard>
+      )}
+
       <SectionCard
         title="자동으로 컬럼을 추정했어요"
-        subtitle="틀린 항목이 있으면 직접 바꿔주세요. '필수' 표시 항목은 반드시 선택해야 합니다."
+        subtitle={
+          hasMultipleSheets
+            ? '자동으로 리뷰 데이터 시트와 컬럼명 행을 추정했습니다. 다른 시트에 리뷰가 있다면 위에서 변경할 수 있습니다.'
+            : "틀린 항목이 있으면 직접 바꿔주세요. '필수' 표시 항목은 반드시 선택해야 합니다."
+        }
       >
-        <ColumnMappingTable
-          fields={upload.fields}
-          headers={upload.headers}
-          mapping={mapping}
-          suggestion={upload.mappingSuggestion}
-          sampleRows={upload.sampleRows}
-          onChange={handleChange}
-        />
+        {reparsing ? (
+          <LoadingState title="시트를 다시 읽는 중..." />
+        ) : (
+          <ColumnMappingTable
+            fields={upload.fields}
+            headers={upload.headers}
+            mapping={mapping}
+            suggestion={upload.mappingSuggestion}
+            sampleRows={upload.sampleRows}
+            onChange={handleChange}
+          />
+        )}
 
         <div className="mapping-footer">
           <label className="mapping-footer__save">
@@ -109,7 +172,7 @@ export default function ColumnMappingPage() {
             <button className="btn btn--ghost" onClick={() => navigate('/upload')}>
               다시 업로드
             </button>
-            <button className="btn btn--primary" onClick={handleConfirm}>
+            <button className="btn btn--primary" onClick={handleConfirm} disabled={reparsing}>
               이대로 분석하기 →
             </button>
           </div>

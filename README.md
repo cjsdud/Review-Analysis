@@ -410,6 +410,39 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 
 ---
 
+## 8-A. XLSX 멀티 시트 / 헤더 행 자동 감지
+
+업로드된 엑셀 파일은 다음과 같이 처리됩니다.
+
+- **모든 시트를 읽는다.** workbook.SheetNames 전체를 순회하고 각 시트의
+  `rowCount`, `columnCount`, `detectedHeaderRowIndex`, `score`, `reason` 을 계산합니다.
+- **리뷰 데이터 시트를 자동 추천한다.**
+  - 시트명에 `리뷰`, `후기`, `상품평`, `데이터`, `review` 가 들어가면 가산점.
+  - 헤더 후보 행에 `상품명`, `리뷰내용`, `별점`, `작성일` 같은 컬럼명이 많을수록 가산점.
+  - `README`, `요약`, `summary`, `설명`, `guide` 같은 시트명은 감점.
+  - 행/컬럼 수가 너무 적으면 감점. 점수가 가장 높은 시트가 `selectedSheetName`.
+- **헤더 행을 자동 감지한다.** 상위 20행 안에서 다음 기준으로 점수화합니다.
+  - 컬럼명 후보 매칭 수
+  - 다음 행이 별점(1~5) / 날짜 / 긴 텍스트 같은 데이터 패턴인지
+  - "리뷰핏 샘플", "아래 데이터는…", "README" 같은 안내문 패턴은 감점.
+  - 비어 있지 않은 셀이 3개 이상이면 가산점.
+- **사용자가 시트와 헤더 행을 직접 바꿀 수 있다.** 컬럼 매핑 화면 상단에서
+  다른 시트 카드를 클릭하거나 "컬럼명으로 사용할 행" 셀렉트를 변경하면
+  `POST /api/uploads/:id/reparse` 가 호출되어 headers/sampleRows/mappingSuggestion
+  이 즉시 갱신됩니다.
+- **첫 행에 안내문이 있어도 실제 컬럼명 행이 선택된다.** 헤더 자동 감지가
+  안내문 행을 건너뛰며, 사용자가 직접 헤더 행을 1~20행 중에서 고를 수도 있습니다.
+- 컬럼 매핑 select 옵션에는 헤더만 들어가고, 데이터 셀이나 타이틀 문구는 들어가지 않습니다.
+
+### 데이터 저장과 PII 마스킹
+
+- 업로드 시 모든 시트의 `matrix`/`rows` 는 `maskRows` / `maskMatrix` 로 마스킹된 뒤
+  `upload_files.sheet_parse_results` (JSON) 에 저장됩니다.
+- 사용자가 시트를 바꿀 때 backend 는 저장된 (마스킹된) matrix 로 재파싱합니다.
+- TTL(`UPLOAD_ROWS_TTL_MIN`, 기본 60분) 경과 시 `rows` / `sheet_parse_results` 가 NULL 로 비워집니다.
+
+---
+
 ## 8-1. 분류 품질 개선 기준
 
 `backend/src/services/reviewClassification.service.js` + `fashionLexicon.js` 에서

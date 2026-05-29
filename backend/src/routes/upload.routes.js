@@ -6,24 +6,45 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from '../db/database.js';
-import { parseFile } from '../services/fileParser.service.js';
+import { parseFile, rowsFromMatrix } from '../services/fileParser.service.js';
 import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid } from '../services/columnMapping.service.js';
 import { normalizeReviews } from '../services/normalizeReview.service.js';
-import { maskRows } from '../services/privacyMasking.service.js';
+import { maskRows, maskMatrix } from '../services/privacyMasking.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = Router();
 
-// 파싱 결과를 마스킹해 upload_files에 저장하고 응답 페이로드를 만드는 공용 헬퍼.
-// 입력: { originalName, source, headers, rows(원본 파싱 행) }
-// 처리: 모든 행의 string 값에 PII 마스킹 적용 → maskedRows만 DB/응답에 사용 (원본 rows는 저장 안 함)
-function persistUpload({ originalName, source, headers, rows }) {
-  const maskedRows = maskRows(rows); // ★ 저장 전 개인정보 마스킹
+// 시트별 사전 계산 결과를 마스킹 + JSON 저장 가능한 형태로 변환
+function maskSheetParseResults(sheetParseResults) {
+  const out = {};
+  for (const [name, sp] of Object.entries(sheetParseResults || {})) {
+    out[name] = {
+      headers: sp.headers || [],
+      rows: maskRows(sp.rows || []),
+      matrix: maskMatrix(sp.matrix || []),
+      detectedHeaderRowIndex: sp.detectedHeaderRowIndex || 0,
+    };
+  }
+  return out;
+}
+
+// 파싱 결과를 마스킹해 upload_files 에 저장하고 응답 페이로드를 만드는 공용 헬퍼.
+// 입력: { originalName, source, parsed }  parsed = parseFile() 결과
+function persistUpload({ originalName, source, parsed }) {
+  const maskedRows = maskRows(parsed.rows || []);
+  const headers = parsed.headers || [];
   const mappingSuggestion = autoMapColumns(headers, maskedRows);
   const uploadId = nanoid();
+
+  // XLSX 멀티시트 데이터는 모두 마스킹 후 저장
+  const sheetParseResults = maskSheetParseResults(parsed.sheetParseResults || {});
+  const sheetMetas = parsed.sheets || [];
+
   db.prepare(
-    `INSERT INTO upload_files (id, original_name, source, row_count, headers, rows, mapping_suggestion)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO upload_files
+       (id, original_name, source, row_count, headers, rows, mapping_suggestion,
+        selected_sheet_name, selected_header_row_index, sheet_metas, sheet_parse_results)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     uploadId,
     originalName,
@@ -32,6 +53,10 @@ function persistUpload({ originalName, source, headers, rows }) {
     JSON.stringify(headers),
     JSON.stringify(maskedRows),
     JSON.stringify(mappingSuggestion),
+    parsed.selectedSheetName || null,
+    parsed.selectedHeaderRowIndex || 0,
+    JSON.stringify(sheetMetas),
+    JSON.stringify(sheetParseResults),
   );
 
   return {
@@ -43,12 +68,15 @@ function persistUpload({ originalName, source, headers, rows }) {
     mappingSuggestion,
     fields: FIELDS,
     fieldCandidates: FIELD_CANDIDATES,
+    sheets: sheetMetas,
+    selectedSheetName: parsed.selectedSheetName || null,
+    selectedHeaderRowIndex: parsed.selectedHeaderRowIndex || 0,
   };
 }
 
 const MAX_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 10 * 1024 * 1024);
 const upload = multer({
-  storage: multer.memoryStorage(), // 원본 파일은 디스크에 저장하지 않음
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     const ok = /\.(csv|xlsx|xls)$/i.test(file.originalname);
@@ -68,13 +96,20 @@ router.post('/', upload.single('file'), (req, res) => {
     return res.status(400).json({ error: `파일 파싱 실패: ${e.message}` });
   }
 
-  if (!parsed.rows.length) return res.status(400).json({ error: '데이터 행이 없습니다.' });
+  if (!parsed.rows.length) {
+    // 멀티 시트 XLSX 에서 선택된 시트에 데이터가 없을 수 있음 → 다른 시트가 있으면 안내
+    const hasOtherSheet = (parsed.sheets || []).some((s) => s.rowCount > 0);
+    const msg = hasOtherSheet
+      ? '선택된 시트에 데이터가 없습니다. 다른 시트를 선택해 주세요.'
+      : '데이터 행이 없습니다.';
+    if (!hasOtherSheet) return res.status(400).json({ error: msg });
+    // 데이터 행은 없지만 다른 시트가 있는 경우에도 메타는 응답 → 프론트에서 시트 선택 가능
+  }
 
   const payload = persistUpload({
     originalName: req.file.originalname,
     source,
-    headers: parsed.headers,
-    rows: parsed.rows,
+    parsed,
   });
   res.json(payload);
 });
@@ -88,8 +123,7 @@ router.post('/sample', (_req, res) => {
   const payload = persistUpload({
     originalName: 'sample_reviews_fashion.csv',
     source: 'smartstore',
-    headers: parsed.headers,
-    rows: parsed.rows,
+    parsed,
   });
   res.json(payload);
 });
@@ -103,12 +137,78 @@ router.get('/:id', (req, res) => {
     originalName: row.original_name,
     source: row.source,
     rowCount: row.row_count,
-    headers: JSON.parse(row.headers),
-    // rows가 만료(null)되면 미리보기는 빈 배열
+    headers: row.headers ? JSON.parse(row.headers) : [],
     sampleRows: row.rows ? JSON.parse(row.rows).slice(0, 5) : [],
-    mappingSuggestion: JSON.parse(row.mapping_suggestion),
+    mappingSuggestion: row.mapping_suggestion ? JSON.parse(row.mapping_suggestion) : {},
     fields: FIELDS,
     fieldCandidates: FIELD_CANDIDATES,
+    sheets: row.sheet_metas ? JSON.parse(row.sheet_metas) : [],
+    selectedSheetName: row.selected_sheet_name || null,
+    selectedHeaderRowIndex: row.selected_header_row_index || 0,
+  });
+});
+
+// POST /api/uploads/:id/reparse — 사용자가 시트나 헤더 행을 바꿨을 때 다시 파싱
+// body: { sheetName?: string, headerRowIndex?: number }
+const reparseSchema = z.object({
+  sheetName: z.string().optional(),
+  headerRowIndex: z.number().int().min(0).max(50).optional(),
+});
+
+router.post('/:id/reparse', (req, res) => {
+  const parsedBody = reparseSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({ error: '잘못된 요청 형식', detail: parsedBody.error.issues });
+  }
+  const { sheetName, headerRowIndex } = parsedBody.data;
+
+  const row = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!row.sheet_parse_results) {
+    return res.status(400).json({ error: '이 파일은 시트 선택을 지원하지 않습니다(CSV).' });
+  }
+  const sheetResults = JSON.parse(row.sheet_parse_results);
+  const nextSheet = sheetName || row.selected_sheet_name;
+  const sp = sheetResults[nextSheet];
+  if (!sp) return res.status(400).json({ error: `존재하지 않는 시트: ${nextSheet}` });
+
+  const nextHeaderIdx = headerRowIndex != null ? headerRowIndex : sp.detectedHeaderRowIndex || 0;
+  // 저장된 matrix 는 이미 마스킹된 상태이므로 그대로 사용
+  const { headers, rows } = rowsFromMatrix(sp.matrix || [], nextHeaderIdx);
+  const mappingSuggestion = autoMapColumns(headers, rows);
+
+  db.prepare(
+    `UPDATE upload_files
+       SET selected_sheet_name = ?,
+           selected_header_row_index = ?,
+           headers = ?,
+           rows = ?,
+           row_count = ?,
+           mapping_suggestion = ?
+     WHERE id = ?`,
+  ).run(
+    nextSheet,
+    nextHeaderIdx,
+    JSON.stringify(headers),
+    JSON.stringify(rows),
+    rows.length,
+    JSON.stringify(mappingSuggestion),
+    row.id,
+  );
+
+  res.json({
+    uploadId: row.id,
+    originalName: row.original_name,
+    source: row.source,
+    rowCount: rows.length,
+    headers,
+    sampleRows: rows.slice(0, 5),
+    mappingSuggestion,
+    fields: FIELDS,
+    fieldCandidates: FIELD_CANDIDATES,
+    sheets: row.sheet_metas ? JSON.parse(row.sheet_metas) : [],
+    selectedSheetName: nextSheet,
+    selectedHeaderRowIndex: nextHeaderIdx,
   });
 });
 
@@ -124,7 +224,6 @@ router.post('/:id/mapping', (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: '잘못된 매핑 형식', detail: parsed.error.issues });
 
   const { mapping, saveAsTemplate, templateName } = parsed.data;
-  // null 값 제거
   const cleanMapping = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v));
 
   if (!isMappingValid(cleanMapping)) {
@@ -145,7 +244,6 @@ router.post('/:id/mapping', (req, res) => {
 
   if (!reviews.length) return res.status(400).json({ error: '정규화된 리뷰가 없습니다. content 컬럼을 확인하세요.' });
 
-  // 기존 리뷰 제거 후 재삽입 (재매핑 대비)
   db.prepare('DELETE FROM reviews WHERE upload_id = ?').run(uploadRow.id);
   const insert = db.prepare(
     `INSERT INTO reviews (id, upload_id, source, store_id, product_name, option_name, rating, title, content, writer, created_at, reply_text, review_id, raw)
@@ -173,7 +271,6 @@ router.post('/:id/mapping', (req, res) => {
   });
   tx(reviews);
 
-  // 매핑 저장 (+ 템플릿)
   db.prepare(
     `INSERT INTO column_mappings (id, upload_id, template_name, source, mapping, is_template)
      VALUES (?, ?, ?, ?, ?, ?)`,

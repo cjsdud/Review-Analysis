@@ -242,6 +242,71 @@
   }
 }
 
+// ===== 멀티 시트/헤더 행 선택기 =====
+.sheet-selector {
+  display: flex;
+  flex-direction: column;
+  gap: $sp-4;
+
+  &__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: $sp-3;
+  }
+  &__item {
+    text-align: left;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    padding: $sp-3 $sp-4;
+    cursor: pointer;
+    transition: all $transition;
+
+    &:hover:not(:disabled) {
+      border-color: $primary;
+      background: $primary-soft;
+    }
+    &.is-selected {
+      background: $primary-soft;
+      border-color: $primary;
+      box-shadow: 0 0 0 2px rgba($primary, 0.15);
+    }
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+  &__name {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: $text-main;
+  }
+  &__meta {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  &__reason {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  &__header-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $sp-3;
+
+    select {
+      padding: 6px 10px;
+      border: 1px solid $border-strong;
+      border-radius: 7px;
+      font-size: 13px;
+      background: #fff;
+      min-width: 100px;
+    }
+  }
+}
+
 // ===== 매핑 화면 푸터 =====
 .mapping-footer {
   display: flex;

@@ -25,6 +25,16 @@ export async function getMappingTemplates() {
   return data;
 }
 
+// XLSX 멀티 시트/헤더 행 재선택 — 시트나 헤더 행을 바꾸면 호출.
+// body: { sheetName?, headerRowIndex? } → 새 headers/sampleRows/mappingSuggestion 반환
+export async function reparseUpload(uploadId, { sheetName, headerRowIndex } = {}) {
+  const body = {};
+  if (sheetName != null) body.sheetName = sheetName;
+  if (headerRowIndex != null) body.headerRowIndex = headerRowIndex;
+  const { data } = await client.post(`/uploads/${uploadId}/reparse`, body);
+  return data;
+}
+
 export async function saveMapping(uploadId, mapping, opts = {}) {
   const { data } = await client.post(`/uploads/${uploadId}/mapping`, {
     mapping,
