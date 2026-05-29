@@ -88,7 +88,9 @@ better-sqlite3는 C++ 네이티브 모듈이라 prebuilt 바이너리가 없을 
 - **macOS**: `xcode-select --install`
 - **Linux**: `sudo apt-get install -y build-essential python3`
 - 그래도 실패하면 캐시 정리 후 재시도: `npm cache clean --force && npm install`
-- **TODO(3차)**: 설치가 끝내 불가능한 환경을 위해 `node:sqlite`(Node 22+ 실험적) 또는 JSON 파일 기반 fallback 스토리지로 전환할 수 있게 DB 계층을 추상화할 예정입니다. (현재는 `DB_PATH`/`data` 폴더 자동 생성 로직 유지)
+- **TODO(3차)**: 설치가 끝내 불가능한 환경을 위해 `node:sqlite`(Node 22+ 실험적)
+  또는 JSON 파일 기반 fallback 스토리지로 전환할 수 있게 DB 계층을 추상화할 예정입니다.
+  (현재는 `DB_PATH`/`data` 폴더 자동 생성 로직 유지)
 
 ---
 
@@ -146,7 +148,9 @@ curl http://localhost:4000/api/health      # {"ok":true,"aiMode":"mock"}
 | `npm run build:frontend` | 프론트가 빌드 오류 없이 번들되는지 | 불필요 |
 | `npm run check:llm` | 실제 LLM provider 연결 + JSON 응답 수신 | 필요 |
 
-> 중요: **`check:llm`이 실패해도 앱은 정상 동작합니다.** aiClient의 함수별 mock fallback이 호출 실패/JSON 파싱 실패/형식 불일치를 모두 흡수하기 때문입니다(키 없음·401/403·타임아웃 포함).
+> 중요: **`check:llm`이 실패해도 앱은 정상 동작합니다.**
+> aiClient의 함수별 mock fallback이 호출 실패 / JSON 파싱 실패 / 형식 불일치를 모두 흡수하기 때문입니다
+> (키 없음·401/403·타임아웃 포함).
 
 ---
 
@@ -244,12 +248,15 @@ LLM_TIMEOUT_MS=20000
 
 ### 개인정보 처리 / 마스킹 (`privacyMasking.service.js`)
 - **업로드 파일 원본(바이너리)은 디스크에 저장하지 않습니다**(multer memoryStorage로 메모리에서만 파싱).
-- **파싱된 rows도 DB 저장 전에 `maskRows`로 마스킹**한 뒤에만 `upload_files.rows`(JSON)에 저장합니다. 컬럼 매핑 미리보기(sampleRows)와 자동 매핑도 마스킹된 값 기준입니다.
+- **파싱된 rows도 DB 저장 전에 `maskRows`로 마스킹**한 뒤에만 `upload_files.rows`(JSON)에 저장합니다.
+  컬럼 매핑 미리보기(sampleRows)와 자동 매핑도 마스킹된 값 기준입니다.
 - 마스킹 항목: 전화번호 `[전화번호]`, 이메일 `[이메일]`, 10자리 이상 숫자 `[주문번호]`, 주소 `[주소]`. 작성자명은 첫 글자만 남김.
 - **분석 완료 후 `upload_files.rows`는 `NULL`로 비웁니다**(정규화된 `reviews`만 유지).
   또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`).
   → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
-- **AI 기본 동작은 mock**입니다(`LLM_PROVIDER=mock`이 기본값). 실제 OpenAI/Gemini/Claude 연동 코드는 포함되어 있으나 키를 설정해야 활성화되며, 키가 없거나 실패하면 mock으로 동작합니다.
+- **AI 기본 동작은 mock**입니다 (`LLM_PROVIDER=mock`이 기본값).
+  실제 OpenAI / Gemini / Claude 연동 코드는 포함되어 있으나 키를 설정해야 활성화되며,
+  키가 없거나 실패하면 mock으로 동작합니다.
 
 ### 하이브리드 분석 (`reviewClassification` + `issueDetection` + `productAnalysis`)
 - **비용 절감**을 위해 LLM에 전체 리뷰를 넣지 않습니다.
@@ -277,8 +284,16 @@ LLM_TIMEOUT_MS=20000
 `사이즈 · 핏/실루엣 · 색상/화면 차이 · 소재/두께 · 마감/불량 · 착용감 · 세탁/내구성 · 배송/포장 · 가격/가성비 · 기타`
 
 ### LLM 추상화 (`aiClient.service.js`)
-- 함수: `classifyAmbiguousReviews / generateIssueLabel / generateProductImprovementReport / generateReplyTemplates / generateMonthlyReport`
-- **provider 선택**: `LLM_PROVIDER`(mock|openai|gemini|claude). 실제 호출은 `callOpenAI`(chat completions, `response_format=json_object`) / `callGemini`(`responseMimeType=application/json`) / `callClaude`(messages API)로 구현.
+- 함수:
+  - `classifyAmbiguousReviews`
+  - `generateIssueLabel`
+  - `generateProductImprovementReport`
+  - `generateReplyTemplates`
+  - `generateMonthlyReport`
+- **provider 선택**: `LLM_PROVIDER` (mock | openai | gemini | claude). 실제 호출 구현:
+  - `callOpenAI` — chat completions, `response_format=json_object`
+  - `callGemini` — `responseMimeType=application/json`
+  - `callClaude` — messages API
 - **안전장치**:
   - 키가 없으면 처음부터 `mock` 모드.
   - 모든 응답을 `parseJsonSafe`로 파싱하고, 호출 실패·JSON 파싱 실패·형식 불일치면 **함수별 mock 기본값** 반환 → 앱이 항상 동작.

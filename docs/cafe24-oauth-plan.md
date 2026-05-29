@@ -20,7 +20,15 @@
 
 ## 2. OAuth 인증
 
-- `GET https://{mall_id}.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=...&state=...`
+- 인증 시작 URL 예:
+  ```
+  GET https://{mall_id}.cafe24api.com/api/v2/oauth/authorize
+      ?response_type=code
+      &client_id=...
+      &redirect_uri=...
+      &scope=...
+      &state=...
+  ```
 - 셀러 동의 후 redirect 로 받은 `code` 로 토큰 교환:
 - `POST /api/v2/oauth/token` (grant_type=authorization_code).
 - 응답: `access_token`, `refresh_token`, `expires_in`.
