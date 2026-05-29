@@ -135,6 +135,17 @@ export default function UploadPage() {
               📊 샘플 데이터로 체험하기
             </button>
           </div>
+
+          {/* 실제 리뷰 파일 검증 안내 */}
+          <div className="real-file-hint">
+            <div className="real-file-hint__title">실제 리뷰 파일로 테스트하려면</div>
+            <ul>
+              <li>처음에는 <b>개인정보 컬럼을 삭제한 파일</b>로 테스트해 보셔도 됩니다.</li>
+              <li><b>상품명·별점·리뷰 내용</b>만 있어도 분석할 수 있습니다.</li>
+              <li>주문번호·전화번호·이메일은 업로드 직후 <b>자동으로 가립니다</b>.</li>
+              <li>그래도 신경 쓰이시면 <b>민감한 정보는 업로드 전에 미리 지우는 것</b>을 권장합니다.</li>
+            </ul>
+          </div>
         </>
       )}
     </div>

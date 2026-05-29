@@ -123,3 +123,31 @@
     margin-bottom: $sp-2;
   }
 }
+
+// 실제 리뷰 파일 업로드 안내 (신뢰 톤)
+.real-file-hint {
+  margin-top: $sp-5;
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-4 $sp-5;
+
+  &__title {
+    font-size: 13px;
+    font-weight: 700;
+    color: $primary-dark;
+    margin-bottom: 8px;
+  }
+  ul {
+    margin: 0;
+    padding-left: 18px;
+    color: $text-sub;
+    font-size: 13px;
+    line-height: 1.7;
+
+    li b {
+      color: $text-main;
+      font-weight: 700;
+    }
+  }
+}

@@ -60,6 +60,14 @@ export default function DashboardPage() {
 
   return (
     <div>
+      {summary.isSample && (
+        <div className="sample-banner">
+          <span className="sample-banner__badge">샘플 데이터 분석 결과</span>
+          <span className="sample-banner__text">
+            실제 셀러 파일을 업로드하면 상품명과 리뷰 내용에 맞춰 결과가 달라집니다.
+          </span>
+        </div>
+      )}
       <PageHeader
         title="리뷰 분석 리포트"
         subtitle="상품별 반복 불만과 개선 우선순위를 확인하세요."

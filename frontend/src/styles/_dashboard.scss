@@ -328,3 +328,30 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+// 샘플 데이터 안내 배지 배너
+.sample-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: $primary-soft;
+  border: 1px solid $primary-light;
+  border-radius: $r-pill;
+  padding: 6px 12px 6px 6px;
+  margin-bottom: $sp-4;
+  font-size: 12px;
+  color: $primary-dark;
+  flex-wrap: wrap;
+
+  &__badge {
+    background: $primary;
+    color: #fff;
+    font-weight: 700;
+    border-radius: $r-pill;
+    padding: 3px 10px;
+    font-size: 11px;
+  }
+  &__text {
+    color: $text-sub;
+  }
+}

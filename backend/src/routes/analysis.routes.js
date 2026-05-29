@@ -129,6 +129,10 @@ router.post('/', async (req, res) => {
     //     라벨을 corrected 로 치환(보조 안전망). source='correction'.
     applyHistoricalCorrections(products);
 
+    // 샘플 데이터 여부 (대시보드 상단 배지 표시용).
+    const upRow = db.prepare('SELECT original_name FROM upload_files WHERE id = ?').get(parsed.data.uploadId);
+    summary.isSample = (upRow?.original_name || '').toLowerCase().startsWith('sample_reviews_fashion');
+
     db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)').run(
       analysisId,
       parsed.data.uploadId,
