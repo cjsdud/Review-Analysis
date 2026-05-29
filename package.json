@@ -10,10 +10,10 @@
     "check": "npm --prefix backend run check",
     "check:llm": "npm --prefix backend run check:llm",
     "build:frontend": "npm --prefix frontend run build",
-    "build": "npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install",
+    "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
     "start": "npm --prefix backend run start",
-    "render:build": "npm run build",
-    "render:start": "npm run start",
+    "render:build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
+    "render:start": "npm --prefix backend run start",
     "seed:xlsx": "npm --prefix backend run seed:xlsx"
   }
 }

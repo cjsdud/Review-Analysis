@@ -96,6 +96,35 @@ UPLOAD_ROWS_TTL_MIN=60
 | 404 발생 시 `API route not found` | 정상 동작 — `/api/*` 가 아닌 요청은 SPA fallback(index.html), 그 외 패턴은 404 |
 | 분석 결과가 사라짐 | Free 인스턴스가 재시작되어 SQLite 가 초기화됨. 위 SQLite 영속성 한계 참조 |
 | 파일 업로드 실패 | `MAX_UPLOAD_BYTES` 환경변수 확인. 기본 10MB |
+| `sh: 1: vite: not found` (빌드 실패) | Render 가 `NODE_ENV=production` 으로 install 하면서 devDependencies(`vite`)를 건너뜀. 아래 “vite: not found 해결” 참조 |
+
+---
+
+## `vite: not found` 해결
+
+`Build failed` 와 함께 `sh: 1: vite: not found` 가 뜨면 frontend devDependencies
+가 설치되지 않은 상태에서 `vite build` 가 실행된 것입니다. 다음을 차례대로 확인하세요.
+
+1. **Build Command 가 `npm run render:build` 인지 확인.**
+   기본값(`npm install` 같은 것)으로 두면 모노레포 구조가 인식되지 않습니다.
+2. **`render:build` 가 `npm --prefix frontend install --include=dev` 를 호출하는지 확인.**
+   루트 `package.json` 의 `render:build` 스크립트를 직접 보고, 위 플래그가 있는지 확인하세요.
+   본 저장소는 이 플래그를 기본으로 포함합니다.
+3. **`frontend/package.json` 의 `devDependencies` 에 `vite` 가 있는지 확인.**
+   본 저장소 기본값:
+   ```json
+   "devDependencies": {
+     "@vitejs/plugin-react": "^4.3.1",
+     "sass": "^1.79.3",
+     "vite": "^5.4.8"
+   }
+   ```
+4. **(보조) Render 환경변수에 `NPM_CONFIG_PRODUCTION=false` 추가.**
+   이 변수가 있으면 `npm install` 이 무조건 devDependencies 까지 같이 설치합니다.
+   `--include=dev` 와 같이 두면 더 안전합니다.
+
+> 빠른 검증: 로컬에서 `NODE_ENV=production npm run render:build` 가 통과하는지 확인.
+> 같은 환경 변수에서 통과하면 Render 에서도 통과합니다.
 
 ---
 
