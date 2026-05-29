@@ -57,6 +57,9 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
 
   for (const c of classifications) {
     for (const cat of c.categories) {
+      // 긍정/중립(문제 없음) 표현은 핵심 문제 클러스터에서 제외.
+      // isActionableIssue 가 명시적으로 false 인 경우만 거른다(legacy 필드 누락은 통과).
+      if (cat.isActionableIssue === false) continue;
       const labelKey = cat.issue || NULL;
       const key = `${c.productName}||${cat.name}||${labelKey}`;
       if (!groups.has(key)) groups.set(key, []);

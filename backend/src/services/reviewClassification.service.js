@@ -6,6 +6,7 @@ import {
   SUBISSUE_RULES,
   CATEGORY_ACTIONS,
   ISSUE_ACTIONS,
+  SIZE_DIRECTION_TOKENS,
 } from './fashionLexicon.js';
 
 export { FASHION_CATEGORIES };
@@ -25,9 +26,9 @@ const CATEGORY_GENERIC = {
 
 // 극성 판단용 어휘
 const POS_TERMS = [
-  '예뻐', '예쁘', '이뻐', '이쁘', '이쁨', '예쁨', '만족', '마음에', '맘에', '좋아', '좋네', '좋고', '좋습니',
-  '좋은', '좋았', '편하', '편해', '부드럽', '적당', '딱 맞', '잘 맞', '딱이', '딱', '추천', '재구매', '최고',
-  '굿', '시원', '세련', '고급', '가벼워', '가볍', '튼튼',
+  '예뻐', '예쁘', '예쁜', '이뻐', '이쁘', '이쁜', '이쁨', '예쁨', '만족', '마음에', '맘에', '좋아', '좋네', '좋고', '좋습니',
+  '좋은', '좋았', '괜찮', '편하', '편해', '부드럽', '적당', '딱 맞', '잘 맞', '딱이', '딱', '추천', '재구매', '최고',
+  '굿', '시원', '세련', '고급', '가벼워', '가볍', '튼튼', '문제없', '문제 없', '이상 없', '이상없',
 ];
 const NEG_TERMS = [
   '작아', '작게', '작음', '짧', '좁', '헐렁', '비침', '비쳐', '까슬', '뻣뻣', '불량', '하자', '터', '뜯', '구멍',
@@ -90,14 +91,28 @@ function hasAny(clause, tokens) {
   return tokens.some((t) => clause.includes(t));
 }
 
+// 부정 토큰을 "없/안/않" 등의 부정 문맥 안에서 등장하면 부정 표현으로 치지 않는다.
+// 예: "비침이 없어서 좋아요" 에서 '비침' 은 NEG_TERMS 에 있지만 실제로는 긍정.
+function hasNegativeAware(clause) {
+  for (const tk of NEG_TERMS) {
+    let from = 0;
+    let idx;
+    while ((idx = clause.indexOf(tk, from)) !== -1) {
+      if (!isNegated(clause, idx, tk.length)) return true;
+      from = idx + tk.length;
+    }
+  }
+  return false;
+}
+
 function clauseIsPositive(clause) {
   const neg = /별로|아쉬|실망|않|안 좋|안좋/.test(clause);
   const pos = POS_TERMS.some((t) => clause.includes(t));
-  return pos && !neg && !hasAny(clause, NEG_TERMS);
+  return pos && !neg && !hasNegativeAware(clause);
 }
 
 function clauseHasNegative(clause) {
-  return hasAny(clause, NEG_TERMS);
+  return hasNegativeAware(clause);
 }
 
 function intensityBonus(clause) {
@@ -106,10 +121,20 @@ function intensityBonus(clause) {
   return 0;
 }
 
+// 절(clause)이 "개선이 필요한 진짜 불만"인지 판단.
+// - 긍정 절(좋아요/문제없어요)은 false
+// - 명시적 부정 단서가 있어야 true
+function clauseIsActionable(clause) {
+  if (clauseIsPositive(clause)) return false;
+  return hasNegativeAware(clause);
+}
+
 // 한 절에서 매칭되는 세부 이슈들 (카테고리별 중복 제거 + 제너릭)
 function matchClause(clause) {
   const positive = clauseIsPositive(clause);
   const ib = intensityBonus(clause);
+  const buyDown = SIZE_DIRECTION_TOKENS.BUY_DOWN.some((t) => clause.includes(t));
+  const buyUp = SIZE_DIRECTION_TOKENS.BUY_UP.some((t) => clause.includes(t));
 
   // 1) 규칙별 raw 매칭 수집 (트리거 토큰 + 규칙 순서 기록)
   const byCategory = new Map();
@@ -145,7 +170,7 @@ function matchClause(clause) {
   }
 
   // 3) 제너릭: 세부 이슈가 전혀 안 잡힌 카테고리만 (부정 단서 있을 때)
-  if (!positive && clauseHasNegative(clause)) {
+  if (!positive && hasNegativeAware(clause)) {
     for (const [cat, tokens] of Object.entries(CATEGORY_GENERIC)) {
       if (byCategory.has(cat)) continue;
       if (matchGroup(clause, tokens)) {
@@ -154,12 +179,29 @@ function matchClause(clause) {
     }
   }
 
+  // 4) 사이즈 방향 충돌 해소
+  //    "한 치수 작게 사세요" 같은 구매 가이드 표현이 보이면 실제 상품은 반대 방향.
+  //    동시에 잡힌 반대 라벨('전반적으로 작게 나옴' / '전반적으로 크게 나옴')은 제거.
+  if (buyDown || buyUp) {
+    const wrong = buyDown ? '전반적으로 작게 나옴' : '전반적으로 크게 나옴';
+    for (let i = results.length - 1; i >= 0; i--) {
+      if (results[i].category === '사이즈' && results[i].label === wrong) {
+        results.splice(i, 1);
+      }
+    }
+  }
+
+  const actionable = clauseIsActionable(clause);
+  const polarity = positive ? 'positive' : actionable ? 'negative' : 'neutral';
+
   return results.map((r) => ({
     category: r.category,
     label: r.label,
     strength: r.strength,
     confidence: r.confidence,
     evidence: clause,
+    issuePolarity: polarity,
+    isActionableIssue: actionable && !(positive && !ALWAYS_NEG_LABEL.test(r.label || '')),
   }));
 }
 
@@ -241,6 +283,8 @@ export function classifyReview(review) {
     source: 'rule',
     action: resolveAction(m.category, m.label),
     strength: m.strength,
+    issuePolarity: m.issuePolarity || 'negative',
+    isActionableIssue: m.isActionableIssue !== false,
   }));
 
   const ambiguous = categories.length === 0 && sentiment === 'negative';
@@ -285,6 +329,8 @@ export async function classifyAll(reviews, aiClient) {
               source: 'llm',
               action: resolveAction(name, cat.issue || null),
               strength: 2,
+              issuePolarity: 'negative',
+              isActionableIssue: true,
             };
           });
         }
@@ -307,6 +353,8 @@ export async function classifyAll(reviews, aiClient) {
           source: 'rule',
           action: CATEGORY_ACTIONS['기타'],
           strength: 1,
+          issuePolarity: 'neutral',
+          isActionableIssue: false,
         },
       ];
     }
@@ -377,6 +425,8 @@ export function applyReviewCorrections(reviews, classifications, corrections) {
           source: 'correction',
           action: resolveAction(rule.corrected.category, rule.corrected.issueLabel),
           strength: 5,
+          issuePolarity: 'negative',
+          isActionableIssue: true,
         },
       ];
       cls.ambiguous = false;

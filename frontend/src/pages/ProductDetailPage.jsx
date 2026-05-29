@@ -113,7 +113,7 @@ export default function ProductDetailPage() {
       {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard
         title="이 상품의 핵심 문제"
-        subtitle="가장 많이 반복된 불만부터 정리했어요. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
+        subtitle="실제 불편/개선 신호가 있는 리뷰만 모아 정리했어요. 긍정 리뷰나 '문제 없음' 표현은 핵심 문제에서 제외됩니다. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
         className="mb-5"
       >
         {product.topIssues.length === 0 ? (

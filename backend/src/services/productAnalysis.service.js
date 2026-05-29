@@ -4,9 +4,17 @@ import { applyReviewCorrections, classifyAll, FASHION_CATEGORIES } from './revie
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 
-// 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외).
-// 입력: classification 1건. 출력: '기타'를 제외한 categories 배열.
-const meaningfulCategories = (c) => (c.categories || []).filter((cat) => cat.name && cat.name !== '기타');
+// 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외, 긍정/중립 제외).
+// 입력: classification 1건. 출력: 실제 개선 신호가 있는 categories 배열.
+const meaningfulCategories = (c) =>
+  (c.categories || []).filter(
+    (cat) => cat.name && cat.name !== '기타' && cat.isActionableIssue !== false,
+  );
+
+// "사이즈 관련 의견" 처럼 카테고리명 + "관련 의견" 으로 끝나는 라벨은
+// 클러스터 라벨링이 실패해 카테고리명으로 대체된 것 — 핵심 문제로 노출하지 않는다.
+const GENERIC_LABEL_RE = /관련 의견$/;
+const isGenericLabel = (label) => !label || GENERIC_LABEL_RE.test(label);
 
 // 입력: reviews(ReviewNormalized[]), corrections([{productKey,original,corrected}] — 옵션)
 // 출력: { analysisId, summary, products, classifications }
@@ -46,8 +54,9 @@ export async function runAnalysis(reviews, corrections = []) {
       ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
       : undefined;
 
-    // topIssues: count 우선, 동률이면 평균 신뢰도
+    // topIssues: 실제 개선 신호만(포괄 라벨/'기타' 카테고리 제외), count 우선, 동률이면 평균 신뢰도
     const topIssues = productClusters
+      .filter((cl) => cl.category && cl.category !== '기타' && !isGenericLabel(cl.issueLabel))
       .sort((a, b) => b.count - a.count || b.avgConfidence - a.avgConfidence)
       .slice(0, 5)
       .map((cl) => ({

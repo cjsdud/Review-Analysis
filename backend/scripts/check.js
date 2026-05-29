@@ -85,6 +85,61 @@ await step('user_corrections 룰 적용 (review-level)', async () => {
   assert(corrected.confidence >= 0.9, 'correction confidence 너무 낮음');
 });
 
+await step('사이즈 방향 — "한 치수 작게 사세요" → 크게 나옴', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 's1', productName: 'P', rating: 4,
+    content: '핏이 좀 크게 나와요. 한 치수 작게 사세요',
+  });
+  const sizeIssues = r.categories.filter((c) => c.name === '사이즈');
+  const labels = sizeIssues.map((c) => c.issue);
+  assert(labels.includes('전반적으로 크게 나옴'), '"크게 나옴" 라벨이 있어야 함');
+  assert(!labels.includes('전반적으로 작게 나옴'), '"작게 나옴" 은 제거되어야 함(반대 방향)');
+});
+
+await step('사이즈 방향 — "한 사이즈 크게" → 작게 나옴', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 's2', productName: 'P', rating: 4,
+    content: '평소보다 작아서 한 사이즈 크게 주문하시는 걸 추천드려요',
+  });
+  const labels = r.categories.filter((c) => c.name === '사이즈').map((c) => c.issue);
+  assert(labels.includes('전반적으로 작게 나옴'), '"작게 나옴" 라벨이 있어야 함');
+  assert(!labels.includes('전반적으로 크게 나옴'), '"크게 나옴" 은 제거되어야 함');
+});
+
+await step('긍정 리뷰 — "비침이 없어서 좋아요" 는 이슈로 잡지 않음', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 'p1', productName: 'P', rating: 5,
+    content: '비침이 거의 없어서 좋아요. 색감도 예뻐요',
+  });
+  const labels = r.categories.map((c) => c.issue || c.name);
+  assert(!labels.some((l) => /비침|얇/.test(l || '')), '비침/얇음 이슈가 잡히면 안 됨');
+});
+
+await step('긍정 리뷰 — "줄어들지 않았어요" 는 이슈로 잡지 않음', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 'p2', productName: 'P', rating: 5,
+    content: '세탁해도 줄어들지 않았어요. 만족합니다',
+  });
+  const labels = r.categories.map((c) => c.issue || c.name);
+  assert(!labels.some((l) => /줄어|세탁/.test(l || '')), '세탁 후 줄어듦 이슈가 잡히면 안 됨');
+});
+
+await step('topIssues — 포괄 라벨("~ 관련 의견") 제외', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 'g1', productName: '셔츠', rating: 2, content: '허리가 너무 작아요' },
+    { id: 'g2', productName: '셔츠', rating: 2, content: '허리가 좀 작네요' },
+    { id: 'g3', productName: '셔츠', rating: 5, content: '디자인이 예뻐요' },
+  ];
+  const { products } = await runAnalysis(reviews);
+  const labels = products[0].topIssues.map((i) => i.issueLabel || '');
+  assert(!labels.some((l) => /관련 의견$/.test(l)), 'topIssues 에 "~ 관련 의견" 라벨이 포함되면 안 됨');
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
