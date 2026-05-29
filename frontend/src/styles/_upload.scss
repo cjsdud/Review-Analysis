@@ -138,6 +138,16 @@
     color: $primary-dark;
     margin-bottom: 8px;
   }
+  &__lead {
+    font-size: 13px;
+    color: $text-main;
+    margin: 0 0 8px;
+    line-height: 1.6;
+    b {
+      color: $primary-dark;
+      font-weight: 700;
+    }
+  }
   ul {
     margin: 0;
     padding-left: 18px;

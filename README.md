@@ -277,6 +277,33 @@ LLM_TIMEOUT_MS=20000
 
 ---
 
+### 5-4. 웹 배포 (Render — 단일 Web Service)
+
+핸드폰에서 바로 데모해야 할 때는 Render 무료 Web Service 하나로 backend API +
+frontend 정적 파일을 같이 서빙합니다. 같은 origin 에서 `/api/*` 가 호출되므로
+CORS·도메인 설정이 별도 필요 없습니다.
+
+```bash
+# 로컬에서 production 흉내내기
+npm run render:build
+NODE_ENV=production PORT=4000 npm run render:start
+# → http://localhost:4000 에서 동일하게 동작
+```
+
+| 항목 | 값 |
+|---|---|
+| Build Command | `npm run render:build` |
+| Start Command | `npm run render:start` |
+| 환경변수 | `NODE_ENV=production`, `LLM_PROVIDER=mock`, `DB_PATH=./data/app.db`, `UPLOAD_ROWS_TTL_MIN=60` 등 |
+
+**주의 — SQLite 영속성**: Render Free 인스턴스 디스크는 재배포·재시작 시
+초기화됩니다. **MVP 검증용 임시 저장**으로만 쓰고, 영구 저장이 필요하면
+Render Disk(유료) 또는 외부 DB로 옮기세요.
+
+상세 설정값·환경변수·체크리스트는 [`docs/deploy-render.md`](docs/deploy-render.md) 참고.
+
+---
+
 ## 6. 주요 로직 설명
 
 ### 컬럼 자동 매핑 (`columnMapping.service.js`)
@@ -416,6 +443,7 @@ LLM_TIMEOUT_MS=20000
 
 ### 별도 문서
 
+- `docs/deploy-render.md` — Render 단일 Web Service 배포 가이드
 - `docs/seller-validation-template.md` — 셀러당 1부 작성하는 인터뷰/평가 양식
 - `docs/validation-results.md` — 실제 셀러 검증 결과 누적 기록 (검증 요약표 + 검증 N 블록)
 - `docs/sample-report.md` — 셀러용 샘플 리포트 (116건/14상품 실제 분석값)
