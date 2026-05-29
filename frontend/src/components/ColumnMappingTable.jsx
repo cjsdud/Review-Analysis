@@ -16,6 +16,15 @@ function scoreClass(score) {
   return 'is-warn';
 }
 
+function scoreLabel(score) {
+  if (!score) return '—';
+  if (score >= 90) return '정확';
+  if (score >= 60) return '확인 필요';
+  return '낮음';
+}
+
+// 모바일에서는 동일한 DOM 이 CSS 로 카드로 전환된다.
+// 각 <td> 의 data-label 이 모바일 카드의 작은 라벨로 표시된다.
 export default function ColumnMappingTable({ fields, headers, mapping, suggestion, sampleRows, onChange }) {
   function sampleFor(column) {
     if (!column) return '';
@@ -27,7 +36,7 @@ export default function ColumnMappingTable({ fields, headers, mapping, suggestio
   }
 
   return (
-    <div className="scroll-x">
+    <div className="mapping-table-wrap">
       <table className="mapping-table">
         <thead>
           <tr>
@@ -43,11 +52,12 @@ export default function ColumnMappingTable({ fields, headers, mapping, suggestio
             const sug = suggestion?.[field];
             const selected = mapping[field] || '';
             const warn = info.req && !selected;
+            const selectId = `mapping-${field}`;
             return (
-              <tr key={field}>
-                <td>
+              <tr key={field} className="mapping-row">
+                <td data-label="분석 항목">
                   <div className="mapping-table__field">
-                    {info.label}
+                    <span className="mapping-table__field-name">{info.label}</span>
                     {info.req ? (
                       <span className="mapping-table__req-badge">필수</span>
                     ) : (
@@ -56,8 +66,13 @@ export default function ColumnMappingTable({ fields, headers, mapping, suggestio
                   </div>
                   <div className="mapping-table__desc">{info.desc}</div>
                 </td>
-                <td>
-                  <select value={selected} onChange={(e) => onChange(field, e.target.value)}>
+                <td data-label="내 파일의 컬럼">
+                  <select
+                    id={selectId}
+                    aria-label={`${info.label} 매핑할 컬럼 선택`}
+                    value={selected}
+                    onChange={(e) => onChange(field, e.target.value)}
+                  >
                     <option value="">— 사용 안 함 —</option>
                     {headers.map((h) => (
                       <option key={h} value={h}>
@@ -66,21 +81,21 @@ export default function ColumnMappingTable({ fields, headers, mapping, suggestio
                     ))}
                   </select>
                   {warn && (
-                    <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4, fontWeight: 600 }}>
-                      ⚠ 필수 항목입니다. 직접 선택해 주세요.
-                    </div>
+                    <div className="mapping-table__warn">⚠ 필수 항목입니다. 직접 선택해 주세요.</div>
                   )}
                 </td>
-                <td>
+                <td data-label="자동 인식">
                   {sug && sug.score > 0 ? (
                     <span className={`mapping-table__score ${scoreClass(sug.score)}`}>
-                      {sug.score >= 90 ? '정확' : sug.score >= 60 ? '확인 필요' : '낮음'}
+                      {scoreLabel(sug.score)}
                     </span>
                   ) : (
                     <span className="muted" style={{ fontSize: 11 }}>—</span>
                   )}
                 </td>
-                <td className="mapping-table__sample">{sampleFor(selected) || <span className="muted">—</span>}</td>
+                <td data-label="데이터 미리보기" className="mapping-table__sample">
+                  {sampleFor(selected) || <span className="muted">—</span>}
+                </td>
               </tr>
             );
           })}

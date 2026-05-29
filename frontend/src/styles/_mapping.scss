@@ -3,10 +3,25 @@
 @use 'mixins' as *;
 
 // ===== 컬럼 매핑 테이블 =====
+// 한국어 한 글자씩 줄바꿈되는 것을 전체적으로 방지.
+.mapping-table-wrap {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  overflow-x: auto; // 데스크톱·태블릿 안전망 (모바일은 카드형이라 무의미)
+  -webkit-overflow-scrolling: touch;
+
+  @media (max-width: $bp-tablet) {
+    overflow-x: visible; // 모바일에서는 가로 스크롤 비활성
+  }
+}
+
 .mapping-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
+  word-break: keep-all;
+  overflow-wrap: normal;
 
   th,
   td {
@@ -14,6 +29,9 @@
     border-bottom: 1px solid $border;
     text-align: left;
     vertical-align: middle;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: normal;
   }
   th {
     color: $text-sub;
@@ -45,12 +63,27 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
+  }
+  &__field-name {
+    word-break: keep-all;
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
   &__desc {
     font-size: 11px;
     color: $text-sub;
-    margin-top: 2px;
-    line-height: 1.5;
+    margin-top: 4px;
+    line-height: 1.55;
+    word-break: keep-all;
+    overflow-wrap: normal;
+  }
+  &__warn {
+    color: $danger;
+    font-size: 11px;
+    margin-top: 4px;
+    font-weight: 600;
+    word-break: keep-all;
   }
   &__req-badge {
     background: $danger-soft;
@@ -59,6 +92,7 @@
     padding: 1px 7px;
     font-size: 10px;
     font-weight: 700;
+    flex-shrink: 0;
   }
   &__opt-badge {
     background: $surface-2;
@@ -68,6 +102,7 @@
     font-size: 10px;
     font-weight: 700;
     border: 1px solid $border;
+    flex-shrink: 0;
   }
   &__score {
     font-size: 11px;
@@ -77,6 +112,7 @@
     background: $surface-2;
     border: 1px solid $border;
     color: $text-sub;
+    display: inline-block;
     &.is-good {
       background: $success-soft;
       color: $success;
@@ -95,6 +131,118 @@
   }
 }
 
+// ===== 모바일 (≤ 768px): 같은 DOM 을 카드형으로 전환 =====
+@media (max-width: $bp-tablet) {
+  .mapping-table {
+    display: block;
+    border-collapse: separate;
+
+    // 헤더 숨김 (접근성 유지: clip)
+    thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    tbody {
+      display: block;
+    }
+
+    // 각 행 = 카드
+    tr {
+      display: block;
+      background: $card;
+      border: 1px solid $border;
+      border-radius: $r-md;
+      padding: $sp-4;
+      margin-bottom: $sp-3;
+      box-shadow: $shadow-xs;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+    tr:last-child td {
+      border-bottom: 1px dashed $border; // 모바일 카드 내 td 구분선 일관화
+    }
+
+    // 각 셀 = 카드 내부 블록
+    td {
+      display: block;
+      width: 100%;
+      padding: 10px 0;
+      border-bottom: 1px dashed $border;
+      max-width: none;
+
+      &:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+      &:first-child {
+        padding-top: 0;
+      }
+    }
+
+    // td 위에 작은 라벨을 띄움 (data-label 값 사용)
+    td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      color: $text-sub;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    // 첫 셀(분석 항목)의 라벨은 안 보여줘도 됨 — 항목명이 곧 라벨 역할
+    tr td:first-child::before {
+      display: none;
+    }
+
+    // 항목명 영역
+    &__field {
+      gap: 8px;
+    }
+    &__field-name {
+      font-size: 15px;
+      white-space: nowrap;
+    }
+
+    // 셀렉트는 카드 폭 전체, 터치 타깃 충분히
+    select {
+      width: 100%;
+      min-height: 44px;
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+
+    // 데이터 미리보기는 2줄까지만, 그 이상은 말줄임
+    &__sample {
+      max-width: none;
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 13px;
+    }
+
+    &__desc {
+      font-size: 12px;
+    }
+  }
+}
+
+// ===== 매핑 화면 푸터 =====
 .mapping-footer {
   display: flex;
   justify-content: space-between;
@@ -109,6 +257,7 @@
     gap: 8px;
     color: $text-sub;
     font-size: 13px;
+    flex-wrap: wrap;
     input[type='text'] {
       padding: 6px 10px;
       border: 1px solid $border-strong;
@@ -116,8 +265,28 @@
       font-size: 13px;
     }
   }
+
+  @media (max-width: $bp-tablet) {
+    flex-direction: column;
+    align-items: stretch;
+
+    &__save {
+      order: 2;
+    }
+    .page-actions {
+      order: 1;
+      flex-direction: column;
+      align-items: stretch;
+
+      .btn {
+        width: 100%;
+        min-height: 44px;
+      }
+    }
+  }
 }
 
+// ===== 이슈 카드 인라인 편집 (그대로 유지) =====
 .issue-edit {
   background: $surface-2;
   border: 1px solid $border;
