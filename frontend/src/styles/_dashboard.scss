@@ -116,6 +116,9 @@
   &--brand &__value {
     color: $primary-dark;
   }
+  &--success &__value {
+    color: $success;
+  }
   &__sub {
     font-size: 11px;
     color: $text-soft;

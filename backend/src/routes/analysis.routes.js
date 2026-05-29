@@ -173,22 +173,28 @@ router.get('/:id', (req, res) => {
   res.json({ analysisId: job.id, status: job.status, summary: JSON.parse(job.summary) });
 });
 
-// GET /api/analysis/:id/products — 상품 목록
+// GET /api/analysis/:id/products — 상품 목록 (대시보드용 요약)
 router.get('/:id/products', (req, res) => {
   const rows = db.prepare('SELECT data FROM product_analyses WHERE analysis_id = ?').all(req.params.id);
   if (!rows.length) return res.status(404).json({ error: '상품 분석 결과가 없습니다.' });
   const products = rows.map((r) => JSON.parse(r.data));
-  // 목록은 요약 정보만
   res.json(
     products.map((p) => ({
       productKey: p.productKey,
       productName: p.productName,
       totalReviews: p.totalReviews,
       negativeReviews: p.negativeReviews,
+      negativeRatio: p.negativeRatio,
+      positiveReviews: p.positiveReviews,
+      neutralReviews: p.neutralReviews,
+      sentimentCounts: p.sentimentCounts,
+      sentimentRatios: p.sentimentRatios,
       issueReviewCount: p.issueReviewCount,
       totalIssueCount: p.totalIssueCount,
+      issueRatio: p.issueRatio,
       averageRating: p.averageRating,
-      topIssue: p.topIssues[0] || null,
+      productStatus: p.productStatus,
+      topIssue: p.topIssues?.[0] || null,
     })),
   );
 });

@@ -4,6 +4,10 @@ import ReplyTemplateBox from '../components/ReplyTemplateBox.jsx';
 import IssueCard from '../components/IssueCard.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import LoadingState from '../components/LoadingState.jsx';
+import SentimentBar from '../components/SentimentBar.jsx';
+import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
+import AllIssuesModal from '../components/AllIssuesModal.jsx';
+import ReviewsModal from '../components/ReviewsModal.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 
 export default function ProductDetailPage() {
@@ -13,16 +17,18 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // 체크 상태는 action 문자열 자체(checkedActions)로 저장한다.
-  // detailPageActions 의 순서/개수가 바뀌어도 안전(인덱스 충돌 방지).
-  // 백엔드 영속화는 추후 TODO.
+  // 모달 상태
+  const [allIssuesOpen, setAllIssuesOpen] = useState(false);
+  const [reviewsOpen, setReviewsOpen] = useState(false);
+  const [selectedIssueFilter, setSelectedIssueFilter] = useState(null);
+
+  // 체크리스트는 action 문자열 자체로 저장 (인덱스 충돌 방지).
   const storageKey = `reviewfit:checklist:${analysisId}:${productKey}`;
   const [checkedActions, setCheckedActions] = useState(() => {
     if (typeof window === 'undefined') return new Set();
     try {
       const raw = window.localStorage.getItem(storageKey);
       const parsed = raw ? JSON.parse(raw) : [];
-      // 문자열 배열만 신뢰 (구버전 호환: 숫자 배열은 무시)
       return new Set((Array.isArray(parsed) ? parsed : []).filter((x) => typeof x === 'string'));
     } catch {
       return new Set();
@@ -66,6 +72,17 @@ export default function ProductDetailPage() {
     persistChecked(empty);
   }
 
+  function handleViewRelatedReviews(issue) {
+    setSelectedIssueFilter(issue);
+    setAllIssuesOpen(false);
+    setReviewsOpen(true);
+  }
+
+  function handleOpenAllReviews() {
+    setSelectedIssueFilter(null);
+    setReviewsOpen(true);
+  }
+
   if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
   if (error)
     return (
@@ -80,8 +97,13 @@ export default function ProductDetailPage() {
 
   const negPct = product.totalReviews ? Math.round((product.negativeReviews / product.totalReviews) * 100) : 0;
   const issuePct = Math.round((product.issueRatio ?? 0) * 100);
+  const counts = product.sentimentCounts || {
+    positive: product.positiveReviews || 0,
+    neutral: product.neutralReviews || 0,
+    negative: product.negativeReviews || 0,
+  };
+  const ratios = product.sentimentRatios || {};
 
-  // 한 줄 요약: 상품별 운영 코멘트의 첫 문장 또는 자동 생성
   const lede =
     product.summary ||
     `리뷰 ${product.totalReviews}건 중 ${product.issueReviewCount ?? 0}건에서 개선 이슈가 발견됐습니다.`;
@@ -98,22 +120,47 @@ export default function ProductDetailPage() {
 
       {/* 상단 헤더 */}
       <div className="product-header">
-        <div className="product-header__title">{product.productName}</div>
+        <div className="product-header__title">
+          {product.productName}
+          {product.productStatus && (
+            <span style={{ marginLeft: 10 }}>
+              <ProductStatusBadge status={product.productStatus} />
+            </span>
+          )}
+        </div>
         <div className="product-header__lede">{lede}</div>
         <div className="product-header__stats">
           <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
-          <span className="tag tag--danger">부정 리뷰 {product.negativeReviews}건 · {negPct}%</span>
+          <span className="tag tag--success">긍정 {counts.positive}건</span>
+          <span className="tag tag--neutral">중립 {counts.neutral}건</span>
+          <span className="tag tag--danger">부정 {counts.negative}건 · {negPct}%</span>
           <span className="tag">개선 이슈 리뷰 {product.issueReviewCount ?? 0}건</span>
           <span className="tag">총 이슈 {product.totalIssueCount ?? 0}건</span>
           <span className="tag">이슈 비율 {issuePct}%</span>
           {product.averageRating != null && <span className="tag">평균 ★ {product.averageRating.toFixed(2)}</span>}
         </div>
+        <div style={{ marginTop: 12 }}>
+          <SentimentBar counts={counts} ratios={ratios} />
+        </div>
+        {product.productInsight && (
+          <div className="product-header__insight">{product.productInsight}</div>
+        )}
       </div>
 
       {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard
         title="이 상품의 핵심 문제"
-        subtitle="실제 불편/개선 신호가 있는 리뷰만 모아 정리했어요. 긍정 리뷰나 '문제 없음' 표현은 핵심 문제에서 제외됩니다. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
+        subtitle="실제 불편/개선 신호가 있는 리뷰만 모아 정리했어요. 긍정 리뷰나 ‘문제 없음’ 표현은 핵심 문제에서 제외됩니다. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
+        action={
+          <div className="page-actions" style={{ gap: 8 }}>
+            <button className="btn btn--ghost btn--sm" onClick={() => setAllIssuesOpen(true)}>
+              전체 이슈 보기
+            </button>
+            <button className="btn btn--ghost btn--sm" onClick={handleOpenAllReviews}>
+              원본 리뷰 보기
+            </button>
+          </div>
+        }
         className="mb-5"
       >
         {product.topIssues.length === 0 ? (
@@ -175,9 +222,26 @@ export default function ProductDetailPage() {
         <span className="ops-note__ico">ℹ️</span>
         <div>
           리뷰핏의 제안은 고객 리뷰에서 반복되는 표현을 기반으로 생성됩니다. 실제 상세페이지 수정 전에는 상품 특성과
-          재고·배송 상황을 함께 확인하세요.
+          재고·배송 상황을 함께 확인하세요. CS 답글 초안은 셀러가 최종 확인하신 후 등록하시는 것을 권장합니다.
         </div>
       </div>
+
+      <AllIssuesModal
+        open={allIssuesOpen}
+        onClose={() => setAllIssuesOpen(false)}
+        allIssues={product.allIssues || product.topIssues || []}
+        onViewRelatedReviews={handleViewRelatedReviews}
+      />
+      <ReviewsModal
+        open={reviewsOpen}
+        onClose={() => {
+          setReviewsOpen(false);
+          setSelectedIssueFilter(null);
+        }}
+        reviews={product.reviews || []}
+        productName={product.productName}
+        initialIssueFilter={selectedIssueFilter}
+      />
     </div>
   );
 }

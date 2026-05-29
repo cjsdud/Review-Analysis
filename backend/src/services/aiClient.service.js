@@ -2,6 +2,7 @@
 // LLM_PROVIDER(mock|openai|gemini|claude)로 provider를 고르고,
 // 키가 없거나 호출/파싱이 실패하면 항상 mock 응답으로 안전하게 fallback 한다.
 // 모든 provider 응답은 JSON으로 파싱하며, 파싱/검증 실패 시 mock 기본값을 반환한다.
+import { buildReplyTemplates } from './replyTemplates.service.js';
 
 // ---------- provider / key / model 해석 ----------
 const PROVIDER = (process.env.LLM_PROVIDER || process.env.AI_PROVIDER || 'mock').toLowerCase();
@@ -208,11 +209,23 @@ export async function generateProductImprovementReport(productSummary) {
 //    입력: issueSummary({category, issueLabel}). 출력: [{issueLabel, tone, template}]
 // ===================================================================
 export async function generateReplyTemplates(issueSummary) {
+  // 정책 가드 — generic / positive / non-actionable 이슈는 답글 자체를 만들지 않는다.
+  // (UI 단의 필터와 별개로 백엔드에서도 한 번 더 차단)
+  const ruleBased = buildReplyTemplates(issueSummary);
+  if (!ruleBased.length) return [];
+
   const llm = await tryLLM(buildReplyPrompt(issueSummary), (parsed) => {
     const arr = Array.isArray(parsed?.templates) ? parsed.templates : Array.isArray(parsed) ? parsed : null;
     if (!arr || !arr.length) return null;
     const out = arr
       .filter((t) => t && typeof t.template === 'string' && t.template.trim())
+      // LLM 출력이 issueLabel 을 따옴표로 그대로 노출하면 거부 — 규칙 기반으로 fallback.
+      .filter((t) => {
+        const lbl = (issueSummary?.issueLabel || '').trim();
+        if (!lbl) return true;
+        const lit = new RegExp(`['"\\u2018\\u2019\\u201C\\u201D]\\s*${escapeRegex(lbl)}\\s*['"\\u2018\\u2019\\u201C\\u201D]`);
+        return !lit.test(t.template);
+      })
       .map((t) => ({
         issueLabel: t.issueLabel || issueSummary.issueLabel || '',
         tone: t.tone || '기본',
@@ -220,7 +233,11 @@ export async function generateReplyTemplates(issueSummary) {
       }));
     return out.length ? out : null;
   });
-  return llm || mockReplyTemplates(issueSummary);
+  return llm || ruleBased;
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ===================================================================
@@ -284,34 +301,7 @@ function mockProductReport(productSummary) {
   return { detailPageActions, summary };
 }
 
-// 카테고리별 구체적 개선 약속 (답글에 자연스럽게 삽입)
-const REPLY_PROMISE = {
-  사이즈: '사이즈 정보를 더 정확하게 안내드리도록 상세페이지를 보완하겠습니다',
-  '핏/실루엣': '다양한 착용컷으로 실제 핏을 더 잘 보여드리겠습니다',
-  '색상/화면 차이': '실물에 가까운 색상 컷과 안내를 추가하겠습니다',
-  '소재/두께': '소재와 두께 정보를 더 상세히 기재하겠습니다',
-  '마감/불량': '검수 과정을 강화하고, 원하시면 교환·반품을 바로 도와드리겠습니다',
-  착용감: '착용감 관련 안내를 보완하겠습니다',
-  '세탁/내구성': '세탁·관리 방법을 더 명확히 안내드리겠습니다',
-  '배송/포장': '배송과 포장 과정을 점검해 개선하겠습니다',
-  '가격/가성비': '가격에 걸맞은 가치를 드릴 수 있도록 노력하겠습니다',
-  기타: '주신 의견을 꼼꼼히 반영하겠습니다',
-};
-
-function mockReplyTemplates(issueSummary) {
-  const label = issueSummary.issueLabel || issueSummary.category || '불편하셨던 점';
-  const promise = REPLY_PROMISE[issueSummary.category] || REPLY_PROMISE['기타'];
-  const tones = {
-    기본: `안녕하세요 고객님, 소중한 후기 감사합니다. '${label}' 관련해 불편을 드려 죄송합니다. ${promise}.`,
-    정중: `안녕하세요 고객님, 먼저 불편을 드려 진심으로 죄송합니다. '${label}'에 대한 의견을 담당 부서에 전달했으며, ${promise}. 교환·반품이 필요하시면 언제든 편히 말씀해 주세요.`,
-    친근: `고객님 안녕하세요! 후기 남겨주셔서 정말 감사해요 :) '${label}' 때문에 불편하셨다니 속상하네요. ${promise}! 다음엔 꼭 더 만족하실 수 있게 할게요.`,
-  };
-  return [
-    { issueLabel: label, tone: '기본', template: tones.기본 },
-    { issueLabel: label, tone: '정중', template: tones.정중 },
-    { issueLabel: label, tone: '친근', template: tones.친근 },
-  ];
-}
+// (mockReplyTemplates / REPLY_PROMISE 는 replyTemplates.service.js 로 이동)
 
 // ---------- 프롬프트 빌더 ----------
 function buildClassifyPrompt(reviews, categories) {

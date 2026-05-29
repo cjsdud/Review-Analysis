@@ -5,35 +5,105 @@ import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 
 // 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외, 긍정/중립 제외).
-// 입력: classification 1건. 출력: 실제 개선 신호가 있는 categories 배열.
 const meaningfulCategories = (c) =>
   (c.categories || []).filter(
     (cat) => cat.name && cat.name !== '기타' && cat.isActionableIssue !== false,
   );
 
-// "사이즈 관련 의견" 처럼 카테고리명 + "관련 의견" 으로 끝나는 라벨은
-// 클러스터 라벨링이 실패해 카테고리명으로 대체된 것 — 핵심 문제로 노출하지 않는다.
+// "사이즈 관련 의견" 처럼 카테고리명 + "관련 의견" 으로 끝나는 라벨
 const GENERIC_LABEL_RE = /관련 의견$/;
 const isGenericLabel = (label) => !label || GENERIC_LABEL_RE.test(label);
 
+// 별점 + 텍스트 감성 기준으로 상품 상태 배지를 결정한다.
+// 입력: { totalReviews, positiveRatio, negativeRatio, issueRatio }
+// 출력: '만족도 높음' | '좋은데 고칠 점 있음' | '개선 우선' | '주의 필요' | '리뷰 부족' | '보통'
+export function deriveProductStatus({ totalReviews, positiveRatio, negativeRatio, issueRatio }) {
+  if (totalReviews < 10) return '리뷰 부족';
+  if (negativeRatio >= 0.25) return '주의 필요';
+  if (negativeRatio >= 0.15 && issueRatio >= 0.3) return '개선 우선';
+  if (positiveRatio >= 0.75 && negativeRatio <= 0.1) return '만족도 높음';
+  if (positiveRatio >= 0.7 && issueRatio >= 0.25) return '좋은데 고칠 점 있음';
+  return '보통';
+}
+
+// 짧은 셀러 친화 해석 문구 — 규칙 기반(LLM 미사용).
+function deriveProductInsight({ positiveRatio, negativeRatio, issueRatio }) {
+  if (positiveRatio >= 0.75 && issueRatio < 0.2) {
+    return '전체 만족도가 높은 상품입니다. 현재는 큰 개선 이슈보다 강점을 유지하는 것이 중요합니다.';
+  }
+  if (positiveRatio >= 0.7 && issueRatio >= 0.25) {
+    return '전체 만족도는 높지만, 반복되는 개선 포인트가 있습니다. 상세페이지 안내를 보강하면 기대치 차이를 줄일 수 있습니다.';
+  }
+  if (negativeRatio >= 0.25) {
+    return '부정 리뷰 비율이 높은 편입니다. 상품 품질, 상세페이지 안내, CS 대응을 우선 점검하는 것이 좋습니다.';
+  }
+  if (issueRatio >= 0.35) {
+    return '개선 이슈가 여러 리뷰에서 반복됩니다. 먼저 고칠 상품으로 우선 검토하세요.';
+  }
+  return '특별히 두드러진 위험 신호는 없습니다. 카테고리별 세부 이슈를 참고해 작은 개선 포인트부터 점검해 보세요.';
+}
+
+// 비율은 소수 3자리로 통일.
+const ratio3 = (a, b) => (b ? Number((a / b).toFixed(3)) : 0);
+
+// 리뷰 → 감성 카운트 집계
+function aggregateSentiment(classifications) {
+  const counts = { positive: 0, neutral: 0, negative: 0 };
+  for (const c of classifications) {
+    const s = c.sentiment || 'neutral';
+    if (s === 'positive') counts.positive++;
+    else if (s === 'negative') counts.negative++;
+    else counts.neutral++;
+  }
+  const total = classifications.length;
+  const ratios = {
+    positive: ratio3(counts.positive, total),
+    neutral: ratio3(counts.neutral, total),
+    negative: ratio3(counts.negative, total),
+  };
+  return { counts, ratios };
+}
+
+// 리뷰 객체를 셀러에게 보여줄 마스킹된 형태로 변환 (분석 결과 안에 저장).
+// classifications 의 categories 를 detectedIssues 로 함께 첨부한다.
+function maskedReviewForProduct(review, classification) {
+  const cats = (classification?.categories || []).map((cat) => ({
+    category: cat.name,
+    issue: cat.issue || null,
+    severity: cat.severity || 'medium',
+    issuePolarity: cat.issuePolarity || 'negative',
+    isActionableIssue: cat.isActionableIssue !== false,
+    confidence: cat.confidence ?? 0,
+  }));
+  return {
+    id: review.id,
+    productName: review.productName,
+    optionName: review.optionName || null,
+    rating: review.rating ?? null,
+    title: review.title || null,
+    content: review.content || '',
+    createdAt: review.createdAt || null,
+    replyText: review.replyText || null,
+    reviewId: review.reviewId || null,
+    source: review.source || null,
+    sentiment: classification?.sentiment || 'neutral',
+    detectedIssues: cats,
+  };
+}
+
 // 입력: reviews(ReviewNormalized[]), corrections([{productKey,original,corrected}] — 옵션)
 // 출력: { analysisId, summary, products, classifications }
-// corrections 가 제공되면 분류 단계 직후 review-level 우선 적용(키워드 2개 이상 매칭).
 export async function runAnalysis(reviews, corrections = []) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
-  // 1) 멀티라벨 분류 (규칙 + 애매한 부정 리뷰만 LLM)
   const classifications = await classifyAll(reviews, aiClient);
 
-  // 1-1) 사용자 분류 수정 룰 적용 (있을 때만)
   if (corrections && corrections.length) {
     applyReviewCorrections(reviews, classifications, corrections);
   }
 
-  // 2) 상품·카테고리·세부이슈 클러스터 + 근거 리뷰 선별
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
 
-  // 3) 상품별 집계
   const productNames = [...new Set(reviews.map((r) => r.productName))];
   const products = [];
 
@@ -42,41 +112,73 @@ export async function runAnalysis(reviews, corrections = []) {
     const productCls = classifications.filter((c) => c.productName === productName);
     const productClusters = clusters.filter((cl) => cl.productName === productName);
 
-    const negativeReviews = productCls.filter((c) => c.sentiment === 'negative').length;
     const total = productReviews.length;
-    const negativeRatio = total ? Number((negativeReviews / total).toFixed(3)) : 0;
-    // 지표 분리: 별점/감성 부정 vs 개선 이슈 발견 ('기타' 제외)
+    const negativeReviews = productCls.filter((c) => c.sentiment === 'negative').length;
+    const negativeRatio = ratio3(negativeReviews, total);
+
+    const sentiment = aggregateSentiment(productCls);
+    const sentimentCounts = sentiment.counts;
+    const sentimentRatios = sentiment.ratios;
+    const positiveReviews = sentimentCounts.positive;
+    const neutralReviews = sentimentCounts.neutral;
+
     const issueReviewCount = productCls.filter((c) => meaningfulCategories(c).length > 0).length;
     const totalIssueCount = productCls.reduce((s, c) => s + meaningfulCategories(c).length, 0);
-    const issueRatio = total ? Number((issueReviewCount / total).toFixed(3)) : 0;
+    const issueRatio = ratio3(issueReviewCount, total);
     const ratings = productReviews.map((r) => r.rating).filter((n) => typeof n === 'number');
     const averageRating = ratings.length
       ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
       : undefined;
 
-    // topIssues: 실제 개선 신호만(포괄 라벨/'기타'/긍정 polarity 제외), count 우선, 동률이면 평균 신뢰도
-    const topIssues = productClusters
+    // allIssues: 의미 있는 모든 actionable 이슈 클러스터(generic/'기타' 제외)
+    const allIssues = productClusters
       .filter((cl) => cl.category && cl.category !== '기타' && !isGenericLabel(cl.issueLabel))
       .filter((cl) => cl.polarity !== 'positive' && cl.polarity !== 'neutral')
       .sort((a, b) => b.count - a.count || b.avgConfidence - a.avgConfidence)
-      .slice(0, 5)
-      .map((cl) => ({
+      .map((cl, idx) => ({
+        id: `${productName}__${cl.category}__${cl.issueLabel}__${idx}`,
         category: cl.category,
         issueLabel: cl.issueLabel,
         count: cl.count,
-        ratio: total ? Number((cl.count / total).toFixed(3)) : 0,
+        ratio: ratio3(cl.count, total),
         confidence: cl.avgConfidence,
-        evidenceReviews: cl.evidenceReviews,
-        recommendedAction: cl.action,
-        source: cl.source,
         severity: cl.severity || 'medium',
         polarity: cl.polarity || 'negative',
+        source: cl.source,
+        recommendedAction: cl.action,
+        evidenceReviews: cl.evidenceReviews,
+        reviewIds: cl.reviewIds || [],
       }));
 
-    // 상세페이지 액션 = 상위 이슈의 추천 액션(중복 제거)
+    // topIssues: 상위 5 (UI 핵심 문제 카드)
+    const topIssues = allIssues.slice(0, 5).map((iss) => ({
+      category: iss.category,
+      issueLabel: iss.issueLabel,
+      count: iss.count,
+      ratio: iss.ratio,
+      confidence: iss.confidence,
+      evidenceReviews: iss.evidenceReviews,
+      recommendedAction: iss.recommendedAction,
+      source: iss.source,
+      severity: iss.severity,
+      polarity: iss.polarity,
+    }));
+
     const detailPageActions = [...new Set(topIssues.map((i) => i.recommendedAction).filter(Boolean))];
 
-    // 4) 자연어 요약 (LLM/mock)
+    const productStatus = deriveProductStatus({
+      totalReviews: total,
+      positiveRatio: sentimentRatios.positive,
+      negativeRatio,
+      issueRatio,
+    });
+    const productInsight = deriveProductInsight({
+      positiveRatio: sentimentRatios.positive,
+      negativeRatio,
+      issueRatio,
+    });
+
+    // 4) LLM 요약
     const report = await aiClient.generateProductImprovementReport({
       productName,
       totalReviews: total,
@@ -85,12 +187,23 @@ export async function runAnalysis(reviews, corrections = []) {
       topIssues,
     });
 
-    // 5) 답글 템플릿 (상위 이슈별)
+    // 5) 답글 템플릿 — 상위 이슈별, polarity/actionable/severity 정보를 함께 넘김
     const replyTemplates = [];
     for (const iss of topIssues.slice(0, 3)) {
-      const variants = await aiClient.generateReplyTemplates({ category: iss.category, issueLabel: iss.issueLabel });
-      replyTemplates.push({ issueLabel: iss.issueLabel, variants });
+      const variants = await aiClient.generateReplyTemplates({
+        category: iss.category,
+        issueLabel: iss.issueLabel,
+        recommendedAction: iss.recommendedAction,
+        polarity: iss.polarity,
+        isActionableIssue: true,
+        severity: iss.severity,
+      });
+      if (variants && variants.length) replyTemplates.push({ issueLabel: iss.issueLabel, variants });
     }
+
+    // 6) 마스킹된 리뷰 목록 (상세에서 사용)
+    const clsById = new Map(productCls.map((c) => [c.reviewId, c]));
+    const productReviewList = productReviews.map((r) => maskedReviewForProduct(r, clsById.get(r.id)));
 
     products.push({
       productKey: productName,
@@ -98,29 +211,39 @@ export async function runAnalysis(reviews, corrections = []) {
       totalReviews: total,
       negativeReviews,
       negativeRatio,
+      positiveReviews,
+      neutralReviews,
+      sentimentCounts,
+      sentimentRatios,
       issueReviewCount,
       totalIssueCount,
       issueRatio,
       averageRating,
+      productStatus,
+      productInsight,
       topIssues,
+      allIssues,
       detailPageActions: detailPageActions.length ? detailPageActions : report.detailPageActions || [],
       replyTemplates,
       summary: report.summary || '',
+      reviews: productReviewList,
     });
   }
 
-  // 6) 전체 요약 + 카테고리 분포
+  // 7) 전체 요약 + 카테고리 분포
   const totalReviews = reviews.length;
-  const negativeReviews = classifications.filter((c) => c.sentiment === 'negative').length;
+  const overallSentiment = aggregateSentiment(classifications);
+  const negativeReviews = overallSentiment.counts.negative;
+  const positiveReviews = overallSentiment.counts.positive;
+  const neutralReviews = overallSentiment.counts.neutral;
   const issueReviewCount = classifications.filter((c) => meaningfulCategories(c).length > 0).length;
   const totalIssueCount = classifications.reduce((s, c) => s + meaningfulCategories(c).length, 0);
-  const issueRatio = totalReviews ? Number((issueReviewCount / totalReviews).toFixed(3)) : 0;
+  const issueRatio = ratio3(issueReviewCount, totalReviews);
   const allRatings = reviews.map((r) => r.rating).filter((n) => typeof n === 'number');
   const averageRating = allRatings.length
     ? Number((allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(2))
     : undefined;
 
-  // 카테고리 분포 (불만 매칭 기준, 리뷰당 카테고리 1회)
   const categoryCount = Object.fromEntries(FASHION_CATEGORIES.map((c) => [c, 0]));
   for (const c of classifications) {
     const seen = new Set();
@@ -131,14 +254,11 @@ export async function runAnalysis(reviews, corrections = []) {
       }
     }
   }
-  // 카테고리 분포 (대시보드 표시용): '기타'는 포괄 라벨이라 시각화에서 제외해 핵심 불만 영역에 집중.
-  // 보조 참고용으로 '기타' 카운트는 summary.otherCount 로 별도 노출.
   const otherCount = categoryCount['기타'] || 0;
   const categoryDistribution = FASHION_CATEGORIES.map((name) => ({ name, count: categoryCount[name] || 0 })).filter(
     (c) => c.count > 0 && c.name !== '기타',
   );
 
-  // 상품 랭킹: 부정 리뷰(별점·감성) 기준 / 개선 이슈(분석으로 발견된 불만) 기준
   const byNegative = [...products].sort((a, b) => b.negativeReviews - a.negativeReviews).slice(0, 10);
   const byIssues = [...products]
     .sort((a, b) => b.issueReviewCount - a.issueReviewCount || b.totalIssueCount - a.totalIssueCount)
@@ -147,14 +267,18 @@ export async function runAnalysis(reviews, corrections = []) {
   const overall = await aiClient.generateMonthlyReport({
     totalReviews,
     negativeReviews,
-    negativeRatio: totalReviews ? Number((negativeReviews / totalReviews).toFixed(3)) : 0,
+    negativeRatio: ratio3(negativeReviews, totalReviews),
     topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
   });
 
   const summary = {
     totalReviews,
     negativeReviews,
-    negativeRatio: totalReviews ? Number((negativeReviews / totalReviews).toFixed(3)) : 0,
+    positiveReviews,
+    neutralReviews,
+    sentimentCounts: overallSentiment.counts,
+    sentimentRatios: overallSentiment.ratios,
+    negativeRatio: ratio3(negativeReviews, totalReviews),
     issueReviewCount,
     totalIssueCount,
     issueRatio,

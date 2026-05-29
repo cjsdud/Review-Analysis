@@ -513,6 +513,190 @@ await step('문맥 #20 — "발볼이 좁아서 발이 아파요"', async () => 
   assert(labels.includes('발볼이 좁음'), `"발볼이 좁음" 포함되어야 함. 실제: ${labels.join(',')}`);
 });
 
+// ──────────────────────────────────────────────
+// 감성 분포 / 상품 상태 / 답글 / 원본 리뷰
+// ──────────────────────────────────────────────
+
+await step('감성 #1 — 별점 5 + 약한 개선 이슈 → positive, issueReview 포함', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 's1', productName: 'P', rating: 5, content: '핏은 예쁜데 허리가 조금 타이트해요. 그래도 만족합니다.' },
+  ];
+  const { products, classifications } = await runAnalysis(reviews);
+  const cls = classifications[0];
+  assert.equal(cls.sentiment, 'positive', `sentiment=${cls.sentiment}`);
+  const p = products[0];
+  assert.equal(p.negativeReviews, 0, `negativeReviews=${p.negativeReviews}`);
+  assert(p.issueReviewCount >= 1, `issueReviewCount=${p.issueReviewCount}`);
+  assert.equal(p.sentimentCounts.positive, 1);
+});
+
+await step('감성 #2 — 별점 2 + 색상/소재 이슈 → negative + 이슈 다중', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 's2', productName: 'P', rating: 2, content: '사진보다 색상이 너무 어둡고 원단도 얇아요.' },
+  ];
+  const { products, classifications } = await runAnalysis(reviews);
+  assert.equal(classifications[0].sentiment, 'negative');
+  const p = products[0];
+  assert.equal(p.negativeReviews, 1);
+  assert(p.issueReviewCount >= 1);
+  assert.equal(p.sentimentCounts.negative, 1);
+});
+
+await step('감성 #3 — 별점 5 긍정 → positive + actionable 없음', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 's3', productName: 'P', rating: 5, content: '가격 대비 품질이 좋아서 만족합니다.' },
+  ];
+  const { products, classifications } = await runAnalysis(reviews);
+  assert.equal(classifications[0].sentiment, 'positive');
+  const p = products[0];
+  assert.equal(p.sentimentCounts.positive, 1);
+  assert.equal(p.negativeReviews, 0);
+  assert.equal(p.issueReviewCount, 0);
+});
+
+await step('감성 #4 — 상품 단위 sentimentCounts/Ratios 계산 정확', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 'q1', productName: 'P', rating: 5, content: '정말 좋아요' },
+    { id: 'q2', productName: 'P', rating: 5, content: '만족합니다' },
+    { id: 'q3', productName: 'P', rating: 3, content: '무난해요' },
+    { id: 'q4', productName: 'P', rating: 1, content: '불량이에요 환불 원합니다' },
+  ];
+  const { products, summary } = await runAnalysis(reviews);
+  const p = products[0];
+  assert.equal(p.sentimentCounts.positive, 2);
+  assert.equal(p.sentimentCounts.neutral, 1);
+  assert.equal(p.sentimentCounts.negative, 1);
+  assert.equal(p.sentimentRatios.positive, 0.5);
+  assert.equal(p.sentimentRatios.negative, 0.25);
+  assert.equal(summary.sentimentCounts.positive, 2);
+  assert.equal(summary.sentimentCounts.negative, 1);
+});
+
+await step('상품 상태 — deriveProductStatus 분기 검증', async () => {
+  const { deriveProductStatus } = await import('../src/services/productAnalysis.service.js');
+  assert.equal(deriveProductStatus({ totalReviews: 5, positiveRatio: 0.8, negativeRatio: 0, issueRatio: 0 }), '리뷰 부족');
+  assert.equal(deriveProductStatus({ totalReviews: 50, positiveRatio: 0.3, negativeRatio: 0.3, issueRatio: 0.4 }), '주의 필요');
+  assert.equal(deriveProductStatus({ totalReviews: 50, positiveRatio: 0.5, negativeRatio: 0.16, issueRatio: 0.32 }), '개선 우선');
+  assert.equal(deriveProductStatus({ totalReviews: 50, positiveRatio: 0.8, negativeRatio: 0.05, issueRatio: 0.1 }), '만족도 높음');
+  assert.equal(deriveProductStatus({ totalReviews: 50, positiveRatio: 0.72, negativeRatio: 0.12, issueRatio: 0.3 }), '좋은데 고칠 점 있음');
+  assert.equal(deriveProductStatus({ totalReviews: 50, positiveRatio: 0.6, negativeRatio: 0.1, issueRatio: 0.1 }), '보통');
+});
+
+// ──────────────────────────────────────────────
+// CS 답글 초안 — issueLabel 그대로 노출 금지
+// ──────────────────────────────────────────────
+
+async function getReplies(input) {
+  const { buildReplyTemplates } = await import('../src/services/replyTemplates.service.js');
+  return buildReplyTemplates(input);
+}
+
+await step('CS 답글 #1 — "기장이 김" issueLabel 직접 삽입 금지', async () => {
+  const reps = await getReplies({ issueLabel: '기장이 김', category: '사이즈' });
+  assert(reps.length === 3, `tones=${reps.length}`);
+  for (const r of reps) {
+    assert(!/['"‘’“”]\s*기장이 김\s*['"‘’“”]/.test(r.template),
+      `따옴표로 issueLabel 노출됨: ${r.template}`);
+    assert(!r.template.includes("'기장이 김' 관련"), 'X 관련해 패턴 금지');
+  }
+  assert(reps.some((r) => r.template.includes('기장감이 기대보다 길게')),
+    '"기장감이 기대보다 길게" 표현이 포함되어야 함');
+});
+
+await step('CS 답글 #2 — "배송이 지연됨" 강한 이슈 → 사과 포함', async () => {
+  const reps = await getReplies({ issueLabel: '배송이 지연됨', category: '배송/포장' });
+  for (const r of reps) {
+    assert(!r.template.includes("'배송이 지연됨'"), '따옴표로 issueLabel 노출 금지');
+  }
+  // 강한 이슈 — 사과 표현 포함
+  assert(reps.some((r) => /죄송합니다/.test(r.template)), '강한 이슈는 사과 표현 포함');
+  // customer-facing phrase
+  assert(reps.some((r) => r.template.includes('배송이 늦어져')), '"배송이 늦어져" 표현 포함');
+});
+
+await step('CS 답글 #3 — "실물 색상이 화면보다 밝음" → 자연스러운 표현', async () => {
+  const reps = await getReplies({ issueLabel: '실물 색상이 화면보다 밝음', category: '색상/화면 차이' });
+  for (const r of reps) {
+    assert(!r.template.includes("'실물 색상이 화면보다 밝음'"), '따옴표로 issueLabel 노출 금지');
+  }
+  assert(reps.some((r) => r.template.includes('화면보다 밝게 느껴지셨')),
+    '"화면보다 밝게 느껴지셨" 표현 포함');
+});
+
+await step('CS 답글 #4 — "원단이 얇고 비침이 있음" → 자연스러운 표현', async () => {
+  const reps = await getReplies({ issueLabel: '원단이 얇고 비침이 있음', category: '소재/두께' });
+  for (const r of reps) {
+    assert(!r.template.includes("'원단이 얇고 비침이 있음'"), '따옴표로 issueLabel 노출 금지');
+  }
+  assert(reps.some((r) => r.template.includes('원단 두께나 비침 정도')),
+    '"원단 두께나 비침 정도" 표현 포함');
+});
+
+await step('CS 답글 #5 — generic 라벨/positive/non-actionable 은 답글 생성 안 함', async () => {
+  const generic = await getReplies({ issueLabel: '소재/두께 관련 의견', category: '소재/두께' });
+  assert.equal(generic.length, 0, 'generic 라벨에서 답글 생성됨');
+  const positive = await getReplies({ issueLabel: '원단이 두꺼움', category: '소재/두께', polarity: 'positive' });
+  assert.equal(positive.length, 0, 'positive polarity 에서 답글 생성됨');
+  const nonAct = await getReplies({ issueLabel: '원단이 두꺼움', category: '소재/두께', isActionableIssue: false });
+  assert.equal(nonAct.length, 0, 'non-actionable 에서 답글 생성됨');
+  const noLabel = await getReplies({ issueLabel: null, category: '기타' });
+  assert.equal(noLabel.length, 0, '빈 라벨에서 답글 생성됨');
+});
+
+await step('상품 상세 데이터 — topIssues/allIssues/reviews + 마스킹', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const { maskRow } = await import('../src/services/privacyMasking.service.js');
+  // 정규화된 리뷰가 마스킹된 상태로 들어왔다고 가정 (실제 라우트에서도 reviews 테이블의 content 는 마스킹된 상태).
+  const rawReview = {
+    id: 'm1', productName: 'P', rating: 2,
+    content: '문의는 010-1234-5678로 주세요. test@example.com 주문번호 202605270001입니다. 허리가 작아요.',
+  };
+  const masked = { ...rawReview, content: maskRow(rawReview).content };
+  const { products } = await runAnalysis([masked]);
+  const p = products[0];
+  assert(Array.isArray(p.topIssues), 'topIssues 배열');
+  assert(Array.isArray(p.allIssues), 'allIssues 배열');
+  assert(Array.isArray(p.reviews) && p.reviews.length === 1, 'reviews 배열');
+  const r = p.reviews[0];
+  assert(typeof r.content === 'string' && r.content.length > 0, 'review.content 존재');
+  assert(r.content.includes('[전화번호]'), '전화번호 마스킹');
+  assert(r.content.includes('[이메일]'), '이메일 마스킹');
+  assert(r.content.includes('[주문번호]'), '주문번호 마스킹');
+  assert(!r.content.includes('010-1234-5678'), '원본 전화번호 노출');
+  assert(!r.content.includes('test@example.com'), '원본 이메일 노출');
+  assert(!r.content.includes('202605270001'), '원본 주문번호 노출');
+  assert(Array.isArray(r.detectedIssues), 'detectedIssues 배열');
+  assert(r.detectedIssues.some((d) => /허리/.test(d.issue || '')),
+    `허리 이슈 포함: ${r.detectedIssues.map((d) => d.issue).join(',')}`);
+});
+
+await step('상품 상세 데이터 — topIssues 와 allIssues 분리 (allIssues ⊇ topIssues)', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  // 6개 이상의 다른 이슈를 가진 리뷰 데이터
+  const reviews = Array.from({ length: 20 }, (_, i) => ({
+    id: `t${i}`,
+    productName: 'P',
+    rating: 2,
+    content: [
+      '허리가 작아요',
+      '어깨가 좁아요',
+      '소매가 짧아요',
+      '기장이 길어요',
+      '원단이 얇아요',
+      '비침이 있어요',
+      '마감이 엉성합니다',
+    ][i % 7],
+  }));
+  const { products } = await runAnalysis(reviews);
+  const p = products[0];
+  assert(p.topIssues.length <= 5, 'topIssues 는 최대 5개');
+  assert(p.allIssues.length >= p.topIssues.length, 'allIssues 는 topIssues 이상');
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
