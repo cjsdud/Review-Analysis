@@ -157,7 +157,7 @@ export default function ProductDetailPage() {
               전체 이슈 보기
             </button>
             <button className="btn btn--ghost btn--sm" onClick={handleOpenAllReviews}>
-              원본 리뷰 보기
+              리뷰 데이터 보기
             </button>
           </div>
         }

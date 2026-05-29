@@ -64,7 +64,7 @@ function ReviewCard({ review, defaultExpanded }) {
           className="btn btn--ghost btn--sm"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? '상세 접기' : '업로드 데이터 보기'}
+          {expanded ? '상세 닫기' : '상세 보기'}
         </button>
       </div>
 

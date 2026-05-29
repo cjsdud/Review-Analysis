@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react';
 import Modal from './Modal.jsx';
 import EvidenceReviewList from './EvidenceReviewList.jsx';
-import { FASHION_CATEGORIES } from '../constants.js';
-
-const SEV_RANK = { high: 3, medium: 2, low: 1 };
+import { buildIssueFilters, sortIssues } from '../utils/issueFilters.js';
 
 function SeverityBadge({ severity }) {
   const cls =
@@ -16,20 +14,16 @@ function SeverityBadge({ severity }) {
 // 입력: open, onClose, allIssues, onViewRelatedReviews(issue) — issue.id 또는 issueLabel 로 리뷰 모달 필터
 export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRelatedReviews }) {
   const [categoryFilter, setCategoryFilter] = useState('전체');
-  const [sortBy, setSortBy] = useState('count'); // 'count' | 'severity' | 'category'
+  const [sortBy, setSortBy] = useState('count'); // 'count'(기본=많이 나온 순) | 'severity' | 'category' | 'recent'
+
+  const filters = useMemo(() => buildIssueFilters(allIssues), [allIssues]);
+  // createdAt 메타가 이슈에 하나라도 있으면 "최신 리뷰 포함 순" 옵션 노출
+  const hasCreatedAt = useMemo(() => allIssues.some((i) => i.latestCreatedAt), [allIssues]);
 
   const filtered = useMemo(() => {
     let list = allIssues;
     if (categoryFilter !== '전체') list = list.filter((i) => i.category === categoryFilter);
-    list = [...list];
-    if (sortBy === 'severity') {
-      list.sort((a, b) => (SEV_RANK[b.severity] || 0) - (SEV_RANK[a.severity] || 0) || b.count - a.count);
-    } else if (sortBy === 'category') {
-      list.sort((a, b) => a.category.localeCompare(b.category) || b.count - a.count);
-    } else {
-      list.sort((a, b) => b.count - a.count || (b.confidence || 0) - (a.confidence || 0));
-    }
-    return list;
+    return sortIssues(list, sortBy);
   }, [allIssues, categoryFilter, sortBy]);
 
   return (
@@ -42,14 +36,15 @@ export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRe
     >
       <div className="modal-toolbar">
         <div className="modal-toolbar__chips" role="group" aria-label="카테고리 필터">
-          {['전체', ...FASHION_CATEGORIES].map((c) => (
+          {filters.map((f) => (
             <button
-              key={c}
+              key={f.value}
               type="button"
-              className={`chip${categoryFilter === c ? ' is-active' : ''}`}
-              onClick={() => setCategoryFilter(c)}
+              className={`chip issue-filter-chip${categoryFilter === f.value ? ' is-active' : ''}`}
+              onClick={() => setCategoryFilter(f.value)}
             >
-              {c}
+              {f.label}
+              <span className="issue-filter-chip__count">{f.count}</span>
             </button>
           ))}
         </div>
@@ -59,6 +54,7 @@ export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRe
             <option value="count">많이 나온 순</option>
             <option value="severity">심각도 높은 순</option>
             <option value="category">카테고리순</option>
+            {hasCreatedAt && <option value="recent">최신 리뷰 포함 순</option>}
           </select>
         </label>
       </div>

@@ -169,6 +169,32 @@
   }
 }
 
+// 카테고리 필터 칩 + 개수 배지 (가로 스크롤되며 줄바꿈되지 않도록)
+.issue-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  word-break: keep-all;
+  flex-shrink: 0;
+
+  &__count {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.75;
+    background: rgba($text-sub, 0.12);
+    border-radius: $r-pill;
+    padding: 0 6px;
+    min-width: 16px;
+    text-align: center;
+  }
+  &.is-active &__count {
+    opacity: 1;
+    background: rgba(#fff, 0.25);
+    color: #fff;
+  }
+}
+
 // ===== 전체 이슈 모달 =====
 .all-issues-list {
   list-style: none;

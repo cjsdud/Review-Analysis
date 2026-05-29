@@ -787,6 +787,51 @@ await step('history — listAnalyses limit 적용', async () => {
   assert.equal(one.length, 1, `limit=1 인데 ${one.length}건 반환`);
 });
 
+// ──────────────────────────────────────────────
+// 전체 이슈 필터/정렬 (프론트 순수 로직)
+// ──────────────────────────────────────────────
+await step('전체 이슈 필터 — 전체 고정 + 카테고리 count 내림차순', async () => {
+  const { buildIssueFilters } = await import('../../frontend/src/utils/issueFilters.js');
+  const allIssues = [
+    { category: '사이즈', issueLabel: '기장이 김', count: 5, severity: 'medium' },
+    { category: '소재/두께', issueLabel: '비침 있음', count: 3, severity: 'high' },
+    { category: '사이즈', issueLabel: '허리 작음', count: 4, severity: 'high' },
+    { category: '배송/포장', issueLabel: '배송 지연', count: 2, severity: 'high' },
+  ];
+  const filters = buildIssueFilters(allIssues);
+  assert.equal(filters[0].value, '전체', '전체가 첫 번째여야 함');
+  assert.equal(filters[0].count, 14, `전체 count=${filters[0].count}`);
+  assert.deepEqual(
+    filters.map((f) => [f.label, f.count]),
+    [['전체', 14], ['사이즈', 9], ['소재/두께', 3], ['배송/포장', 2]],
+    '필터 순서/개수 불일치',
+  );
+});
+
+await step('전체 이슈 필터 — count 0 카테고리 숨김', async () => {
+  const { buildIssueFilters } = await import('../../frontend/src/utils/issueFilters.js');
+  const filters = buildIssueFilters([{ category: '사이즈', count: 2 }]);
+  // 전체 + 사이즈만, 다른 카테고리 없음
+  assert.equal(filters.length, 2, `필터 개수=${filters.length}`);
+  assert(filters.every((f) => f.count > 0), 'count 0 필터가 포함됨');
+});
+
+await step('전체 이슈 정렬 — 기본 많이 나온 순 (count→severity)', async () => {
+  const { sortIssues } = await import('../../frontend/src/utils/issueFilters.js');
+  const allIssues = [
+    { issueLabel: '기장이 김', count: 5, severity: 'medium', ratio: 0.1 },
+    { issueLabel: '비침 있음', count: 3, severity: 'high', ratio: 0.05 },
+    { issueLabel: '허리 작음', count: 5, severity: 'high', ratio: 0.1 },
+    { issueLabel: '배송 지연', count: 2, severity: 'high', ratio: 0.03 },
+  ];
+  const sorted = sortIssues(allIssues, 'count');
+  // count 5 두 건이 먼저, 그 중 severity high(허리 작음)가 앞
+  assert.equal(sorted[0].issueLabel, '허리 작음', `1순위=${sorted[0].issueLabel}`);
+  assert.equal(sorted[1].issueLabel, '기장이 김', `2순위=${sorted[1].issueLabel}`);
+  assert.equal(sorted[2].issueLabel, '비침 있음', `3순위=${sorted[2].issueLabel}`);
+  assert.equal(sorted[3].issueLabel, '배송 지연', `4순위=${sorted[3].issueLabel}`);
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
