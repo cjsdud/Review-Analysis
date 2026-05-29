@@ -54,7 +54,7 @@ review-insight-mvp/  (= 이 저장소 루트)
 │   └── package.json
 │
 ├── sample-data/
-│   └── sample_reviews_fashion.csv   # 116개 샘플 리뷰 (상품 14종)
+│   └── sample_reviews_fashion.csv   # 133개 샘플 리뷰 (상품 14종)
 └── README.md
 ```
 
@@ -388,7 +388,7 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 ---
 
 ## 8. 샘플 데이터
-`sample-data/sample_reviews_fashion.csv` — **14개 상품, 총 116개 리뷰**.
+`sample-data/sample_reviews_fashion.csv` — **14개 상품, 총 133개 리뷰**.
 
 | 상품군 | 상품 |
 |---|---|
@@ -403,6 +403,45 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 
 일부 상품은 부정 리뷰가 많고 일부는 긍정 리뷰가 많도록 의도적으로 불균등하게 구성했으며,
 **개인정보 마스킹 테스트용 전화번호·이메일·주문번호**도 포함되어 있습니다.
+
+133개 중 후반 17개(ID 15001–15017)는 **분류 품질 검증용** — 긍정/문제 없음 표현,
+대조 구조(`괜찮은데/예쁜데/지만`), 완화(`조금/살짝/가격 생각하면`), 사이즈 방향 반전
+(`한 치수 작게/크게 사세요`), 색상/사이즈 혼동 회피 등 까다로운 케이스를 담고 있습니다.
+
+---
+
+## 8-1. 분류 품질 개선 기준
+
+`backend/src/services/reviewClassification.service.js` + `fashionLexicon.js` 에서
+다음 원칙으로 절(clause) 단위 멀티라벨 분류를 수행합니다.
+
+- **긍정/문제 없음 표현은 핵심 문제에서 제외**
+  - 카테고리별 긍정 표현(`CATEGORY_POSITIVE_PHRASES`)이 절에 있으면 해당 카테고리는 이슈로 잡지 않습니다.
+  - `ANY_POSITIVE_PHRASES`(예: "더 사고 싶어요", "재구매", "오래 입을 수 있을 것 같")가 있으면 actionable 이슈로 잡지 않습니다.
+  - `SOFT_POSITIVE_PHRASES`(`나쁘지 않`)는 무난/긍정으로 해석합니다.
+  - "비침이 거의 없어서 좋아요" 같이 부정 어휘가 부정 문맥(`없/안/않`) 안에 있으면 negative 로 치지 않습니다.
+- **카테고리 문맥 가드**
+  - `CATEGORY_CONTEXT` 키워드가 절에 있어야 그 카테고리로 분류됩니다.
+  - `사이즈`: '사이즈/치수/허리/어깨/소매/기장/품/핏/…' 중 하나가 있어야 사이즈 이슈가 됩니다.
+    "사진보다 색감이 조금 밝게 느껴졌어요" 는 절대 사이즈 이슈로 잡지 않습니다.
+- **사이즈 방향성 보정**
+  - "한 치수 작게 사세요" = 상품이 크게 나옴, "한 치수 크게 사세요" = 상품이 작게 나옴.
+  - `SIZE_DIRECTION_TOKENS.STRONG_LARGE`(헐렁/넉넉/품이 커) 와 `STRONG_SMALL`(타이트/꽉/품이 작) 로 충돌을 자동 해소합니다.
+  - 같은 리뷰에서 `전반적으로 작게 나옴` 과 `전반적으로 크게 나옴` 이 동시에 잡히면 리뷰 단위 conflict resolver 가 정리합니다.
+- **부위별 "문제 없음" 차단**
+  - "기장은 괜찮은데 어깨가 크게 느껴져요" 에서 '기장은 괜찮'을 감지해 기장 이슈를 제거하고 어깨 이슈만 남깁니다.
+  - `PART_NO_PROBLEM` (라벨 단위) 매핑으로 처리합니다.
+- **severity (low/medium/high)**
+  - 완화 표현(`조금/살짝/약간/제 기준에는/가격 생각하면/나쁘지 않`)이 있으면 절 단위 severity 를 `low` 로 낮춥니다.
+  - 강조 표현(`너무/진짜/완전/심하게`)이 있으면 `high`. 같은 이슈가 5건 이상 반복되면 클러스터에서 `high` 로 부스트됩니다.
+- **topIssues 필터**
+  - "~ 관련 의견" 같은 generic label, `기타` 카테고리, positive/neutral polarity 클러스터는 핵심 문제에서 제외합니다.
+- **대조 구조 분리**
+  - "~는데/은데/지만/쁜데/싼데" 등을 절 분리자로 처리해 앞 절의 긍정과 뒤 절의 불만을 분리합니다.
+- 실제 셀러 파일에서 발견된 오분류는 `user_corrections`(키워드 ≥2개 substring 매칭)와
+  `fashionLexicon` 규칙 보강으로 다음 분석부터 자동 반영됩니다.
+
+검증: `backend/scripts/check.js` 의 "문맥 #1 ~ #20" 케이스로 회귀를 확인합니다.
 
 ---
 
@@ -422,7 +461,7 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 - 체크리스트 체크 상태 localStorage 영속화 (key=`reviewfit:checklist:{aid}:{pkey}`, **action 텍스트 기반**)
 - Sass `lighten()` → `color.adjust()` 마이그레이션 (deprecation 경고 제거)
 - 검증 스크립트 3종: `npm run check` / `build:frontend` / `check:llm`
-- 데모 데이터 확장 — 14개 상품 / 116개 리뷰 (아우터·신발·가방·원피스 추가)
+- 데모 데이터 확장 — 14개 상품 / 133개 리뷰 (분류 품질 검증용 17건 포함)
 
 ## 10. 남은 TODO
 
@@ -432,7 +471,7 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 | 🟥 높음 | **실제 셀러 파일 기반 검증** | `docs/seller-validation-template.md` 양식으로 인터뷰 수집 |
 | 🟧 중간 | **카페24 OAuth 실제 연동** | 설계: `docs/cafe24-oauth-plan.md` |
 | 🟧 중간 | **`user_corrections` 고도화** | 현재 키워드 ≥2개 substring 매칭. 임베딩/유사도 매칭으로 정밀도 ↑ |
-| 🟧 중간 | **샘플 데이터 지속 확장** | 14상품/116건 → 카테고리/상품군 추가 |
+| 🟧 중간 | **샘플 데이터 지속 확장** | 14상품/133건 → 카테고리/상품군 추가 |
 | 🟨 낮음 | **ECharts tree-shaking 세부 최적화** | 필요 차트만 import → gzipped 추가 절감 |
 | 🟨 낮음 | **프롬프트 캐싱 / 배치 호출** | 설계: `docs/llm-cost-optimization.md` |
 | 🟨 낮음 | **PDF 정식 출력** | 현재 `window.print` 기반 + 인쇄 전용 CSS |

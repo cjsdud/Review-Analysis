@@ -58,8 +58,8 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
   for (const c of classifications) {
     for (const cat of c.categories) {
       // 긍정/중립(문제 없음) 표현은 핵심 문제 클러스터에서 제외.
-      // isActionableIssue 가 명시적으로 false 인 경우만 거른다(legacy 필드 누락은 통과).
       if (cat.isActionableIssue === false) continue;
+      if (cat.issuePolarity === 'positive') continue;
       const labelKey = cat.issue || NULL;
       const key = `${c.productName}||${cat.name}||${labelKey}`;
       if (!groups.has(key)) groups.set(key, []);
@@ -69,6 +69,8 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
         action: cat.action,
         strength: cat.strength ?? 1,
         confidence: cat.confidence ?? 0.5,
+        severity: cat.severity || 'medium',
+        polarity: cat.issuePolarity || 'negative',
         sentiment: c.sentiment,
         rating: c.rating,
         clause: cat.evidence || '',
@@ -137,11 +139,36 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
   return clusters;
 }
 
+const SEV_RANK = { low: 1, medium: 2, high: 3 };
+
+function aggregateSeverity(items) {
+  // 항목별 severity max → count 로 한 번 더 부스트
+  let best = 'low';
+  for (const it of items) {
+    const s = it.severity || 'medium';
+    if (SEV_RANK[s] > SEV_RANK[best]) best = s;
+  }
+  const count = new Set(items.map((i) => i.reviewId)).size;
+  // count >=5 → high 보장, count >=3 → medium 이상 보장
+  if (count >= 5) return 'high';
+  if (count >= 3 && SEV_RANK[best] < SEV_RANK.medium) return 'medium';
+  return best;
+}
+
 function makeCluster(productName, category, label, items, source) {
   const uniqueReviewIds = [...new Set(items.map((i) => i.reviewId))];
   const evidence = pickEvidence(items).map((i) => trimText(i.content));
   const avgConfidence =
     items.reduce((s, i) => s + (i.confidence || 0), 0) / Math.max(items.length, 1);
+  // 클러스터 polarity: mixed 가 1건 이상이면 mixed, 아니면 negative
+  const polarities = new Set(items.map((i) => i.polarity || 'negative'));
+  const clusterPolarity = polarities.has('negative')
+    ? polarities.has('mixed') || polarities.has('positive')
+      ? 'mixed'
+      : 'negative'
+    : polarities.has('mixed')
+      ? 'mixed'
+      : 'neutral';
   return {
     productName,
     category,
@@ -152,6 +179,8 @@ function makeCluster(productName, category, label, items, source) {
     reviewIds: uniqueReviewIds,
     evidenceReviews: evidence,
     avgConfidence: Number(avgConfidence.toFixed(2)),
+    severity: aggregateSeverity(items),
+    polarity: clusterPolarity,
   };
 }
 

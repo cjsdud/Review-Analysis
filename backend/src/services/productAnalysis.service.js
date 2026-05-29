@@ -54,9 +54,10 @@ export async function runAnalysis(reviews, corrections = []) {
       ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
       : undefined;
 
-    // topIssues: 실제 개선 신호만(포괄 라벨/'기타' 카테고리 제외), count 우선, 동률이면 평균 신뢰도
+    // topIssues: 실제 개선 신호만(포괄 라벨/'기타'/긍정 polarity 제외), count 우선, 동률이면 평균 신뢰도
     const topIssues = productClusters
       .filter((cl) => cl.category && cl.category !== '기타' && !isGenericLabel(cl.issueLabel))
+      .filter((cl) => cl.polarity !== 'positive' && cl.polarity !== 'neutral')
       .sort((a, b) => b.count - a.count || b.avgConfidence - a.avgConfidence)
       .slice(0, 5)
       .map((cl) => ({
@@ -68,6 +69,8 @@ export async function runAnalysis(reviews, corrections = []) {
         evidenceReviews: cl.evidenceReviews,
         recommendedAction: cl.action,
         source: cl.source,
+        severity: cl.severity || 'medium',
+        polarity: cl.polarity || 'negative',
       }));
 
     // 상세페이지 액션 = 상위 이슈의 추천 액션(중복 제거)

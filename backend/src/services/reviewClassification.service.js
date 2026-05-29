@@ -1,5 +1,10 @@
-// 패션 리뷰 멀티라벨 분류 엔진
-// 절(clause) 단위로 쪼개 카테고리·세부이슈를 매칭하고, 부정어/극성을 반영한다.
+// 패션 리뷰 멀티라벨 분류 엔진 — 문맥 기반.
+// 절(clause) 단위로 쪼개고, 각 절에 대해
+//   1) positive/no-problem 표현 검사  →  해당 카테고리 이슈 차단
+//   2) 카테고리 문맥(category context) 가드  →  관련 키워드 없으면 해당 카테고리로 분류 금지
+//   3) 부정어/극성 인지 토큰 매칭
+//   4) 사이즈 방향(buy-down/buy-up, 강한 large/small 토큰)으로 충돌 해소
+//   5) 완화(조금/살짝)·강조(너무/완전) 표현으로 severity 결정
 import { safeStr } from '../utils/textUtils.js';
 import {
   FASHION_CATEGORIES,
@@ -7,6 +12,14 @@ import {
   CATEGORY_ACTIONS,
   ISSUE_ACTIONS,
   SIZE_DIRECTION_TOKENS,
+  CATEGORY_CONTEXT,
+  ANY_POSITIVE_PHRASES,
+  CATEGORY_POSITIVE_PHRASES,
+  SOFT_POSITIVE_PHRASES,
+  PART_NO_PROBLEM,
+  CONTRAST_MARKERS,
+  MITIGATION_PHRASES,
+  INTENSITY_PHRASES,
 } from './fashionLexicon.js';
 
 export { FASHION_CATEGORIES };
@@ -26,23 +39,39 @@ const CATEGORY_GENERIC = {
 
 // 극성 판단용 어휘
 const POS_TERMS = [
-  '예뻐', '예쁘', '예쁜', '이뻐', '이쁘', '이쁜', '이쁨', '예쁨', '만족', '마음에', '맘에', '좋아', '좋네', '좋고', '좋습니',
-  '좋은', '좋았', '괜찮', '편하', '편해', '부드럽', '적당', '딱 맞', '잘 맞', '딱이', '딱', '추천', '재구매', '최고',
-  '굿', '시원', '세련', '고급', '가벼워', '가볍', '튼튼', '문제없', '문제 없', '이상 없', '이상없',
+  '예뻐', '예쁘', '예쁜', '이뻐', '이쁘', '이쁜', '이쁨', '예쁨',
+  '만족', '마음에', '맘에',
+  '좋아', '좋네', '좋고', '좋습니', '좋은', '좋았',
+  '괜찮', '편하', '편해', '편안',
+  '부드럽', '적당', '딱 맞', '잘 맞', '딱이',
+  '추천', '재구매', '최고', '강추',
+  '굿', '시원', '세련', '고급',
+  '가벼워', '가볍', '튼튼', '탄탄', '꼼꼼', '깔끔',
+  '문제없', '문제 없', '이상 없', '이상없',
+  '도톰', '두께감 좋',
 ];
+// NEG_TERMS: 부정 신호 어휘. '별로' 는 '색상별로/조금별로' 같은 합성어로 오탐이 잦아
+// 안전한 표면형(별로요/별로네/별로다/이 별로/가 별로/는 별로/은 별로)만 등록한다.
 const NEG_TERMS = [
-  '작아', '작게', '작음', '짧', '좁', '헐렁', '비침', '비쳐', '까슬', '뻣뻣', '불량', '하자', '터', '뜯', '구멍',
-  '실밥', '보풀', '줄어', '늘어', '물빠짐', '이염', '늦', '지연', '구겨', '구김', '누락', '파손', '무거', '답답',
-  '불편', '따가', '가려', '비싸', '아깝', '어둡', '칙칙', '차이', '달라', '다르', '별로', '아쉬', '실망', '후회',
-  '환불', '반품', '최악', '안 맞', '안맞', '엉성', '부해',
+  '작아', '작게', '작음', '짧', '좁', '헐렁', '벙벙', '타이트', '꽉 끼', '꽉 껴', '낑',
+  '비침', '비쳐', '얇아', '얇음', '얇네', '까슬', '뻣뻣', '두꺼', '두툼해',
+  '불량', '하자', '터', '뜯', '구멍', '실밥', '보풀',
+  '줄어', '늘어', '물빠짐', '이염',
+  '늦', '지연', '구겨', '구김', '누락', '파손',
+  '무거', '답답', '불편', '따가', '가려', '쓸려',
+  '비싸', '아깝',
+  '어둡', '칙칙', '차이가 있', '차이 있', '차이가 나', '차이 나', '달라', '다르게',
+  '별로요', '별로네', '별로예', '별로다', '이 별로', '가 별로', '는 별로', '은 별로', '별로 안',
+  '아쉬', '실망', '후회', '환불', '반품', '최악',
+  '안 맞', '안맞', '엉성', '부해', '부족', '삐뚤',
 ];
-const INTENSIFIERS = ['너무', '진짜', '완전', '정말', '매우', '심하게', '상당히', '엄청', '너무너무'];
+const INTENSIFIERS = INTENSITY_PHRASES;
 const DIMINISHERS = ['약간', '살짝', '조금', '다소', '그닥'];
 
 // 항상 불만으로 보는 라벨(불량/누락 등) — 긍정 단어가 있어도 불만으로 인정
 const ALWAYS_NEG_LABEL = /(불량|하자|누락|파손|지연|물빠짐|보풀|실밥|터짐|구멍|부실)/;
 
-// 더 구체적인 라벨이 있으면 제거할 포괄 라벨 (사이즈)
+// 사이즈 카테고리에서 더 구체적인 라벨이 있을 때 제거할 포괄 라벨
 const SIZE_GENERIC_LABELS = new Set(['전반적으로 작게 나옴', '전반적으로 크게 나옴']);
 // 같은 카테고리에서 더 구체적인 라벨이 있을 때 후순위로 밀리는 약한 라벨
 const WEAK_LABELS = new Set([
@@ -54,11 +83,16 @@ const WEAK_LABELS = new Set([
   '핏/실루엣이 기대와 다름',
 ]);
 
+// 부정 단서 없이도 발동해도 되는 카테고리 (강한 신호가 있는 라벨).
+// 배송/포장 은 제외 — '오래 걸으면 발이 아파' 같은 false-positive 를 막기 위해 카테고리 문맥 필수.
+const ALWAYS_FIRE_CATEGORIES = new Set(['마감/불량']);
+
 const CONJUNCTIONS = ['그런데', '근데', '하지만', '그러나', '그리고', '다만', '그래도'];
 
 function splitClauses(text) {
   let s = safeStr(text).replace(/\n+/g, '. ');
   for (const c of CONJUNCTIONS) s = s.split(c).join('§');
+  for (const m of CONTRAST_MARKERS) s = s.split(m).join('§');
   return s
     .split(/[.!?,~§]+/)
     .map((c) => c.trim())
@@ -91,8 +125,7 @@ function hasAny(clause, tokens) {
   return tokens.some((t) => clause.includes(t));
 }
 
-// 부정 토큰을 "없/안/않" 등의 부정 문맥 안에서 등장하면 부정 표현으로 치지 않는다.
-// 예: "비침이 없어서 좋아요" 에서 '비침' 은 NEG_TERMS 에 있지만 실제로는 긍정.
+// NEG_TERMS 중 "없/안/않" 등의 부정 문맥에 있는 단어는 부정 표현으로 치지 않는다.
 function hasNegativeAware(clause) {
   for (const tk of NEG_TERMS) {
     let from = 0;
@@ -105,9 +138,26 @@ function hasNegativeAware(clause) {
   return false;
 }
 
+// 절이 카테고리 cat 의 문맥을 담고 있는가
+function hasCategoryContext(clause, cat) {
+  const ctx = CATEGORY_CONTEXT[cat];
+  if (!ctx) return true; // 정의 없으면 통과
+  return ctx.some((k) => clause.includes(k));
+}
+
+// 절이 어떤 형태로든 긍정 신호(POS_TERMS / ANY_POSITIVE / SOFT_POSITIVE)를 담고 있는가
+function clauseHasAnyPositive(clause) {
+  if (POS_TERMS.some((t) => clause.includes(t))) return true;
+  if (ANY_POSITIVE_PHRASES.some((p) => clause.includes(p))) return true;
+  if (SOFT_POSITIVE_PHRASES.some((p) => clause.includes(p))) return true;
+  return false;
+}
+
+// 절 전체가 긍정인지 (부정 단서가 없거나 모두 부정 문맥 내).
 function clauseIsPositive(clause) {
-  const neg = /별로|아쉬|실망|않|안 좋|안좋/.test(clause);
-  const pos = POS_TERMS.some((t) => clause.includes(t));
+  // '별로' 는 NEG_TERMS 의 안전한 surface form 으로만 잡는다(여기서는 제외).
+  const neg = /아쉬|실망|않(?!\s*아)|안 좋|안좋|후회|환불|최악/.test(clause);
+  const pos = clauseHasAnyPositive(clause);
   return pos && !neg && !hasNegativeAware(clause);
 }
 
@@ -121,32 +171,68 @@ function intensityBonus(clause) {
   return 0;
 }
 
-// 절(clause)이 "개선이 필요한 진짜 불만"인지 판단.
-// - 긍정 절(좋아요/문제없어요)은 false
-// - 명시적 부정 단서가 있어야 true
+// 절이 "진짜 개선이 필요한 불만"인지 — 긍정 절은 아니고 명시적 부정 단서가 있다.
 function clauseIsActionable(clause) {
   if (clauseIsPositive(clause)) return false;
   return hasNegativeAware(clause);
 }
 
+// 절의 severity 추정 — 단일 절 기준. 클러스터 단계에서 count 로 한 번 더 조정한다.
+function clauseSeverity(clause) {
+  const mit = MITIGATION_PHRASES.some((m) => clause.includes(m));
+  const intense = INTENSITY_PHRASES.some((m) => clause.includes(m));
+  if (intense && !mit) return 'high';
+  if (mit) return 'low';
+  return 'medium';
+}
+
 // 한 절에서 매칭되는 세부 이슈들 (카테고리별 중복 제거 + 제너릭)
 function matchClause(clause) {
   const positive = clauseIsPositive(clause);
+  const hasAnyPos = clauseHasAnyPositive(clause);
   const ib = intensityBonus(clause);
+  const severity = clauseSeverity(clause);
+
+  // 사이즈 방향 단서
   const buyDown = SIZE_DIRECTION_TOKENS.BUY_DOWN.some((t) => clause.includes(t));
   const buyUp = SIZE_DIRECTION_TOKENS.BUY_UP.some((t) => clause.includes(t));
+  const strongLarge = SIZE_DIRECTION_TOKENS.STRONG_LARGE.some((t) => clause.includes(t));
+  const strongSmall = SIZE_DIRECTION_TOKENS.STRONG_SMALL.some((t) => clause.includes(t));
+
+  // 카테고리별 긍정 표현이 있으면 그 카테고리는 (강한 부정 라벨이 아닌 한) 차단
+  const blockedCategories = new Set();
+  for (const [cat, phrases] of Object.entries(CATEGORY_POSITIVE_PHRASES)) {
+    if (phrases.some((p) => clause.includes(p))) blockedCategories.add(cat);
+  }
+  // 소프트 긍정("나쁘지 않") 도 부정 이슈 차단으로 처리
+  const softPositive = SOFT_POSITIVE_PHRASES.some((p) => clause.includes(p));
 
   // 1) 규칙별 raw 매칭 수집 (트리거 토큰 + 규칙 순서 기록)
   const byCategory = new Map();
   SUBISSUE_RULES.forEach((rule, ruleIndex) => {
+    const alwaysNeg = ALWAYS_NEG_LABEL.test(rule.label);
+    const alwaysFire = ALWAYS_FIRE_CATEGORIES.has(rule.cat);
+
+    // 카테고리 긍정 표현이 있으면 차단 (단, alwaysNeg 는 통과)
+    if (blockedCategories.has(rule.cat) && !alwaysNeg) return;
+    // 부위별 "문제 없음" 차단
+    if (PART_NO_PROBLEM[rule.label]) {
+      if (PART_NO_PROBLEM[rule.label].some((p) => clause.includes(p))) return;
+    }
+    // 절 전체가 긍정인 경우 — 강한 부정 라벨만 통과
+    if (positive && !alwaysNeg) return;
+    // 소프트 긍정("나쁘지 않") — 강한 부정 라벨만 통과
+    if (softPositive && !alwaysNeg) return;
+
+    // 카테고리 문맥 가드 — alwaysNeg / alwaysFire 카테고리는 예외
+    if (!alwaysNeg && !alwaysFire && !hasCategoryContext(clause, rule.cat)) return;
+
     const triggers = [];
     for (const group of rule.all) {
       const tk = matchGroup(clause, group);
       if (!tk) return;
       triggers.push(tk);
     }
-    const alwaysNeg = ALWAYS_NEG_LABEL.test(rule.label);
-    if (positive && !alwaysNeg) return; // 긍정 절에서는 애매한 이슈 제외
 
     const groups = rule.all.length;
     const confidence = Math.max(0.4, Math.min(0.95, 0.62 + 0.12 * (groups - 1) + ib));
@@ -156,8 +242,7 @@ function matchClause(clause) {
     byCategory.set(rule.cat, list);
   });
 
-  // 2) 카테고리별로 트리거가 겹치지 않는(서로 다른 부위/측면) 이슈만 남김.
-  //    강도 높은(구체적인) 규칙 우선 → 트리거를 공유하는 약한 규칙은 흡수.
+  // 2) 카테고리별 트리거 dedupe — 강도 큰 규칙 우선 → 동일 트리거 공유 약한 규칙은 흡수
   const results = [];
   for (const list of byCategory.values()) {
     list.sort((a, b) => b.strength - a.strength || a.ruleIndex - b.ruleIndex);
@@ -169,10 +254,12 @@ function matchClause(clause) {
     }
   }
 
-  // 3) 제너릭: 세부 이슈가 전혀 안 잡힌 카테고리만 (부정 단서 있을 때)
-  if (!positive && hasNegativeAware(clause)) {
+  // 3) 제너릭: 세부 이슈가 전혀 안 잡힌 카테고리만 (부정 단서 + 카테고리 문맥)
+  if (!positive && !softPositive && hasNegativeAware(clause)) {
     for (const [cat, tokens] of Object.entries(CATEGORY_GENERIC)) {
       if (byCategory.has(cat)) continue;
+      if (blockedCategories.has(cat)) continue;
+      if (!hasCategoryContext(clause, cat)) continue;
       if (matchGroup(clause, tokens)) {
         results.push({ category: cat, label: null, strength: 1, confidence: 0.42 });
       }
@@ -180,29 +267,49 @@ function matchClause(clause) {
   }
 
   // 4) 사이즈 방향 충돌 해소
-  //    "한 치수 작게 사세요" 같은 구매 가이드 표현이 보이면 실제 상품은 반대 방향.
-  //    동시에 잡힌 반대 라벨('전반적으로 작게 나옴' / '전반적으로 크게 나옴')은 제거.
-  if (buyDown || buyUp) {
-    const wrong = buyDown ? '전반적으로 작게 나옴' : '전반적으로 크게 나옴';
+  //    BUY_DOWN ("한 치수 작게 사세요") → 실제 상품은 크게 나옴 ⇒ "작게 나옴" 제거
+  //    BUY_UP ("한 치수 크게 사세요") → 실제 상품은 작게 나옴 ⇒ "크게 나옴" 제거
+  //    STRONG_LARGE (헐렁/넉넉/품이 커) → "작게 나옴" 제거
+  //    STRONG_SMALL (타이트/꽉/품이 작) → "크게 나옴" 제거
+  const dropLarge = buyUp || (strongSmall && !buyDown && !strongLarge);
+  const dropSmall = buyDown || (strongLarge && !buyUp && !strongSmall);
+  if (dropSmall || dropLarge) {
     for (let i = results.length - 1; i >= 0; i--) {
-      if (results[i].category === '사이즈' && results[i].label === wrong) {
-        results.splice(i, 1);
-      }
+      const r = results[i];
+      if (r.category !== '사이즈') continue;
+      if (dropSmall && r.label === '전반적으로 작게 나옴') results.splice(i, 1);
+      else if (dropLarge && r.label === '전반적으로 크게 나옴') results.splice(i, 1);
     }
   }
 
-  const actionable = clauseIsActionable(clause);
-  const polarity = positive ? 'positive' : actionable ? 'negative' : 'neutral';
+  const actionableBase = clauseIsActionable(clause);
 
-  return results.map((r) => ({
-    category: r.category,
-    label: r.label,
-    strength: r.strength,
-    confidence: r.confidence,
-    evidence: clause,
-    issuePolarity: polarity,
-    isActionableIssue: actionable && !(positive && !ALWAYS_NEG_LABEL.test(r.label || '')),
-  }));
+  return results.map((r) => {
+    // 2+ 그룹 구체 규칙이 매칭되었으면(트리거 모두 비부정 문맥에서 발견) actionable 로 본다.
+    // 절이 명백한 긍정이 아닌 한, 구체 규칙 매칭은 신뢰할 수 있는 개선 신호.
+    const ruleIsSpecific = (r.strength >= 4); // 2 그룹 = strength 5 (1 group = 3)
+    const actionable =
+      positive ? ALWAYS_NEG_LABEL.test(r.label || '')
+      : actionableBase || ruleIsSpecific || ALWAYS_NEG_LABEL.test(r.label || '');
+    // polarity: 절에 긍정 단서가 함께 있으면 mixed (대조 구조의 잔재)
+    const polarity = positive
+      ? (ALWAYS_NEG_LABEL.test(r.label || '') ? 'mixed' : 'positive')
+      : actionable
+        ? hasAnyPos
+          ? 'mixed'
+          : 'negative'
+        : 'neutral';
+    return {
+      category: r.category,
+      label: r.label,
+      strength: r.strength,
+      confidence: r.confidence,
+      evidence: clause,
+      issuePolarity: polarity,
+      isActionableIssue: actionable,
+      severity,
+    };
+  });
 }
 
 export function detectSentiment(review) {
@@ -227,10 +334,13 @@ function resolveAction(category, label) {
   return (label && ISSUE_ACTIONS[label]) || CATEGORY_ACTIONS[category] || CATEGORY_ACTIONS['기타'];
 }
 
+// severity 우선순위 (높을수록 강함)
+const SEV_RANK = { low: 1, medium: 2, high: 3 };
+function maxSeverity(a, b) {
+  return (SEV_RANK[a] || 2) >= (SEV_RANK[b] || 2) ? a : b;
+}
+
 // 단일 리뷰를 멀티라벨로 분류한다.
-// 입력: review(ReviewNormalized)
-// 출력: { reviewId, productName, rating, sentiment, ambiguous,
-//        categories:[{ name, issue, confidence, evidence, source, action, strength }] }
 export function classifyReview(review) {
   const sentiment = detectSentiment(review);
   const text = `${safeStr(review.title)}. ${safeStr(review.content)}`;
@@ -242,7 +352,13 @@ export function classifyReview(review) {
     for (const m of matchClause(clause)) {
       const key = `${m.category}||${m.label || '__'}`;
       const prev = best.get(key);
-      if (!prev || m.strength > prev.strength) best.set(key, m);
+      if (!prev || m.strength > prev.strength) {
+        // severity 는 max 유지
+        const mergedSev = prev ? maxSeverity(prev.severity, m.severity) : m.severity;
+        best.set(key, { ...m, severity: mergedSev });
+      } else {
+        prev.severity = maxSeverity(prev.severity, m.severity);
+      }
     }
   }
 
@@ -275,6 +391,28 @@ export function classifyReview(review) {
     }
   }
 
+  // 리뷰 전체 차원의 사이즈 충돌 해소: 절 단위에서 못 잡힌 충돌(예: 절1=크게, 절2=작게)을 마지막에 정리
+  const sizeLabels = finalMatches.filter((m) => m.category === '사이즈').map((m) => m.label);
+  if (sizeLabels.includes('전반적으로 작게 나옴') && sizeLabels.includes('전반적으로 크게 나옴')) {
+    // 절 합쳐서 강한 신호로 다시 판정
+    const text2 = clauses.join(' ');
+    const strongLarge = SIZE_DIRECTION_TOKENS.STRONG_LARGE.some((t) => text2.includes(t));
+    const strongSmall = SIZE_DIRECTION_TOKENS.STRONG_SMALL.some((t) => text2.includes(t));
+    const buyDown = SIZE_DIRECTION_TOKENS.BUY_DOWN.some((t) => text2.includes(t));
+    const buyUp = SIZE_DIRECTION_TOKENS.BUY_UP.some((t) => text2.includes(t));
+    let keep = null;
+    if (buyDown || strongLarge) keep = '전반적으로 크게 나옴';
+    else if (buyUp || strongSmall) keep = '전반적으로 작게 나옴';
+    if (keep) {
+      for (let i = finalMatches.length - 1; i >= 0; i--) {
+        const m = finalMatches[i];
+        if (m.category === '사이즈' && SIZE_GENERIC_LABELS.has(m.label) && m.label !== keep) {
+          finalMatches.splice(i, 1);
+        }
+      }
+    }
+  }
+
   const categories = finalMatches.map((m) => ({
     name: m.category,
     issue: m.label,
@@ -285,6 +423,7 @@ export function classifyReview(review) {
     strength: m.strength,
     issuePolarity: m.issuePolarity || 'negative',
     isActionableIssue: m.isActionableIssue !== false,
+    severity: m.severity || 'medium',
   }));
 
   const ambiguous = categories.length === 0 && sentiment === 'negative';
@@ -300,8 +439,6 @@ export function classifyReview(review) {
 }
 
 // 전체 리뷰 분류 + 애매한 부정 리뷰만 LLM(또는 mock)에 위임.
-// 입력: reviews(ReviewNormalized[]), aiClient(LLM 추상화 모듈)
-// 출력: ReviewClassification[] (classifyReview 결과 배열)
 export async function classifyAll(reviews, aiClient) {
   const classifications = reviews.map(classifyReview);
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
@@ -331,6 +468,7 @@ export async function classifyAll(reviews, aiClient) {
               strength: 2,
               issuePolarity: 'negative',
               isActionableIssue: true,
+              severity: 'medium',
             };
           });
         }
@@ -355,6 +493,7 @@ export async function classifyAll(reviews, aiClient) {
           strength: 1,
           issuePolarity: 'neutral',
           isActionableIssue: false,
+          severity: 'low',
         },
       ];
     }
@@ -367,7 +506,6 @@ export async function classifyAll(reviews, aiClient) {
 // 이전 분석에서 사용자가 직접 수정한 분류가 있으면, 같은 productKey 의 신규 리뷰 중
 // content 가 oldIssueLabel / newIssueLabel 의 핵심어 2개 이상과 겹치는 경우 우선 적용한다.
 
-// 한국어/영어 혼용을 가정한 매우 단순한 토큰화. 조사·종결어미가 섞여 있는 그대로 비교한다.
 function extractKeywords(text) {
   if (!text) return [];
   const toks = String(text)
@@ -377,7 +515,6 @@ function extractKeywords(text) {
   return [...new Set(toks)];
 }
 
-// 단일 correction → 룰 객체
 function compileCorrectionRule(c) {
   if (!c || !c.productKey || !c.original || !c.corrected) return null;
   if (!c.corrected.category || !c.corrected.issueLabel) return null;
@@ -390,7 +527,6 @@ function compileCorrectionRule(c) {
   return { productKey: c.productKey, corrected: c.corrected, keywords: dedup };
 }
 
-// content 에 룰 키워드 2개 이상이 substring 으로 포함되면 매칭
 function ruleMatchesContent(content, rule) {
   if (!content) return false;
   let hit = 0;
@@ -401,8 +537,6 @@ function ruleMatchesContent(content, rule) {
   return false;
 }
 
-// 입력: reviews, classifications(in-place 수정), corrections([{productKey, original, corrected}])
-// 출력: 적용된 review 수(number)
 export function applyReviewCorrections(reviews, classifications, corrections) {
   if (!corrections?.length) return 0;
   const rules = corrections.map(compileCorrectionRule).filter(Boolean);
@@ -427,11 +561,12 @@ export function applyReviewCorrections(reviews, classifications, corrections) {
           strength: 5,
           issuePolarity: 'negative',
           isActionableIssue: true,
+          severity: 'medium',
         },
       ];
       cls.ambiguous = false;
       applied++;
-      break; // 첫 매칭 룰 적용 후 다음 리뷰
+      break;
     }
   }
   return applied;
