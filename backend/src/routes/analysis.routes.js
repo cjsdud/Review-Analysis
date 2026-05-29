@@ -35,6 +35,45 @@ function loadCorrections(analysisId, productKey) {
   return rows.map((r) => JSON.parse(r.categories));
 }
 
+// 전체 user_corrections 를 (productKey, origCategory, origIssueLabel) → corrected 로 색인.
+function buildHistoricalCorrectionMap() {
+  const rows = db.prepare('SELECT review_pk, categories FROM user_corrections ORDER BY created_at').all();
+  const map = new Map();
+  for (const r of rows) {
+    let p;
+    try {
+      p = JSON.parse(r.categories);
+    } catch {
+      continue;
+    }
+    const productKey = p?.productKey || r.review_pk;
+    const oc = p?.original?.category;
+    const ol = p?.original?.issueLabel;
+    const cc = p?.corrected?.category;
+    const cl = p?.corrected?.issueLabel;
+    if (!productKey || !oc || !ol || !cc || !cl) continue;
+    map.set(`${productKey}||${oc}||${ol}`, { category: cc, issueLabel: cl });
+  }
+  return map;
+}
+
+// runAnalysis 직후 호출. products[].topIssues 중 과거에 사용자가 수정한 항목과 일치하면
+// 수정된 category/issueLabel 로 치환하고 source='correction', confidence=0.95.
+function applyHistoricalCorrections(products) {
+  const map = buildHistoricalCorrectionMap();
+  if (map.size === 0) return;
+  for (const p of products) {
+    for (const iss of p.topIssues) {
+      const hit = map.get(`${p.productKey}||${iss.category}||${iss.issueLabel}`);
+      if (!hit) continue;
+      iss.category = hit.category;
+      iss.issueLabel = hit.issueLabel;
+      iss.source = 'correction';
+      iss.confidence = 0.95;
+    }
+  }
+}
+
 function loadReviews(uploadId) {
   const rows = db.prepare('SELECT * FROM reviews WHERE upload_id = ?').all(uploadId);
   return rows.map((r) => ({
@@ -64,6 +103,11 @@ router.post('/', async (req, res) => {
 
   try {
     const { analysisId, summary, products, classifications } = await runAnalysis(reviews);
+
+    // 사용자가 이전에 직접 수정한 분류(user_corrections)를 이번 분석 결과에 우선 적용한다.
+    // 매칭 규칙: 같은 productKey + 원래 category + 원래 issueLabel 의 topIssue 발견 시
+    // 수정된 category/issueLabel 로 치환하고 source='correction', confidence=0.95.
+    applyHistoricalCorrections(products);
 
     db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)').run(
       analysisId,

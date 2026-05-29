@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use 'variables' as *;
 @use 'mixins' as *;
 
@@ -79,12 +80,12 @@
     &.is-good {
       background: $success-soft;
       color: $success;
-      border-color: lighten($success, 35%);
+      border-color: color.adjust($success, $lightness: 35%);
     }
     &.is-warn {
       background: $warning-soft;
       color: #b45309;
-      border-color: lighten($warning, 35%);
+      border-color: color.adjust($warning, $lightness: 35%);
     }
   }
   &__sample {

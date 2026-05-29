@@ -12,7 +12,19 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [checkedIdx, setCheckedIdx] = useState(() => new Set());
+
+  // 체크리스트 상태는 (analysisId, productKey) 단위로 localStorage 에 저장한다.
+  // 백엔드 영속화는 추후 TODO.
+  const storageKey = `reviewfit:checklist:${analysisId}:${productKey}`;
+  const [checkedIdx, setCheckedIdx] = useState(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   useEffect(() => {
     (async () => {
@@ -27,13 +39,28 @@ export default function ProductDetailPage() {
     })();
   }, [analysisId, productKey]);
 
+  function persistChecked(set) {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify([...set]));
+    } catch {
+      /* private mode 등 무시 */
+    }
+  }
+
   function toggleCheck(i) {
     setCheckedIdx((prev) => {
       const next = new Set(prev);
       if (next.has(i)) next.delete(i);
       else next.add(i);
+      persistChecked(next);
       return next;
     });
+  }
+
+  function resetChecked() {
+    const empty = new Set();
+    setCheckedIdx(empty);
+    persistChecked(empty);
   }
 
   if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
@@ -97,7 +124,17 @@ export default function ProductDetailPage() {
 
       <div className="dash-grid">
         {/* 섹션 2: 상세페이지 수정 체크리스트 */}
-        <SectionCard title="상세페이지 수정 체크리스트" subtitle="고치기 좋은 순서로 정리했어요. 체크하며 진행하세요.">
+        <SectionCard
+          title="상세페이지 수정 체크리스트"
+          subtitle="고치기 좋은 순서로 정리했어요. 체크하며 진행하세요. (체크 상태는 이 브라우저에 저장됩니다)"
+          action={
+            checkedIdx.size > 0 && (
+              <button className="btn btn--ghost btn--sm" onClick={resetChecked}>
+                체크 초기화
+              </button>
+            )
+          }
+        >
           {product.detailPageActions.length === 0 ? (
             <div className="muted">아직 제안할 수정안이 없어요.</div>
           ) : (

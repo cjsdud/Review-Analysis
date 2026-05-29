@@ -5,6 +5,7 @@ import { saveCorrection } from '../api/analysisApi.js';
 
 function SourceTag({ source }) {
   if (source === 'user') return <span className="tag tag--success">직접 수정함</span>;
+  if (source === 'correction') return <span className="tag tag--success">이전 수정 반영</span>;
   if (source === 'llm') return <span className="tag">자동 추천 라벨</span>;
   if (source === 'rule') return <span className="tag tag--neutral">자동 인식</span>;
   return <span className="tag tag--neutral">자동 묶음</span>;

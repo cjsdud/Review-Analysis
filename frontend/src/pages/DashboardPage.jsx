@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SummaryCards from '../components/SummaryCards.jsx';
-import CategoryChart from '../components/CategoryChart.jsx';
+// CategoryChart는 ECharts를 포함해 무거우므로 lazy import — 대시보드 접근 시에만 로드
+const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
 import TopFixTargets from '../components/TopFixTargets.jsx';
 import LoadingState from '../components/LoadingState.jsx';
@@ -128,7 +129,9 @@ export default function DashboardPage() {
             </div>
           }
         >
-          <CategoryChart distribution={summary.categoryDistribution} type={chartType} />
+          <Suspense fallback={<div className="muted" style={{ padding: 40, textAlign: 'center' }}>차트 로딩 중…</div>}>
+            <CategoryChart distribution={summary.categoryDistribution} type={chartType} />
+          </Suspense>
         </SectionCard>
 
         <SectionCard title="부정 리뷰가 많은 상품" subtitle="별점·감성 기준으로 부정 리뷰가 많은 상품입니다.">
