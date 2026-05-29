@@ -156,8 +156,11 @@ router.post('/', async (req, res) => {
     });
     tx();
 
-    // 분석 완료 후 더 이상 필요 없는 파싱 rows 제거 (PII 잔존 최소화)
-    db.prepare('UPDATE upload_files SET rows = NULL WHERE id = ?').run(parsed.data.uploadId);
+    // 분석 완료 후 더 이상 필요 없는 임시 파싱 데이터 제거 (PII 잔존 최소화).
+    // rows 뿐 아니라 XLSX 멀티시트 파싱 결과(sheet_parse_results)에도 마스킹된 리뷰가 남으므로 함께 비운다.
+    db.prepare('UPDATE upload_files SET rows = NULL, sheet_parse_results = NULL WHERE id = ?').run(
+      parsed.data.uploadId,
+    );
 
     res.json({ analysisId, summary });
   } catch (e) {
@@ -166,11 +169,23 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/analysis/:id — 전체 결과
+// GET /api/analysis/:id — 전체 결과 (히스토리 재조회용).
+// summary 외에 products(상품별 분석 결과 JSON 배열)와 createdAt 을 함께 반환해
+// 사용자가 히스토리에서 특정 분석을 다시 열 수 있게 한다.
 router.get('/:id', (req, res) => {
   const job = db.prepare('SELECT * FROM analysis_jobs WHERE id = ?').get(req.params.id);
   if (!job) return res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
-  res.json({ analysisId: job.id, status: job.status, summary: JSON.parse(job.summary) });
+  const productRows = db
+    .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
+    .all(req.params.id);
+  const products = productRows.map((r) => JSON.parse(r.data));
+  res.json({
+    analysisId: job.id,
+    status: job.status,
+    summary: JSON.parse(job.summary),
+    products,
+    createdAt: job.created_at,
+  });
 });
 
 // GET /api/analysis/:id/products — 상품 목록 (대시보드용 요약)

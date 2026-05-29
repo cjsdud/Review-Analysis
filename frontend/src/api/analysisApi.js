@@ -10,6 +10,12 @@ export async function getAnalysis(analysisId) {
   return data;
 }
 
+// 최근 분석 히스토리 목록 (로그인 없음: 서버에 저장된 전체 분석)
+export async function getAnalyses(limit = 20) {
+  const { data } = await client.get('/analyses', { params: { limit } });
+  return data;
+}
+
 export async function getProducts(analysisId) {
   const { data } = await client.get(`/analysis/${analysisId}/products`);
   return data;

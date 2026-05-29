@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import uploadRoutes from './routes/upload.routes.js';
 import analysisRoutes from './routes/analysis.routes.js';
+import historyRoutes from './routes/history.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
@@ -18,7 +19,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 4000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const UPLOAD_ROWS_TTL_MIN = Number(process.env.UPLOAD_ROWS_TTL_MIN || 60);
+// 임시 업로드 데이터(rows / sheet_parse_results) 보관 시간. 최소 1분.
+const UPLOAD_ROWS_TTL_MIN = Math.max(1, Number(process.env.UPLOAD_ROWS_TTL_MIN || 60));
+// cleanup 주기(분). 최소 1분.
+const UPLOAD_CLEANUP_INTERVAL_MIN = Math.max(1, Number(process.env.UPLOAD_CLEANUP_INTERVAL_MIN || 10));
 const isProd = process.env.NODE_ENV === 'production';
 
 app.use(cors({ origin: CLIENT_ORIGIN }));
@@ -28,6 +32,7 @@ app.use(express.json({ limit: '2mb' }));
 app.get('/api/health', (_req, res) => res.json({ ok: true, aiMode }));
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/analyses', historyRoutes); // 분석 히스토리 목록 (복수형)
 app.use('/api/ai', aiRoutes);
 
 // ===== Production: 프론트 정적 파일 + SPA fallback =====
@@ -60,8 +65,24 @@ app.use((err, _req, res, _next) => {
 });
 
 // ===== TTL 청소 =====
-purgeStaleUploadRows(UPLOAD_ROWS_TTL_MIN);
-const purgeTimer = setInterval(() => purgeStaleUploadRows(UPLOAD_ROWS_TTL_MIN), 30 * 60 * 1000);
+// 임시 업로드 파싱 데이터(rows / sheet_parse_results)만 정리한다.
+// 분석 결과(analysis_jobs / product_analyses / reviews / review_classifications)는 히스토리로 유지.
+function runCleanup(reason) {
+  try {
+    const changes = purgeStaleUploadRows(UPLOAD_ROWS_TTL_MIN);
+    if (changes > 0) {
+      console.info(
+        `[review-fit] upload cleanup (${reason}): ${changes}건의 임시 파싱 데이터를 정리했습니다 (TTL ${UPLOAD_ROWS_TTL_MIN}분).`,
+      );
+    }
+  } catch (e) {
+    console.warn('[review-fit] upload cleanup 실패:', e.message);
+  }
+}
+
+// 서버 시작 시 1회 + 주기 실행
+runCleanup('startup');
+const purgeTimer = setInterval(() => runCleanup('interval'), UPLOAD_CLEANUP_INTERVAL_MIN * 60 * 1000);
 purgeTimer.unref?.();
 
 app.listen(PORT, () => {

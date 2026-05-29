@@ -161,7 +161,8 @@ PORT=4000
 CLIENT_ORIGIN=http://localhost:5173
 MAX_UPLOAD_BYTES=10485760        # 10MB
 DB_PATH=./data/app.db
-UPLOAD_ROWS_TTL_MIN=60           # 업로드 파싱 rows 보관 시간(분). 경과 시 비움(PII 잔존 최소화)
+UPLOAD_ROWS_TTL_MIN=60           # 업로드 파싱 임시 데이터(rows/sheet_parse_results) 보관 시간(분)
+UPLOAD_CLEANUP_INTERVAL_MIN=10   # 임시 데이터 정리(cleanup) 실행 주기(분)
 
 # LLM_PROVIDER: mock | openai | gemini | claude
 # 키가 없거나 호출/파싱 실패 시 자동으로 mock 으로 fallback 합니다.
@@ -317,9 +318,12 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 - **파싱된 rows도 DB 저장 전에 `maskRows`로 마스킹**한 뒤에만 `upload_files.rows`(JSON)에 저장합니다.
   컬럼 매핑 미리보기(sampleRows)와 자동 매핑도 마스킹된 값 기준입니다.
 - 마스킹 항목: 전화번호 `[전화번호]`, 이메일 `[이메일]`, 10자리 이상 숫자 `[주문번호]`, 주소 `[주소]`. 작성자명은 첫 글자만 남김.
-- **분석 완료 후 `upload_files.rows`는 `NULL`로 비웁니다**(정규화된 `reviews`만 유지).
-  또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 rows를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`).
+- **분석 완료 후 `upload_files.rows`와 `sheet_parse_results`를 모두 `NULL`로 비웁니다**(정규화된 `reviews`만 유지).
+  또한 `UPLOAD_ROWS_TTL_MIN`(기본 60분)이 지난 업로드의 임시 데이터를 서버가 주기적으로 비웁니다(`purgeStaleUploadRows`).
+  cleanup 은 서버 시작 시 1회 + `UPLOAD_CLEANUP_INTERVAL_MIN`(기본 10분)마다 실행됩니다.
   → 마스킹 + 단기 보관으로 PII 잔존을 이중으로 줄입니다.
+- 자세한 보관 정책은 [`docs/data-retention-policy.md`](docs/data-retention-policy.md), 추후 로그인 기반 히스토리 계획은
+  [`docs/future-auth-history-plan.md`](docs/future-auth-history-plan.md) 참고.
 - **AI 기본 동작은 mock**입니다 (`LLM_PROVIDER=mock`이 기본값).
   실제 OpenAI / Gemini / Claude 연동 코드는 포함되어 있으나 키를 설정해야 활성화되며,
   키가 없거나 실패하면 mock으로 동작합니다.
@@ -334,6 +338,31 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
   6. 세부 이슈 규칙이 **카테고리 + 라벨 + 맞춤 추천액션**을 함께 생성, 라벨 없는 묶음만 자카드 유사도 클러스터 → LLM 라벨링
   7. 근거 리뷰는 **부정도·매칭강도·길이** 기준으로 선별 + 유사 중복 제거
 - 모든 결과에 **근거 리뷰(evidenceReviews)** 와 **source(rule/llm/cluster/user)** 를 남겨 신뢰성과 사후 수정을 지원합니다.
+
+### 데이터 저장 및 보관 정책
+요약 정책입니다. 자세한 표/계획은 [`docs/data-retention-policy.md`](docs/data-retention-policy.md) 참고.
+
+1. **원본 파일** — CSV/XLSX 바이너리는 **저장하지 않습니다**(메모리에서만 파싱).
+2. **업로드 임시 파싱 데이터** (`upload_files.rows`, `upload_files.sheet_parse_results`)
+   - 컬럼 매핑과 XLSX 시트/헤더 선택을 위해 **개인정보 마스킹 후 임시 저장**됩니다.
+   - **분석 완료 직후 둘 다 즉시 `NULL` 처리**됩니다.
+   - 분석이 완료되지 않은 업로드도 기본 **60분**(`UPLOAD_ROWS_TTL_MIN`)이 지나면 cleanup 으로 삭제됩니다.
+   - cleanup 은 서버 시작 시 1회 + 기본 **10분**(`UPLOAD_CLEANUP_INTERVAL_MIN`)마다 실행됩니다.
+3. **분석 결과(히스토리)** — 다시 보기/히스토리를 위해 저장됩니다.
+   - 저장 대상: 정규화 리뷰(`reviews`), 리뷰별 감성/이슈 분류(`review_classifications`),
+     전체 요약과 상품별 분석 결과(`analysis_jobs`, `product_analyses`), 사용자 수정 내역(`user_corrections`).
+   - 추후 로그인 도입 시 `user_id` 컬럼(현재 nullable, 항상 NULL)으로 **사용자별 히스토리**로 필터링됩니다.
+4. **개인정보 주의** — 리뷰에 작성자명/전화/이메일/주문번호가 포함될 수 있으므로 **업로드 전 제거를 권장**합니다.
+   리뷰핏은 업로드 단계에서 마스킹하지만, 민감한 컬럼은 올리기 전에 지우는 것이 가장 안전합니다.
+5. **현재 MVP 한계** — 로그인이 없어 서버 DB의 분석 결과가 **사용자별로 분리되지 않습니다**.
+   실제 운영 전에는 로그인, 사용자별 권한, 보관 기간, 삭제 기능이 필요합니다.
+
+### 분석 히스토리 (다시 보기)
+- `analysis_jobs` 1건 = 분석 1회 실행 단위(upload_id, status, summary, created_at, user_id).
+- `GET /api/analyses?limit=20` — 최근 분석 목록(최신순). 현재 로그인 없음 → 전체 반환.
+  추후 로그인 도입 시 `user_id` 로 필터링(코드에 TODO 표시).
+- `GET /api/analysis/:id` — 특정 분석 재조회(summary + products + createdAt).
+- 프론트 `/history` 화면에서 최근 분석을 카드형으로 보고 클릭 시 대시보드로 이동합니다.
 
 ### 지표 분리 (혼동 방지)
 - `negativeReviews` — 별점/감성 기준 **부정 리뷰 수**

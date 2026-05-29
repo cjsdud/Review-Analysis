@@ -1,5 +1,9 @@
 -- 리뷰 인사이트 MVP 스키마 (SQLite)
 -- 원본 업로드 파일은 보관하지 않고, 파싱/정규화 결과만 저장합니다.
+--
+-- user_id 컬럼: 현재 로그인/인증은 구현하지 않음. 추후 로그인 도입 시
+-- 분석 히스토리를 사용자별로 필터링하기 위한 nullable 컬럼만 미리 둔다.
+-- 인증 도입 전까지는 항상 NULL 로 저장되며, 모든 기존 API 는 user_id 없이 동작한다.
 
 CREATE TABLE IF NOT EXISTS stores (
   id TEXT PRIMARY KEY,
@@ -22,6 +26,7 @@ CREATE TABLE IF NOT EXISTS upload_files (
   selected_header_row_index INTEGER DEFAULT 0,
   sheet_metas TEXT,        -- JSON: SheetMeta[]
   sheet_parse_results TEXT, -- JSON: { [sheetName]: { headers, rows, matrix, detectedHeaderRowIndex } } (모두 마스킹 후)
+  user_id TEXT,            -- 추후 로그인 연결용 (현재 항상 NULL)
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -33,6 +38,7 @@ CREATE TABLE IF NOT EXISTS column_mappings (
   source TEXT DEFAULT 'custom',
   mapping TEXT,  -- JSON: { field: columnName }
   is_template INTEGER DEFAULT 0,
+  user_id TEXT,  -- 추후 로그인 연결용 (현재 항상 NULL)
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -51,7 +57,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at TEXT,
   reply_text TEXT,
   review_id TEXT,
-  raw TEXT  -- JSON 원본 행 (마스킹 적용 후)
+  raw TEXT,  -- JSON 원본 행 (마스킹 적용 후)
+  user_id TEXT  -- 추후 로그인 연결용 (현재 항상 NULL)
 );
 
 -- 멀티라벨 분류 결과
@@ -64,12 +71,13 @@ CREATE TABLE IF NOT EXISTS review_classifications (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
--- 분석 작업
+-- 분석 작업 (= 분석 히스토리 1건)
 CREATE TABLE IF NOT EXISTS analysis_jobs (
   id TEXT PRIMARY KEY,
   upload_id TEXT,
   status TEXT DEFAULT 'done',  -- pending | running | done | error
   summary TEXT,                -- JSON 전체 요약
+  user_id TEXT,                -- 추후 로그인 연결용 (현재 항상 NULL)
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -80,6 +88,7 @@ CREATE TABLE IF NOT EXISTS product_analyses (
   product_key TEXT,
   product_name TEXT,
   data TEXT,  -- JSON: ProductAnalysis
+  user_id TEXT,  -- 추후 로그인 연결용 (현재 항상 NULL)
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -89,6 +98,7 @@ CREATE TABLE IF NOT EXISTS user_corrections (
   analysis_id TEXT,
   review_pk TEXT,
   categories TEXT,
+  user_id TEXT,  -- 추후 로그인 연결용 (현재 항상 NULL)
   created_at TEXT DEFAULT (datetime('now'))
 );
 

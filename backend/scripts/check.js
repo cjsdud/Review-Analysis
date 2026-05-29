@@ -697,6 +697,96 @@ await step('상품 상세 데이터 — topIssues 와 allIssues 분리 (allIssue
   assert(p.allIssues.length >= p.topIssues.length, 'allIssues 는 topIssues 이상');
 });
 
+// ──────────────────────────────────────────────
+// 임시 업로드 cleanup / 분석 히스토리 (temp DB 사용)
+// ──────────────────────────────────────────────
+// database.js 는 import 시점에 DB_PATH 로 SQLite 를 연다.
+// 실제 DB 오염을 막기 위해 첫 import 전에 임시 경로로 교체한다.
+{
+  const os = await import('node:os');
+  const pathMod = await import('node:path');
+  const fsMod = await import('node:fs');
+  const tmpDir = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'reviewfit-check-'));
+  process.env.DB_PATH = pathMod.join(tmpDir, 'test.db');
+}
+
+await step('cleanup #1 — purgeStaleUploadRows(1) 가 오래된 rows/sheet_parse_results NULL 처리', async () => {
+  const { default: db, purgeStaleUploadRows } = await import('../src/db/database.js');
+  // 오래된 행 (created_at = 2시간 전)
+  db.prepare(
+    `INSERT INTO upload_files (id, original_name, source, row_count, headers, rows, sheet_parse_results, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '-120 minutes'))`,
+  ).run('old1', 'old.csv', 'custom', 2, '[]', '[{"a":1}]', '{"s":{}}');
+  const changes = purgeStaleUploadRows(1);
+  assert(changes >= 1, `정리된 행 수: ${changes}`);
+  const row = db.prepare('SELECT rows, sheet_parse_results FROM upload_files WHERE id = ?').get('old1');
+  assert.equal(row.rows, null, 'rows 가 NULL 처리되지 않음');
+  assert.equal(row.sheet_parse_results, null, 'sheet_parse_results 가 NULL 처리되지 않음');
+});
+
+await step('cleanup #2 — 최근 업로드 데이터는 삭제하지 않음', async () => {
+  const { default: db, purgeStaleUploadRows } = await import('../src/db/database.js');
+  db.prepare(
+    `INSERT INTO upload_files (id, original_name, source, row_count, headers, rows, sheet_parse_results)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('fresh1', 'fresh.csv', 'custom', 2, '[]', '[{"a":1}]', '{"s":{}}');
+  purgeStaleUploadRows(1); // TTL 1분 → 방금 만든 행은 대상 아님
+  const row = db.prepare('SELECT rows, sheet_parse_results FROM upload_files WHERE id = ?').get('fresh1');
+  assert(row.rows !== null, '최근 rows 가 잘못 삭제됨');
+  assert(row.sheet_parse_results !== null, '최근 sheet_parse_results 가 잘못 삭제됨');
+});
+
+await step('cleanup #3 — 분석 완료 시 rows/sheet_parse_results 동시 NULL (UPDATE 쿼리 검증)', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  db.prepare(
+    `INSERT INTO upload_files (id, original_name, source, row_count, headers, rows, sheet_parse_results)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('done1', 'done.csv', 'custom', 2, '[]', '[{"a":1}]', '{"s":{}}');
+  // analysis.routes.js 의 분석 완료 직후 쿼리와 동일
+  db.prepare('UPDATE upload_files SET rows = NULL, sheet_parse_results = NULL WHERE id = ?').run('done1');
+  const row = db.prepare('SELECT rows, sheet_parse_results FROM upload_files WHERE id = ?').get('done1');
+  assert.equal(row.rows, null, '분석 후 rows NULL 아님');
+  assert.equal(row.sheet_parse_results, null, '분석 후 sheet_parse_results NULL 아님');
+});
+
+await step('history — listAnalyses 가 최신순 목록 + summary 기반 메타 반환', async () => {
+  const { default: db, listAnalyses } = await import('../src/db/database.js');
+  // 업로드 + 분석 2건
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)').run('u1', 'a.csv', 'smartstore');
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)').run('u2', 'b.xlsx', 'custom');
+  const sum1 = JSON.stringify({ totalReviews: 10, productCount: 2 });
+  const sum2 = JSON.stringify({ totalReviews: 5, productCount: 1 });
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, created_at) VALUES (?, ?, ?, ?, datetime('now','-5 minutes'))`,
+  ).run('an1', 'u1', 'done', sum1);
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+  ).run('an2', 'u2', 'done', sum2);
+  // product_analyses 로 상품 수 카운트
+  db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data) VALUES (?,?,?,?,?)')
+    .run('pa1', 'an1', 'P1', 'P1', '{}');
+  db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data) VALUES (?,?,?,?,?)')
+    .run('pa2', 'an1', 'P2', 'P2', '{}');
+
+  const list = listAnalyses({ limit: 20 });
+  assert(list.length >= 2, `목록 길이: ${list.length}`);
+  // 최신순: an2 가 an1 보다 앞
+  const idxAn1 = list.findIndex((x) => x.id === 'an1');
+  const idxAn2 = list.findIndex((x) => x.id === 'an2');
+  assert(idxAn2 < idxAn1, '최신순 정렬 실패');
+  const item1 = list.find((x) => x.id === 'an1');
+  assert.equal(item1.originalName, 'a.csv', 'originalName join 실패');
+  assert.equal(item1.source, 'smartstore', 'source join 실패');
+  assert.equal(item1.totalReviews, 10, 'summary.totalReviews 추출 실패');
+  assert.equal(item1.productCount, 2, 'product_analyses 카운트 실패');
+});
+
+await step('history — listAnalyses limit 적용', async () => {
+  const { listAnalyses } = await import('../src/db/database.js');
+  const one = listAnalyses({ limit: 1 });
+  assert.equal(one.length, 1, `limit=1 인데 ${one.length}건 반환`);
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

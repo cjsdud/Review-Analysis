@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 const NAV = [
   { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
+  { to: '/history', label: '분석 히스토리', icon: '🗂️' },
   { to: '/settings', label: '매핑 템플릿', icon: '⚙️' },
 ];
 

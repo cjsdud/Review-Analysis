@@ -358,3 +358,66 @@
     color: $text-sub;
   }
 }
+
+// ===== 분석 히스토리 목록 =====
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-3;
+}
+
+.history-card {
+  display: flex;
+  align-items: center;
+  gap: $sp-3;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+  cursor: pointer;
+  transition: border-color $transition, background $transition;
+
+  &:hover {
+    border-color: $primary;
+    background: $primary-soft;
+  }
+  &:focus-visible {
+    outline: 2px solid $primary;
+    outline-offset: 2px;
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+  &__name {
+    font-weight: 700;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+  &__meta {
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  &__stats {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: $bp-tablet) {
+    flex-direction: column;
+    align-items: stretch;
+
+    &__stats {
+      margin-top: 4px;
+    }
+    .btn {
+      width: 100%;
+      min-height: 44px;
+    }
+  }
+}
