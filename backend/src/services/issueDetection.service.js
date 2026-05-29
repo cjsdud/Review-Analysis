@@ -70,6 +70,7 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
         rating: c.rating,
         clause: cat.evidence || '',
         content: reviewMap.get(c.reviewId)?.content || cat.evidence || '',
+        source: cat.source,
       });
     }
   }
@@ -93,7 +94,15 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
   const needLabel = [];
 
   for (const c of labeled) {
-    clusters.push(makeCluster(c.productName, c.category, c.label, c.items, c.items.some((i) => i.source === 'llm') ? 'llm' : 'rule'));
+    // source 우선순위: correction > user > llm > rule
+    const src = c.items.some((i) => i.source === 'correction')
+      ? 'correction'
+      : c.items.some((i) => i.source === 'user')
+        ? 'user'
+        : c.items.some((i) => i.source === 'llm')
+          ? 'llm'
+          : 'rule';
+    clusters.push(makeCluster(c.productName, c.category, c.label, c.items, src));
   }
 
   // NULL 버킷 유사도 클러스터링

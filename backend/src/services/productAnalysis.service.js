@@ -1,6 +1,6 @@
 // 분석 오케스트레이션: 분류 → 이슈 클러스터 → 상품별 리포트 → 전체 요약
 import { nanoid } from 'nanoid';
-import { classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.js';
+import { applyReviewCorrections, classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.js';
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 
@@ -8,13 +8,19 @@ import aiClient from './aiClient.service.js';
 // 입력: classification 1건. 출력: '기타'를 제외한 categories 배열.
 const meaningfulCategories = (c) => (c.categories || []).filter((cat) => cat.name && cat.name !== '기타');
 
-// 입력: reviews(ReviewNormalized[]) — 정규화·마스킹 완료된 리뷰 배열
-// 출력: { analysisId, summary(전체 지표/분포/랭킹), products(ProductAnalysis[]), classifications }
-export async function runAnalysis(reviews) {
+// 입력: reviews(ReviewNormalized[]), corrections([{productKey,original,corrected}] — 옵션)
+// 출력: { analysisId, summary, products, classifications }
+// corrections 가 제공되면 분류 단계 직후 review-level 우선 적용(키워드 2개 이상 매칭).
+export async function runAnalysis(reviews, corrections = []) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
   // 1) 멀티라벨 분류 (규칙 + 애매한 부정 리뷰만 LLM)
   const classifications = await classifyAll(reviews, aiClient);
+
+  // 1-1) 사용자 분류 수정 룰 적용 (있을 때만)
+  if (corrections && corrections.length) {
+    applyReviewCorrections(reviews, classifications, corrections);
+  }
 
   // 2) 상품·카테고리·세부이슈 클러스터 + 근거 리뷰 선별
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);

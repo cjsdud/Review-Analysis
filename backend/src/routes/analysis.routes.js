@@ -35,6 +35,24 @@ function loadCorrections(analysisId, productKey) {
   return rows.map((r) => JSON.parse(r.categories));
 }
 
+// 전체 user_corrections payload 배열을 그대로 로드 (review-level 적용용).
+function loadAllCorrections() {
+  const rows = db.prepare('SELECT review_pk, categories FROM user_corrections ORDER BY created_at').all();
+  const out = [];
+  for (const r of rows) {
+    try {
+      const p = JSON.parse(r.categories);
+      const productKey = p?.productKey || r.review_pk;
+      if (productKey && p?.original?.category && p?.original?.issueLabel && p?.corrected?.category && p?.corrected?.issueLabel) {
+        out.push({ productKey, original: p.original, corrected: p.corrected });
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
 // 전체 user_corrections 를 (productKey, origCategory, origIssueLabel) → corrected 로 색인.
 function buildHistoricalCorrectionMap() {
   const rows = db.prepare('SELECT review_pk, categories FROM user_corrections ORDER BY created_at').all();
@@ -102,11 +120,13 @@ router.post('/', async (req, res) => {
   if (!reviews.length) return res.status(400).json({ error: '정규화된 리뷰가 없습니다. 먼저 컬럼 매핑을 완료하세요.' });
 
   try {
-    const { analysisId, summary, products, classifications } = await runAnalysis(reviews);
+    // (1) review-level: 이전 user_corrections 의 핵심 키워드와 본문이 ≥2 겹치는 신규 리뷰는
+    //     분류 단계에서 곧장 corrected 로 치환된다 (source='correction').
+    const allCorrections = loadAllCorrections();
+    const { analysisId, summary, products, classifications } = await runAnalysis(reviews, allCorrections);
 
-    // 사용자가 이전에 직접 수정한 분류(user_corrections)를 이번 분석 결과에 우선 적용한다.
-    // 매칭 규칙: 같은 productKey + 원래 category + 원래 issueLabel 의 topIssue 발견 시
-    // 수정된 category/issueLabel 로 치환하고 source='correction', confidence=0.95.
+    // (2) cluster-level: 동일 productKey + 원래 (category, issueLabel) 매칭 시 topIssue 의
+    //     라벨을 corrected 로 치환(보조 안전망). source='correction'.
     applyHistoricalCorrections(products);
 
     db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)').run(

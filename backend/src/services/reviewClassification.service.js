@@ -314,3 +314,75 @@ export async function classifyAll(reviews, aiClient) {
 
   return classifications;
 }
+
+// ===== user_corrections 룰 기반 review-level 우선 적용 =====
+// 이전 분석에서 사용자가 직접 수정한 분류가 있으면, 같은 productKey 의 신규 리뷰 중
+// content 가 oldIssueLabel / newIssueLabel 의 핵심어 2개 이상과 겹치는 경우 우선 적용한다.
+
+// 한국어/영어 혼용을 가정한 매우 단순한 토큰화. 조사·종결어미가 섞여 있는 그대로 비교한다.
+function extractKeywords(text) {
+  if (!text) return [];
+  const toks = String(text)
+    .split(/[\s/·,.()\-]+/u)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+  return [...new Set(toks)];
+}
+
+// 단일 correction → 룰 객체
+function compileCorrectionRule(c) {
+  if (!c || !c.productKey || !c.original || !c.corrected) return null;
+  if (!c.corrected.category || !c.corrected.issueLabel) return null;
+  const keywords = [
+    ...extractKeywords(c.original.issueLabel),
+    ...extractKeywords(c.corrected.issueLabel),
+  ];
+  const dedup = [...new Set(keywords)];
+  if (dedup.length < 2) return null;
+  return { productKey: c.productKey, corrected: c.corrected, keywords: dedup };
+}
+
+// content 에 룰 키워드 2개 이상이 substring 으로 포함되면 매칭
+function ruleMatchesContent(content, rule) {
+  if (!content) return false;
+  let hit = 0;
+  for (const k of rule.keywords) {
+    if (content.includes(k)) hit++;
+    if (hit >= 2) return true;
+  }
+  return false;
+}
+
+// 입력: reviews, classifications(in-place 수정), corrections([{productKey, original, corrected}])
+// 출력: 적용된 review 수(number)
+export function applyReviewCorrections(reviews, classifications, corrections) {
+  if (!corrections?.length) return 0;
+  const rules = corrections.map(compileCorrectionRule).filter(Boolean);
+  if (!rules.length) return 0;
+
+  const reviewById = new Map(reviews.map((r) => [r.id, r]));
+  let applied = 0;
+  for (const cls of classifications) {
+    const review = reviewById.get(cls.reviewId);
+    if (!review) continue;
+    for (const rule of rules) {
+      if (rule.productKey !== review.productName) continue;
+      if (!ruleMatchesContent(review.content, rule)) continue;
+      cls.categories = [
+        {
+          name: rule.corrected.category,
+          issue: rule.corrected.issueLabel,
+          confidence: 0.95,
+          evidence: (review.content || '').slice(0, 140),
+          source: 'correction',
+          action: resolveAction(rule.corrected.category, rule.corrected.issueLabel),
+          strength: 5,
+        },
+      ];
+      cls.ambiguous = false;
+      applied++;
+      break; // 첫 매칭 룰 적용 후 다음 리뷰
+    }
+  }
+  return applied;
+}

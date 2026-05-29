@@ -13,7 +13,7 @@ export default function Layout() {
     if (location.pathname.startsWith('/dashboard')) return '분석 대시보드';
     if (location.pathname.startsWith('/products')) return '상품 상세 리포트';
     if (location.pathname.startsWith('/settings')) return '매핑 템플릿';
-    return '리뷰 인사이트';
+    return '리뷰핏';
   })();
 
   // 사이드바 하단 흐름 표시용 단계

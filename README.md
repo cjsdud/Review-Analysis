@@ -54,7 +54,7 @@ review-insight-mvp/  (= 이 저장소 루트)
 │   └── package.json
 │
 ├── sample-data/
-│   └── sample_reviews_fashion.csv   # 60개 샘플 리뷰 (상품 6종)
+│   └── sample_reviews_fashion.csv   # 116개 샘플 리뷰 (상품 14종)
 └── README.md
 ```
 
@@ -298,51 +298,57 @@ LLM_TIMEOUT_MS=20000
 ---
 
 ## 8. 샘플 데이터
-`sample-data/sample_reviews_fashion.csv` — 6개 상품(린넨 와이드 팬츠, 오버핏 반팔 티셔츠, 니트 가디건,
-슬림핏 셔츠, 플리츠 롱스커트, 데님 자켓), 총 60개 리뷰.
-허리 작음/기장 김/색상 어두움/원단 얇음/실밥·마감/배송 지연/포장 구김/가성비/핏 예쁨/재구매 등
-다양한 케이스와 개인정보(전화·이메일·주문번호) 마스킹 테스트 데이터를 포함합니다.
+`sample-data/sample_reviews_fashion.csv` — **14개 상품, 총 116개 리뷰**.
+
+| 상품군 | 상품 |
+|---|---|
+| 의류(상의/하의) | 린넨 와이드 팬츠 · 오버핏 반팔 티셔츠 · 니트 가디건 · 슬림핏 셔츠 · 플리츠 롱스커트 · 크롭 니트 · 코튼 조거팬츠 |
+| 의류(아우터) | 데님 자켓 · 오버핏 후드 집업 · 트렌치 코트 |
+| 신발 | 러닝화 · 첼시 부츠 |
+| 가방 | 숄더백 |
+| 원피스 | 여름 원피스 |
+
+다양한 케이스 포함: 사이즈/핏/색상/소재/마감 불량/세탁 변형/배송 지연/포장 구김/가성비/핏 예쁨/재구매/보풀/냄새/발볼/쿠션감/뒤꿈치/수납·끈 마감 등. 일부 상품은 부정 리뷰가 많고 일부는 긍정 리뷰가 많도록 의도적으로 불균등하게 구성했으며, **개인정보 마스킹 테스트용 전화번호·이메일·주문번호**도 포함되어 있습니다.
 
 ---
 
 ## 9. 완료된 항목
 
-- 모바일 390px 렌더링 확인 (사이드바 가로바, 카드 1열, 테이블 가로 스크롤)
-- 대시보드/상품 상세 SaaS 카드형 UI ('리뷰핏' 브랜드)
-- 개인정보 자동 마스킹(전화/이메일/주문번호/주소) + 분석 후 `upload_files.rows = NULL`
+- 대시보드/상품 상세 SaaS 카드형 UI ('리뷰핏' 브랜드 통일)
+- 모바일 **390px** 렌더링 확인 (사이드바 가로바, 카드 1열, 테이블 가로 스크롤)
 - 실제 LLM provider 연결(openai/gemini/claude) + 키 없음·실패 시 mock fallback
+- `check:llm` 스크립트 추가 (provider/키 진단)
+- 차트 lazy split — 초기 번들에서 ECharts 제외(번들 1.29MB → 243KB)
 - `issueReviewCount` / `totalIssueCount` / `issueRatio` 지표 분리 (`기타` 제외)
+- 개인정보 자동 마스킹(전화/이메일/주문번호/주소) + 분석 후 `upload_files.rows = NULL`
 - 절(clause) 단위 멀티라벨 분류 + 부정어/극성 게이팅
-- 검증 스크립트 3종: `npm run check` / `build:frontend` / `check:llm`
-- 사용자 수정(`user_corrections`)을 다음 분석에서 룰 기반 우선 적용 (cluster 단위, source=`correction`)
-- 상세페이지 수정 체크리스트의 체크 상태를 브라우저 로컬에 저장(새로고침 유지)
-- 차트 lazy import 로 첫 페이지 번들에서 ECharts 제외
+- 사용자 수정(`user_corrections`) **다음 분석에서 룰 기반 우선 적용**
+  - **review-level**: 본문에 핵심어 ≥2개 매칭 시 분류 단계에서 corrected 치환
+  - **cluster-level**: 같은 (productKey, 원래 카테고리, 원래 라벨)이면 topIssue 치환 (안전망)
+- 체크리스트 체크 상태 localStorage 영속화 (key=`reviewfit:checklist:{aid}:{pkey}`, **action 텍스트 기반**)
 - Sass `lighten()` → `color.adjust()` 마이그레이션 (deprecation 경고 제거)
+- 검증 스크립트 3종: `npm run check` / `build:frontend` / `check:llm`
+- 데모 데이터 확장 — 14개 상품 / 116개 리뷰 (아우터·신발·가방·원피스 추가)
 
-## 10. 앞으로 확장할 기능 (TODO)
+## 10. 남은 TODO
 
 | 우선순위 | 항목 | 비고 |
 |---|---|---|
-| 🟥 높음 | **체크리스트 백엔드 영속화** | 현재 localStorage 저장. 셀러 멀티 디바이스 사용을 위해 DB 저장(POST `/api/analysis/:id/products/:productKey/checklist`) |
-| 🟥 높음 | **실제 셀러 파일 기반 검증** | 사내 샘플 외 실데이터(스마트스토어·카페24 추출) 다양체로 정확도/오탐 측정 |
-| 🟧 중간 | **카페24 OAuth 실제 연동** | 아래 "카페24 OAuth 확장 계획" 참조 |
-| 🟧 중간 | **`user_corrections` 고도화** | 현재 (productKey, 원래라벨)→수정라벨 cluster 단위 적용. 향후 review 텍스트 임베딩 매칭으로 정밀도 ↑ |
-| 🟧 중간 | **데모 데이터 추가 확장** | 현재 12 상품(102건). 카테고리·상품군을 더 늘려 데모 폭 확장 |
-| 🟨 낮음 | **차트 세부 최적화** | echarts tree-shaking(필요 차트만 import), gzipped 크기 추가 절감 |
-| 🟨 낮음 | **프롬프트 캐싱 / 배치 호출** | 상품·이슈 단위 LLM 호출 비용·지연 최적화 |
-| 🟨 낮음 | DB 추상화 / PostgreSQL 전환 / SaaS 사용자·워크스페이스 / PDF 정식 출력 / 기간별 월간 트렌드 / 표 붙여넣기 업로드 / 말투 옵션 확장 | |
+| 🟥 높음 | **체크리스트 DB 영속화** | 현재 localStorage. 멀티 디바이스 대응. 별도 라우트 1개 추가 예정 |
+| 🟥 높음 | **실제 셀러 파일 기반 검증** | `docs/seller-validation-template.md` 양식으로 인터뷰 수집 |
+| 🟧 중간 | **카페24 OAuth 실제 연동** | 설계: `docs/cafe24-oauth-plan.md` |
+| 🟧 중간 | **`user_corrections` 고도화** | 현재 키워드 ≥2개 substring 매칭. 임베딩/유사도 매칭으로 정밀도 ↑ |
+| 🟧 중간 | **샘플 데이터 지속 확장** | 14상품/116건 → 카테고리/상품군 추가 |
+| 🟨 낮음 | **ECharts tree-shaking 세부 최적화** | 필요 차트만 import → gzipped 추가 절감 |
+| 🟨 낮음 | **프롬프트 캐싱 / 배치 호출** | 설계: `docs/llm-cost-optimization.md` |
+| 🟨 낮음 | **PDF 정식 출력** | 현재 `window.print` 기반 + 인쇄 전용 CSS |
+| 🟨 낮음 | **기간별 트렌드** | 작성일 기반 월간 추세 차트 |
+| 🟨 낮음 | **표 붙여넣기 업로드** | 엑셀 셀 복사→붙여넣기 직접 분석 |
+| 🟨 낮음 | **말투 옵션 확장** | 현재 기본/정중/친근 3종 → 브랜드 톤 학습 |
+| 🟨 낮음 | DB 추상화 / PostgreSQL 전환 / SaaS 사용자·워크스페이스 | |
 
-### 카페24 OAuth 확장 계획 (구현 전 설계만)
+### 별도 문서
 
-> **현재는 엑셀/CSV 업로드 방식을 유지합니다.** 크롤링/RPA 방식은 비추천(약관·차단 위험·유지보수 비용 큼)이므로 공식 OAuth만 채택할 계획입니다.
-
-1. **카페24 앱 등록** — 개발자 센터에서 앱을 만들고 client_id/secret 발급.
-2. **OAuth 인증** — `oauth/authorize` → 셀러 동의 → `oauth/token` 교환.
-3. **board_no 목록 조회** — `/api/v2/admin/boards` 로 사용 중인 게시판 목록을 가져온다.
-4. **상품후기 게시판 선택** — 셀러가 UI에서 후기 게시판(board_no)을 직접 고른다(쇼핑몰마다 board_no가 다름).
-5. **게시글 조회** — `/api/v2/admin/boards/{board_no}/articles` 로 페이지네이션 조회.
-6. **댓글 조회** — `/api/v2/admin/boards/{board_no}/articles/{article_no}/comments` (판매자 답글 보관용).
-7. **공통 스키마로 정규화** — 기존 `ReviewNormalized`(productName/content/rating/createdAt 등)로 변환.
-8. **현재 분석 파이프라인 재사용** — 정규화 이후의 분류·이슈 클러스터·리포트는 그대로 동작.
-
-확장 지점은 `backend/src/services/normalizeReview.service.js` 와 `source` 필드(`cafe24`)이며, 새 라우트 `POST /api/sources/cafe24/sync` 정도만 추가하면 기존 분석 흐름과 자연스럽게 연결됩니다.
+- `docs/seller-validation-template.md` — 실제 셀러 인터뷰/검증 양식
+- `docs/llm-cost-optimization.md` — 캐싱·배치 호출 설계 (구현 보류)
+- `docs/cafe24-oauth-plan.md` — 카페24 OAuth 8단계 계획 (구현 보류, 크롤링 비추천 명시)

@@ -13,14 +13,17 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // 체크리스트 상태는 (analysisId, productKey) 단위로 localStorage 에 저장한다.
+  // 체크 상태는 action 문자열 자체(checkedActions)로 저장한다.
+  // detailPageActions 의 순서/개수가 바뀌어도 안전(인덱스 충돌 방지).
   // 백엔드 영속화는 추후 TODO.
   const storageKey = `reviewfit:checklist:${analysisId}:${productKey}`;
-  const [checkedIdx, setCheckedIdx] = useState(() => {
+  const [checkedActions, setCheckedActions] = useState(() => {
     if (typeof window === 'undefined') return new Set();
     try {
       const raw = window.localStorage.getItem(storageKey);
-      return raw ? new Set(JSON.parse(raw)) : new Set();
+      const parsed = raw ? JSON.parse(raw) : [];
+      // 문자열 배열만 신뢰 (구버전 호환: 숫자 배열은 무시)
+      return new Set((Array.isArray(parsed) ? parsed : []).filter((x) => typeof x === 'string'));
     } catch {
       return new Set();
     }
@@ -47,11 +50,11 @@ export default function ProductDetailPage() {
     }
   }
 
-  function toggleCheck(i) {
-    setCheckedIdx((prev) => {
+  function toggleCheck(actionText) {
+    setCheckedActions((prev) => {
       const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
+      if (next.has(actionText)) next.delete(actionText);
+      else next.add(actionText);
       persistChecked(next);
       return next;
     });
@@ -59,7 +62,7 @@ export default function ProductDetailPage() {
 
   function resetChecked() {
     const empty = new Set();
-    setCheckedIdx(empty);
+    setCheckedActions(empty);
     persistChecked(empty);
   }
 
@@ -128,7 +131,7 @@ export default function ProductDetailPage() {
           title="상세페이지 수정 체크리스트"
           subtitle="고치기 좋은 순서로 정리했어요. 체크하며 진행하세요. (체크 상태는 이 브라우저에 저장됩니다)"
           action={
-            checkedIdx.size > 0 && (
+            checkedActions.size > 0 && (
               <button className="btn btn--ghost btn--sm" onClick={resetChecked}>
                 체크 초기화
               </button>
@@ -139,11 +142,11 @@ export default function ProductDetailPage() {
             <div className="muted">아직 제안할 수정안이 없어요.</div>
           ) : (
             <ul className="checklist">
-              {product.detailPageActions.map((a, i) => (
+              {product.detailPageActions.map((a) => (
                 <li
-                  key={i}
-                  className={checkedIdx.has(i) ? 'is-checked' : ''}
-                  onClick={() => toggleCheck(i)}
+                  key={a}
+                  className={checkedActions.has(a) ? 'is-checked' : ''}
+                  onClick={() => toggleCheck(a)}
                   role="button"
                   tabIndex={0}
                 >

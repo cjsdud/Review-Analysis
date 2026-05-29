@@ -63,6 +63,28 @@ await step('export', async () => {
   assert(csv.includes('상품명'), 'CSV 헤더 누락');
 });
 
+await step('user_corrections 룰 적용 (review-level)', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 'r1', productName: '셔츠', rating: 2, content: '허리 밴딩이 꽉 껴서 불편해요' },
+    { id: 'r2', productName: '셔츠', rating: 4, content: '디자인은 마음에 들어요' },
+  ];
+  const corrections = [
+    {
+      productKey: '셔츠',
+      original: { category: '사이즈', issueLabel: '허리 사이즈가 작음' },
+      corrected: { category: '핏/실루엣', issueLabel: '허리 밴딩이 타이트함' },
+    },
+  ];
+  const { classifications } = await runAnalysis(reviews, corrections);
+  const cls1 = classifications.find((c) => c.reviewId === 'r1');
+  assert(cls1, 'r1 classification 누락');
+  const corrected = cls1.categories.find((cat) => cat.source === 'correction');
+  assert(corrected, 'review-level correction 적용 안 됨');
+  assert.equal(corrected.name, '핏/실루엣', 'corrected category 불일치');
+  assert(corrected.confidence >= 0.9, 'correction confidence 너무 낮음');
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
