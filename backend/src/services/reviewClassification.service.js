@@ -99,13 +99,32 @@ function splitClauses(text) {
     .filter((c) => c.length >= 2);
 }
 
-// 토큰 출현 위치가 부정문맥인지 (없/안/않 등)
+// 토큰 출현 위치가 부정문맥인지 (없/안/않 등).
+// after window 는 16자까지 — "비침이 거의 없어요", "줄어들지 않았어요" 같은 한국어 어순 대응.
 function isNegated(clause, idx, len) {
-  const before = clause.slice(Math.max(0, idx - 3), idx);
-  const after = clause.slice(idx + len, idx + len + 8);
-  if (/없|아니|않|안\s?나|안\s?생|안\s?들|안\s?나오/.test(after)) return true;
-  if (/안\s$/.test(before)) return true;
+  const before = clause.slice(Math.max(0, idx - 6), idx);
+  const after = clause.slice(idx + len, idx + len + 16);
+  if (/없|아니|않|안\s?나|안\s?생|안\s?들|안\s?나오|안\s?비치|비치지\s?않/.test(after)) return true;
+  if (/안\s?$|거의\s?$|크게\s?$/.test(before)) return true;
   return false;
+}
+
+// 명시적 부정어 반전 표현 검사. 매칭되면 해당 절은 부정 이슈로 보지 않는다.
+const REVERSAL_PHRASES = [
+  '비침이 거의 없', '비침 거의 없', '비침 없', '비침이 없', '비치지 않', '안 비쳐', '안 비침',
+  '실밥 없', '실밥이 없', '실밥 거의 없', '실밥 없이',
+  '보풀 없', '보풀이 없', '보풀 안 생', '보풀이 안 생', '보풀 거의 없',
+  '줄어들지 않', '크게 줄어들지 않', '줄지 않',
+  '물빠짐 없', '물 빠짐 없', '이염 없', '색 빠짐 없',
+  '냄새 안 나', '냄새 없',
+  '마감이 나쁘지 않', '마감 나쁘지 않',
+  '불편하지 않', '답답하지 않', '까슬거림 없', '까슬거리지 않',
+  '하자 없', '하자가 없', '문제 없', '문제가 없', '이상 없', '이상이 없',
+  '변형 없', '변형이 없',
+];
+export function hasNegationReversal(text) {
+  if (!text) return false;
+  return REVERSAL_PHRASES.some((p) => text.includes(p));
 }
 
 // 그룹(토큰 배열) 중 부정되지 않은 첫 매칭 토큰 반환
@@ -312,22 +331,195 @@ function matchClause(clause) {
   });
 }
 
-export function detectSentiment(review) {
-  if (typeof review.rating === 'number') {
-    if (review.rating <= 2) return 'negative';
-    if (review.rating === 3) return 'neutral';
+// rating 값을 number 로 정규화. "5점" / "평점 4" 같은 문자열도 처리.
+// 1~5 범위가 아니면 null.
+export function normalizeRating(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value >= 1 && value <= 5 ? value : null;
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  // 직접 number-cast 시도
+  const direct = Number(s);
+  if (Number.isFinite(direct) && direct >= 1 && direct <= 5) return direct;
+  // "5점", "평점 4", "별점 3" 등에서 첫 정수 추출
+  const m = s.match(/[1-5]/);
+  if (m) {
+    const n = Number(m[0]);
+    if (n >= 1 && n <= 5) return n;
+  }
+  return null;
+}
+
+// 강한 부정 표현(환불/반품/최악/하자/누락 등) — 1개라도 있으면 hasSevereComplaint=true
+const STRONG_COMPLAINT_PHRASES = [
+  '환불', '반품', '최악', '실망', '후회', '하자', '불량', '파손', '누락',
+  '찢어', '터짐', '구멍', '못 입', '못 신', '입기 어려', '신기 어려',
+  '단독으로 입기 어려', '단독 입기 어려',
+  '몇 번 못', '필요한 날에 못',
+  '오래 걸으면 아', '발이 아파', '발이 너무 아',
+];
+// 명확한 만족 표현 — hasClearSatisfaction
+const CLEAR_SATISFACTION_PHRASES = [
+  '만족', '마음에 들', '맘에 들', '추천', '재구매', '잘 샀', '잘 산',
+  '더 사고 싶', '오래 입을',
+  '저는 이쪽이 더 마음에', '저는 이쪽이 더 맘에',
+  '예뻐', '이뻐', '예쁘', '이쁘',
+  '좋아요', '좋습니', '좋네',
+  '편해', '편안', '깔끔',
+];
+// "괜찮", "납득" 등 수용/타협 표현 — sentiment 를 mid 쪽으로 끌어올림
+const ACCEPTANCE_PHRASES = [
+  '괜찮', '납득', '이해되', '이해 되', '그래도 만족', '그래도 괜찮',
+  '가격 생각하면', '가격 대비',
+  '깔창 넣으면 괜찮', '입다 보면 괜찮',
+  '교환할 정도는 아니', '교환할 정도까진 아니',
+];
+// 텍스트 안의 부정 표현 강도 분류
+const MILD_NEGATIVE_PHRASES = [
+  '조금', '살짝', '약간', '다소', '느껴졌', '느껴져', '느껴집니',
+  '아쉬', '구겨', '구김',
+];
+
+// 텍스트 감성 signal 추출
+export function analyzeTextSentiment(text) {
+  const safe = safeStr(text);
+  const clauses = splitClauses(safe);
+  const reversalGlobal = hasNegationReversal(safe);
+
+  let positiveScore = 0;
+  let negativeScore = 0;
+  let positiveCount = 0;
+  let strongNegativeCount = 0;
+  let mildNegativeCount = 0;
+  let acceptanceCount = 0;
+  let contrastCount = 0;
+  let hasSevereComplaint = false;
+  let hasClearSatisfaction = false;
+  let hasOnlyNegatedIssue = clauses.length > 0;
+
+  for (const clause of clauses) {
+    const reversal = hasNegationReversal(clause);
+    if (CONJUNCTIONS.some((c) => clause.includes(c)) || CONTRAST_MARKERS.some((m) => clause.includes(m))) {
+      contrastCount++;
+    }
+
+    // 절 단위 긍정 — clauseHasAnyPositive 는 명시적 긍정 어휘 검사
+    const posInClause = clauseHasAnyPositive(clause);
+    if (posInClause) {
+      positiveCount++;
+      positiveScore += 1;
+    }
+    if (CLEAR_SATISFACTION_PHRASES.some((p) => clause.includes(p))) {
+      hasClearSatisfaction = true;
+      positiveScore += 0.3;
+    }
+    if (ACCEPTANCE_PHRASES.some((p) => clause.includes(p))) {
+      acceptanceCount++;
+      positiveScore += 0.4;
+    }
+
+    // 부정: reversal 절은 부정 점수 가산하지 않음
+    if (!reversal) {
+      const hasNeg = clauseHasNegative(clause);
+      if (hasNeg) {
+        if (STRONG_COMPLAINT_PHRASES.some((p) => clause.includes(p))) {
+          strongNegativeCount++;
+          negativeScore += 1.4;
+          hasSevereComplaint = true;
+        } else if (MILD_NEGATIVE_PHRASES.some((p) => clause.includes(p))) {
+          mildNegativeCount++;
+          negativeScore += 0.4;
+        } else {
+          // 기본 부정 (강/약 사이)
+          negativeScore += 0.8;
+          mildNegativeCount++;
+        }
+        if (!posInClause) hasOnlyNegatedIssue = false;
+      }
+    }
+  }
+
+  // 강한 만족 표현이 전혀 없으면 hasOnlyNegatedIssue 도 false
+  if (positiveCount === 0) hasOnlyNegatedIssue = false;
+  // 전체 텍스트 차원에서 reversal 만 있고 다른 부정 신호 없으면 onlyNegatedIssue
+  if (reversalGlobal && negativeScore === 0) hasOnlyNegatedIssue = true;
+
+  return {
+    positiveScore,
+    negativeScore,
+    strongNegativeCount,
+    mildNegativeCount,
+    positiveCount,
+    acceptanceCount,
+    contrastCount,
+    hasSevereComplaint,
+    hasClearSatisfaction,
+    hasOnlyNegatedIssue,
+  };
+}
+
+// rating + textSignal 결합. 별점이 없으면 text 만으로 판정.
+export function combineRatingAndTextSentiment(rating, sig) {
+  // 1) rating 없음 — 텍스트 점수 차이로만 판정
+  if (rating == null) {
+    const diff = sig.positiveScore - sig.negativeScore;
+    if (sig.hasSevereComplaint && !sig.hasClearSatisfaction) return 'negative';
+    if (diff >= 1.0) return 'positive';
+    if (diff <= -1.0) return 'negative';
+    return 'neutral';
+  }
+
+  // 2) Hard guard: 평점 4~5 + 강한 불만 없음 + 만족 표현 있음 → positive 보호
+  if (rating >= 4 && sig.strongNegativeCount === 0 && sig.hasClearSatisfaction) {
     return 'positive';
   }
-  const clauses = splitClauses(`${safeStr(review.title)}. ${safeStr(review.content)}`);
-  let pos = 0;
-  let neg = 0;
-  for (const c of clauses) {
-    if (clauseIsPositive(c)) pos++;
-    else if (clauseHasNegative(c)) neg++;
+  // 2-1) 평점 4~5 + acceptance + 약한 이슈만 → positive 보호 (negative 금지)
+  if (rating >= 4 && sig.strongNegativeCount === 0 && sig.acceptanceCount > 0) {
+    return 'positive';
   }
-  if (neg > pos) return 'negative';
-  if (pos > neg) return 'positive';
+
+  // 3) base score (별점)
+  const baseByRating = { 1: -2.0, 2: -1.3, 3: 0, 4: 0.8, 5: 1.5 };
+  let score = baseByRating[rating] ?? 0;
+  score += sig.positiveScore - sig.negativeScore;
+  if (sig.hasSevereComplaint) score -= 1.2;
+  if (sig.hasClearSatisfaction) score += 0.5;
+  if (sig.acceptanceCount > 0) score += 0.3;
+  if (sig.mildNegativeCount > 0 && sig.strongNegativeCount === 0) score += 0.1;
+
+  // 4) 평점별 하드 가드 (dirty data 보호)
+  if (rating <= 2 && sig.hasSevereComplaint) return 'negative';
+  if (rating === 1 && !sig.hasClearSatisfaction) return 'negative';
+  // 평점 1~2 에서 텍스트가 압도적 긍정이면 neutral 까지만 완화
+  if (rating <= 2 && score >= 0.6) return 'neutral';
+
+  // 5) rating 3 는 neutral 기본을 강하게 — 약한 긍정/약한 부정으로는 안 흔들림.
+  //    "X는 괜찮은데 Y가..." 같은 대조 구조 + 양쪽 신호가 모두 있으면 neutral 유지.
+  if (rating === 3) {
+    if (sig.hasSevereComplaint) return 'negative';
+    // 대조 절 + 양쪽 신호: 명확한 만족 표현 없으면 neutral
+    if (sig.contrastCount > 0 && sig.negativeScore > 0 && !sig.hasClearSatisfaction) {
+      return 'neutral';
+    }
+    if (sig.hasClearSatisfaction && sig.strongNegativeCount === 0 && score >= 0.8) return 'positive';
+    if (score >= 1.5) return 'positive';
+    if (score <= -1.5) return 'negative';
+    return 'neutral';
+  }
+
+  if (score >= 0.6) return 'positive';
+  if (score <= -0.6) return 'negative';
   return 'neutral';
+}
+
+// 메인: rating + text 의 hybrid sentiment.
+export function detectSentiment(review) {
+  const rating = normalizeRating(review.rating);
+  const sig = analyzeTextSentiment(`${safeStr(review.title)}. ${safeStr(review.content)}`);
+  return combineRatingAndTextSentiment(rating, sig);
 }
 
 function resolveAction(category, label) {

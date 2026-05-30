@@ -576,6 +576,208 @@ await step('감성 #4 — 상품 단위 sentimentCounts/Ratios 계산 정확', a
   assert.equal(summary.sentimentCounts.negative, 1);
 });
 
+// ──────────────────────────────────────────────
+// hybrid sentiment — 오분류 테스트케이스 20종 (품질 테스트 엑셀 기준)
+// 별점 + 텍스트 결합. 4~5점 약한 이슈는 positive 유지, 1~2점 강한 불만은 negative,
+// reversal 표현은 부정 카운트 X.
+// ──────────────────────────────────────────────
+
+async function expectSentiment(id, rating, content, expected, opts = {}) {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({ id, productName: 'P', rating, content });
+  const labels = (r.categories || []).map((c) => c.issue).filter(Boolean);
+  if (Array.isArray(expected)) {
+    assert(expected.includes(r.sentiment),
+      `[${id}] expected one of ${expected.join('|')}, got ${r.sentiment} | ${content}`);
+  } else {
+    assert.equal(r.sentiment, expected, `[${id}] ${content}`);
+  }
+  if (opts.mustInclude) {
+    for (const lbl of opts.mustInclude) {
+      assert(labels.includes(lbl), `[${id}] label "${lbl}" 없음. 실제: ${labels.join(',')}`);
+    }
+  }
+  if (opts.mustNotInclude) {
+    for (const lbl of opts.mustNotInclude) {
+      assert(!labels.includes(lbl), `[${id}] label "${lbl}" 포함되면 안 됨. 실제: ${labels.join(',')}`);
+    }
+  }
+  if (opts.noActionable) {
+    const act = (r.categories || []).filter((c) => c.isActionableIssue !== false);
+    assert(act.length === 0, `[${id}] actionable issue 없어야 함. 실제: ${act.map((c) => c.issue || c.name).join(',')}`);
+  }
+  return r;
+}
+
+await step('hybrid #1 — 별점 4 + "사진보다 색감이 조금 밝게" + 가격만족 → positive', async () => {
+  await expectSentiment('h1', 4,
+    '사진보다 색감이 조금 밝게 느껴졌어요. 가격 생각하면 충분히 만족스러운 편입니다.',
+    'positive');
+});
+
+await step('hybrid #2 — 별점 5 + 가성비/마감 칭찬 → positive + actionable 없음', async () => {
+  await expectSentiment('h2', 5,
+    '가격 대비 품질이 좋아서 색상별로 더 사고 싶어요. 마감이 나쁘지 않아서 오래 입을 수 있을 것 같아요.',
+    'positive', { noActionable: true });
+});
+
+await step('hybrid #3 — 별점 4 + 어깨 살짝 큰 약한 이슈 → positive/neutral, negative 아님', async () => {
+  const r = await expectSentiment('h3', 4,
+    '기장은 괜찮은데 어깨가 조금 크게 느껴져요. 마감이 나쁘지 않아서 오래 입을 수 있을 것 같아요.',
+    ['positive', 'neutral'],
+    { mustNotInclude: ['어깨가 좁음', '마감 상태가 미흡함'] });
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #4 — 별점 3 + 한 치수 작게 권장 → neutral, "크게 나옴" 방향', async () => {
+  await expectSentiment('h4', 3,
+    '생각보다 품이 커서 정핏을 원하면 한 치수 작게 사는 게 좋겠어요.',
+    'neutral',
+    { mustNotInclude: ['전반적으로 작게 나옴'] });
+});
+
+await step('hybrid #5 — 별점 5 + "비침이 거의 없어요" → positive, 비침 이슈 아님', async () => {
+  await expectSentiment('h5', 5,
+    '화이트인데도 비침이 거의 없어서 만족합니다.',
+    'positive', { noActionable: true });
+});
+
+await step('hybrid #6 — 별점 2 + "비쳐서 단독으로 입기 어려워요" → negative + 비침 감지', async () => {
+  const r = await expectSentiment('h6', 2,
+    '화이트 색상은 속옷이 비쳐서 단독으로 입기 어려워요.',
+    'negative');
+  const cats = (r.categories || []).map((c) => c.name);
+  assert(cats.includes('소재/두께') || cats.includes('색상/화면 차이'),
+    `소재/두께 또는 색상 카테고리 기대. 실제: ${cats.join(',')}`);
+});
+
+await step('hybrid #7 — 별점 5 + "줄어들지 않았어요" → positive, 세탁 이슈 아님', async () => {
+  await expectSentiment('h7', 5,
+    '세탁 후에도 크게 줄어들지 않았어요. 가격 대비 만족합니다.',
+    'positive', { noActionable: true });
+});
+
+await step('hybrid #8 — 별점 2 + 보풀 + 못 입을 것 같다 → negative + 세탁/내구성', async () => {
+  const r = await expectSentiment('h8', 2,
+    '세탁 후 보풀이 많이 생겨서 몇 번 못 입을 것 같아요.',
+    'negative');
+  const cats = (r.categories || []).map((c) => c.name);
+  assert(cats.includes('세탁/내구성'), `세탁/내구성 기대. 실제: ${cats.join(',')}`);
+});
+
+await step('hybrid #9 — 별점 4 + 목 타이트 + 괜찮을 것 같다 → positive/neutral, negative 아님', async () => {
+  const r = await expectSentiment('h9', 4,
+    '목 부분이 조금 타이트하게 느껴졌지만 입다 보면 괜찮을 것 같습니다.',
+    ['positive', 'neutral']);
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #10 — 별점 3 + 재질OK + 두꺼움 → neutral + 소재/두께 감지', async () => {
+  const r = await expectSentiment('h10', 3,
+    '재질은 괜찮은데 생각보다 두꺼워서 한여름에는 조금 더울 수 있어요.',
+    'neutral');
+  const cats = (r.categories || []).map((c) => c.name);
+  assert(cats.includes('소재/두께'), `소재/두께 기대. 실제: ${cats.join(',')}`);
+});
+
+await step('hybrid #11 — 별점 2 + 배송빠름 but 포장 구겨짐 → negative, 배송 지연 아님', async () => {
+  const r = await expectSentiment('h11', 2,
+    '배송은 빨랐지만 포장이 구겨져서 옷에 주름이 많이 생겼어요.',
+    'negative');
+  const labels = (r.categories || []).map((c) => c.issue || '');
+  assert(!labels.some((l) => /배송이 늦|배송 지연/.test(l)),
+    `배송 지연 라벨 금지. 실제: ${labels.join(',')}`);
+});
+
+await step('hybrid #12 — 별점 5 + 배송/포장 칭찬 → positive + actionable 없음', async () => {
+  await expectSentiment('h12', 5,
+    '배송도 빠르고 포장도 깔끔했어요.',
+    'positive', { noActionable: true });
+});
+
+await step('hybrid #13 — 별점 5 + "실밥 없이 깔끔" → positive + 실밥 이슈 아님', async () => {
+  await expectSentiment('h13', 5,
+    '실밥 없이 마감이 깔끔해서 만족합니다.',
+    'positive', { noActionable: true });
+});
+
+await step('hybrid #14 — 별점 2 + 박음질 삐뚤 + 실밥 보임 → negative + 마감/불량', async () => {
+  const r = await expectSentiment('h14', 2,
+    '박음질이 조금 삐뚤고 실밥이 몇 군데 보여요.',
+    'negative');
+  const cats = (r.categories || []).map((c) => c.name);
+  assert(cats.includes('마감/불량'), `마감/불량 기대. 실제: ${cats.join(',')}`);
+});
+
+await step('hybrid #15 — 별점 5 + 색은 진한데 더 마음에 들어요 → positive', async () => {
+  const r = await expectSentiment('h15', 5,
+    '색은 화면보다 진한데 저는 이쪽이 더 마음에 들어요.',
+    'positive');
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #16 — 별점 4 + "크다고 해야 할지 루즈" 애매 → positive/neutral', async () => {
+  const r = await expectSentiment('h16', 4,
+    '크다고 해야 할지 루즈하다고 해야 할지 애매해요. 저는 편한데 정핏 좋아하면 고민될 듯합니다.',
+    ['positive', 'neutral']);
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #17 — 별점 4 + 구김 + "이해되는 정도" → positive/neutral, negative 아님', async () => {
+  const r = await expectSentiment('h17', 4,
+    '구김이 조금 있지만 소재 특성상 이해되는 정도입니다.',
+    ['positive', 'neutral']);
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #18 — 별점 2 + 발볼 좁음 + 발 아픔 → negative + 발볼 좁음', async () => {
+  await expectSentiment('h18', 2,
+    '발볼이 좁아서 오래 걸으면 발이 아파요.',
+    'negative', { mustInclude: ['발볼이 좁음'] });
+});
+
+await step('hybrid #19 — 별점 4 + 뒤꿈치 헐떡 but 깔창으로 OK → positive/neutral', async () => {
+  const r = await expectSentiment('h19', 4,
+    '뒤꿈치가 살짝 헐떡이지만 깔창 넣으면 괜찮을 것 같아요.',
+    ['positive', 'neutral']);
+  assert.notEqual(r.sentiment, 'negative');
+});
+
+await step('hybrid #20 — 별점 2 + 허리 작음 + 개인정보 → negative (마스킹은 reviewService 단계)', async () => {
+  const r = await expectSentiment('h20', 2,
+    '문의는 010-1234-5678로 주세요. test@example.com 주문번호 202605270001입니다. 허리가 작아요.',
+    'negative', { mustInclude: ['허리가 작게 나옴'] });
+  assert.equal(r.sentiment, 'negative');
+});
+
+// rating 정규화 / 문자열 별점 처리
+await step('hybrid #string-rating — "5점" / "평점 4" / 공백 처리', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  assert.equal(m.normalizeRating('5'), 5);
+  assert.equal(m.normalizeRating('5점'), 5);
+  assert.equal(m.normalizeRating('평점 4'), 4);
+  assert.equal(m.normalizeRating('  3  '), 3);
+  assert.equal(m.normalizeRating(''), null);
+  assert.equal(m.normalizeRating(undefined), null);
+  assert.equal(m.normalizeRating(null), null);
+  assert.equal(m.normalizeRating(6), null);
+  assert.equal(m.normalizeRating(0), null);
+  // string rating 도 정상 sentiment 반환해야 함
+  const cls = m.classifyReview({ id: 'sr', productName: 'P', rating: '5점', content: '정말 좋아요' });
+  assert.equal(cls.sentiment, 'positive');
+});
+
+await step('hybrid — analyzeTextSentiment helper export 검증', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const sig = m.analyzeTextSentiment('환불하고 싶습니다. 너무 실망스러워요.');
+  assert.equal(sig.hasSevereComplaint, true);
+  assert(sig.strongNegativeCount >= 1, `strong=${sig.strongNegativeCount}`);
+  const sig2 = m.analyzeTextSentiment('가격 대비 품질이 좋아서 만족합니다.');
+  assert.equal(sig2.hasClearSatisfaction, true);
+  const sig3 = m.analyzeTextSentiment('비침이 거의 없어서 만족합니다.');
+  assert.equal(sig3.hasSevereComplaint, false);
+});
+
 await step('상품 상태 — deriveProductStatus 분기 검증', async () => {
   const { deriveProductStatus } = await import('../src/services/productAnalysis.service.js');
   assert.equal(deriveProductStatus({ totalReviews: 5, positiveRatio: 0.8, negativeRatio: 0, issueRatio: 0 }), '리뷰 부족');
