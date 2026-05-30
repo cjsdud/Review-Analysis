@@ -20,6 +20,34 @@ ReviewFit 은 SQLite 를 사용합니다. **Render 의 일반 컨테이너 파�
 
 ---
 
+## 0) Render Service 설정 (Build/Start/Node)
+
+Render 대시보드 → 해당 Web Service → **"Settings"** 에서 다음을 명시적으로 지정.
+
+| 항목 | 값 |
+|---|---|
+| Runtime | Node |
+| Build Command | `npm run render:build` |
+| Start Command | `npm run render:start` |
+| Node Version | `20` (저장소 `.node-version` + `engines.node=20.x` 기본 적용. 환경변수 `NODE_VERSION=20` 명시 권장) |
+
+### Build 동작 (vite: not found 방지)
+
+`render:build` 는 다음을 차례로 실행합니다:
+
+```bash
+npm --prefix frontend ci --include=dev    # vite 등 devDependencies 까지 설치
+npm --prefix frontend run build           # frontend/dist 생성
+npm --prefix backend  ci --omit=dev       # backend runtime 의존성만 설치
+```
+
+- `npm ci --include=dev` 는 `NODE_ENV=production` / `NPM_CONFIG_PRODUCTION=true` 에서도
+  devDependencies(vite/sass/@vitejs/plugin-react)를 강제로 설치합니다.
+- backend 는 `--omit=dev` 로 runtime 의존성만 설치 (이미지 크기 절약).
+- lock 파일(`frontend/package-lock.json`, `backend/package-lock.json`) 이 누락되면 `npm ci` 가 실패하므로 반드시 커밋되어 있어야 합니다.
+
+> 자세한 트러블슈팅: [`docs/deploy-render.md` § vite: not found 해결](./deploy-render.md#vite-not-found-해결)
+
 ## 1) Persistent Disk 생성
 
 Render 대시보드 → 해당 Web Service → **"Disks"** 탭 → **Add Disk**
@@ -52,6 +80,9 @@ Render 대시보드 → **"Environment"** 탭 → 다음 값을 추가/수정.
 
 ```env
 NODE_ENV=production
+# ★ Node 버전 고정 — 저장소 루트의 .node-version / engines 가 기본 적용되지만
+#    환경변수로도 한 번 더 명시해 두면 가장 안전합니다.
+NODE_VERSION=20
 PORT=10000
 CLIENT_ORIGIN=https://your-app.onrender.com
 

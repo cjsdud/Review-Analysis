@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "패션 셀러용 리뷰 기반 상품 개선 리포트 MVP (monorepo)",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "install:all": "npm --prefix backend install && npm --prefix frontend install",
     "dev:backend": "npm --prefix backend run dev",
@@ -10,10 +13,10 @@
     "check": "npm --prefix backend run check",
     "check:llm": "npm --prefix backend run check:llm",
     "build:frontend": "npm --prefix frontend run build",
-    "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
+    "build": "npm --prefix frontend ci --include=dev && npm --prefix frontend run build && npm --prefix backend ci --omit=dev",
     "start": "npm --prefix backend run start",
-    "render:build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
-    "render:start": "npm --prefix backend run start",
+    "render:build": "npm run build",
+    "render:start": "npm run start",
     "seed:xlsx": "npm --prefix backend run seed:xlsx",
     "cleanup:anonymous": "npm --prefix backend run cleanup:anonymous",
     "cleanup:anonymous:confirm": "npm --prefix backend run cleanup:anonymous:confirm",
@@ -21,3 +24,4 @@
     "db:backup": "npm --prefix backend run db:backup"
   }
 }
+
