@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import Modal from './Modal.jsx';
 import EvidenceReviewList from './EvidenceReviewList.jsx';
-import { buildIssueFilters, sortIssues } from '../utils/issueFilters.js';
+import { buildIssueFilters, filterIssuesByCategory, sortIssues } from '../utils/issueFilters.js';
 
 function SeverityBadge({ severity }) {
   const cls =
@@ -20,18 +20,18 @@ export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRe
   // createdAt 메타가 이슈에 하나라도 있으면 "최신 리뷰 포함 순" 옵션 노출
   const hasCreatedAt = useMemo(() => allIssues.some((i) => i.latestCreatedAt), [allIssues]);
 
-  const filtered = useMemo(() => {
-    let list = allIssues;
-    if (categoryFilter !== '전체') list = list.filter((i) => i.category === categoryFilter);
-    return sortIssues(list, sortBy);
-  }, [allIssues, categoryFilter, sortBy]);
+  // chip count 와 동일한 normalize + displayable 필터로 카드 목록 산출 → 숫자/목록 항상 일치
+  const filtered = useMemo(
+    () => sortIssues(filterIssuesByCategory(allIssues, categoryFilter), sortBy),
+    [allIssues, categoryFilter, sortBy],
+  );
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="전체 발견 이슈"
-      description="핵심 문제에 표시되지 않은 낮은 우선순위 이슈까지 함께 확인할 수 있습니다."
+      description="핵심 문제에 표시되지 않은 낮은 우선순위 이슈까지 함께 확인할 수 있습니다. 카테고리 칩의 숫자는 표시되는 이슈 종류 수, 카드 내부의 '건'은 관련 리뷰 수입니다."
       size="lg"
     >
       <div className="modal-toolbar">

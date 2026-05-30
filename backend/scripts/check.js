@@ -1014,8 +1014,10 @@ await step('history — listAnalyses limit 적용', async () => {
 
 // ──────────────────────────────────────────────
 // 전체 이슈 필터/정렬 (프론트 순수 로직)
+// chip 옆 숫자 = 이슈 카드 개수, 카드 내부 'N건' = 관련 리뷰 수.
+// chip 카운트와 filterIssuesByCategory 결과는 반드시 일치해야 한다.
 // ──────────────────────────────────────────────
-await step('전체 이슈 필터 — 전체 고정 + 카테고리 count 내림차순', async () => {
+await step('전체 이슈 필터 — chip count = 이슈 카드 개수 (리뷰 수 합계 아님)', async () => {
   const { buildIssueFilters } = await import('../../frontend/src/utils/issueFilters.js');
   const allIssues = [
     { category: '사이즈', issueLabel: '기장이 김', count: 5, severity: 'medium' },
@@ -1025,19 +1027,80 @@ await step('전체 이슈 필터 — 전체 고정 + 카테고리 count 내림�
   ];
   const filters = buildIssueFilters(allIssues);
   assert.equal(filters[0].value, '전체', '전체가 첫 번째여야 함');
-  assert.equal(filters[0].count, 14, `전체 count=${filters[0].count}`);
+  assert.equal(filters[0].count, 4, `전체 count=${filters[0].count} (카드 4장)`);
   assert.deepEqual(
     filters.map((f) => [f.label, f.count]),
-    [['전체', 14], ['사이즈', 9], ['소재/두께', 3], ['배송/포장', 2]],
-    '필터 순서/개수 불일치',
+    [['전체', 4], ['사이즈', 2], ['배송/포장', 1], ['소재/두께', 1]],
+    '필터 순서/카드 수 불일치 (count tie 는 가나다순)',
   );
+  // reviewCount 는 별도 metric 으로 함께 제공
+  const sizeFilter = filters.find((f) => f.value === '사이즈');
+  assert.equal(sizeFilter.reviewCount, 9, `사이즈 리뷰 수 합계=${sizeFilter.reviewCount}`);
 });
 
-await step('전체 이슈 필터 — count 0 카테고리 숨김', async () => {
+await step('전체 이슈 필터 — chip count 와 filterIssuesByCategory 결과 일치', async () => {
+  const { buildIssueFilters, filterIssuesByCategory } = await import('../../frontend/src/utils/issueFilters.js');
+  const allIssues = [
+    { category: '사이즈', issueLabel: '전반적으로 작게 나옴', count: 3 },
+    { category: '사이즈', issueLabel: '어깨가 크게 느껴짐', count: 2 },
+    { category: '색상/화면 차이', issueLabel: '화면보다 어두움', count: 1 },
+  ];
+  const filters = buildIssueFilters(allIssues);
+  // 카테고리 chip 숫자 === 그 카테고리로 필터링한 카드 수
+  for (const f of filters) {
+    const cards = filterIssuesByCategory(allIssues, f.value);
+    assert.equal(cards.length, f.count,
+      `[${f.label}] chip=${f.count}, 카드=${cards.length}`);
+  }
+});
+
+await step('전체 이슈 필터 — issueLabel 없음 / isActionableIssue=false 는 카운트/목록 모두 제외', async () => {
+  const { buildIssueFilters, filterIssuesByCategory } = await import('../../frontend/src/utils/issueFilters.js');
+  const allIssues = [
+    { category: '사이즈', issueLabel: '전반적으로 작게 나옴', count: 3 },
+    { category: '사이즈', issueLabel: '사이즈 관련 의견', isActionableIssue: false, count: 2 },
+    { category: '사이즈', issueLabel: null, count: 1 },                  // generic
+    { category: '사이즈', issueLabel: '어깨 큼', count: 0 },              // count=0
+  ];
+  const filters = buildIssueFilters(allIssues);
+  const size = filters.find((f) => f.value === '사이즈');
+  assert.equal(size.count, 1, `사이즈 chip=${size.count} (1만 표시)`);
+  assert.equal(filterIssuesByCategory(allIssues, '사이즈').length, 1);
+  assert.equal(filterIssuesByCategory(allIssues, '전체').length, 1);
+});
+
+await step('전체 이슈 필터 — normalizeIssueCategory 변형 통일 (사이즈/핏 → 사이즈)', async () => {
+  const { normalizeIssueCategory, buildIssueFilters, filterIssuesByCategory } =
+    await import('../../frontend/src/utils/issueFilters.js');
+  assert.equal(normalizeIssueCategory('사이즈/핏'), '사이즈');
+  assert.equal(normalizeIssueCategory('핏/사이즈'), '사이즈');
+  assert.equal(normalizeIssueCategory('착용감/사이즈'), '사이즈');
+  assert.equal(normalizeIssueCategory('색상'), '색상/화면 차이');
+  assert.equal(normalizeIssueCategory('화면 차이'), '색상/화면 차이');
+  assert.equal(normalizeIssueCategory('소재'), '소재/두께');
+  assert.equal(normalizeIssueCategory('배송'), '배송/포장');
+  assert.equal(normalizeIssueCategory(null), '기타');
+  assert.equal(normalizeIssueCategory(''), '기타');
+
+  // 변형이 섞여 와도 같은 그룹으로 모이고, 필터 결과와 chip 카운트 일치
+  const allIssues = [
+    { category: '사이즈', issueLabel: '전반적으로 작게 나옴', count: 3 },
+    { category: '사이즈/핏', issueLabel: '어깨가 크게 느껴짐', count: 2 },
+    { category: '핏/사이즈', issueLabel: '소매가 김', count: 1 },
+  ];
+  const filters = buildIssueFilters(allIssues);
+  const size = filters.find((f) => f.value === '사이즈');
+  assert.equal(size.count, 3, `사이즈 chip=${size.count}`);
+  assert.equal(filterIssuesByCategory(allIssues, '사이즈').length, 3);
+});
+
+await step('전체 이슈 필터 — count 0 / displayable=false 카테고리 chip 자동 숨김', async () => {
   const { buildIssueFilters } = await import('../../frontend/src/utils/issueFilters.js');
-  const filters = buildIssueFilters([{ category: '사이즈', count: 2 }]);
-  // 전체 + 사이즈만, 다른 카테고리 없음
-  assert.equal(filters.length, 2, `필터 개수=${filters.length}`);
+  const filters = buildIssueFilters([
+    { category: '사이즈', issueLabel: '허리 작음', count: 2 },
+    { category: '소재/두께', issueLabel: null, count: 5 },        // generic — 제외됨
+  ]);
+  assert.equal(filters.length, 2, `필터 개수=${filters.length} (전체+사이즈만)`);
   assert(filters.every((f) => f.count > 0), 'count 0 필터가 포함됨');
 });
 
