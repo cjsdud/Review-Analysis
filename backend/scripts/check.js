@@ -832,6 +832,99 @@ await step('전체 이슈 정렬 — 기본 많이 나온 순 (count→severity)
   assert.equal(sorted[3].issueLabel, '배송 지연', `4순위=${sorted[3].issueLabel}`);
 });
 
+// ──────────────────────────────────────────────
+// source별 컬럼 자동 매핑
+// ──────────────────────────────────────────────
+await step('columnMapping #smartstore — 스마트스토어 컬럼명 자동 매핑', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const headers = ['상품명', '옵션정보', '구매자평점', '리뷰상세내용', '등록일시', '구매자명'];
+  const rows = [{ '상품명': '셔츠', '옵션정보': 'M', '구매자평점': 5, '리뷰상세내용': '핏이 예뻐요. 만족합니다.', '등록일시': '2026-01-02', '구매자명': '김*' }];
+  const m = autoMapColumns(headers, rows, 'smartstore');
+  assert.equal(m.productName?.column, '상품명');
+  assert.equal(m.optionName?.column, '옵션정보');
+  assert.equal(m.rating?.column, '구매자평점');
+  assert.equal(m.content?.column, '리뷰상세내용');
+  assert.equal(m.createdAt?.column, '등록일시');
+  assert.equal(m.writer?.column, '구매자명');
+  // 스마트스토어 후보로 매칭된 reason 표시 확인
+  assert(/스마트스토어/.test(m.rating?.reason || ''), `rating reason=${m.rating?.reason}`);
+});
+
+await step('columnMapping #cafe24 — 카페24 컬럼명 자동 매핑', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const headers = ['게시글번호', '상품정보', '글제목', '글내용', '작성일시', '회원ID', '관리자답변내용'];
+  const rows = [{ '게시글번호': '123', '상품정보': '셔츠', '글제목': '좋아요', '글내용': '핏이 예뻐요. 만족합니다.', '작성일시': '2026-01-02', '회원ID': 'abc', '관리자답변내용': '감사합니다' }];
+  const m = autoMapColumns(headers, rows, 'cafe24');
+  assert.equal(m.reviewId?.column, '게시글번호');
+  assert.equal(m.productName?.column, '상품정보');
+  assert.equal(m.title?.column, '글제목');
+  assert.equal(m.content?.column, '글내용');
+  assert.equal(m.createdAt?.column, '작성일시');
+  assert.equal(m.writer?.column, '회원ID');
+  assert.equal(m.replyText?.column, '관리자답변내용');
+});
+
+await step('columnMapping #coupang — 쿠팡 컬럼명 자동 매핑', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const headers = ['노출상품명', '구매옵션명', '상품평점', '상품평내용', '상품평작성일', '구매자명'];
+  const rows = [{ '노출상품명': '셔츠', '구매옵션명': 'M', '상품평점': 5, '상품평내용': '핏이 예뻐요. 만족합니다.', '상품평작성일': '2026-01-02', '구매자명': '김*' }];
+  const m = autoMapColumns(headers, rows, 'coupang');
+  assert.equal(m.productName?.column, '노출상품명');
+  assert.equal(m.optionName?.column, '구매옵션명');
+  assert.equal(m.rating?.column, '상품평점');
+  assert.equal(m.content?.column, '상품평내용');
+  assert.equal(m.createdAt?.column, '상품평작성일');
+  assert.equal(m.writer?.column, '구매자명');
+});
+
+await step('columnMapping #custom — 자사몰/영문 컬럼명', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const headers = ['product', 'variant', 'score', 'review', 'date', 'user'];
+  const rows = [{ product: '셔츠', variant: 'M', score: 5, review: 'great fit. very satisfied with the product overall.', date: '2026-01-02', user: 'u*' }];
+  const m = autoMapColumns(headers, rows, 'custom');
+  assert.equal(m.productName?.column, 'product');
+  assert.equal(m.optionName?.column, 'variant');
+  assert.equal(m.rating?.column, 'score');
+  assert.equal(m.content?.column, 'review');
+  assert.equal(m.createdAt?.column, 'date');
+  assert.equal(m.writer?.column, 'user');
+});
+
+await step('columnMapping #unknown source — 에러 없이 공통 후보로 동작', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const headers = ['상품명', '리뷰내용', '평점'];
+  const rows = [{ '상품명': '셔츠', '리뷰내용': '좋아요. 정말 만족합니다.', '평점': 5 }];
+  const m = autoMapColumns(headers, rows, 'unknown_platform');
+  assert.equal(m.productName?.column, '상품명');
+  assert.equal(m.content?.column, '리뷰내용');
+  assert.equal(m.rating?.column, '평점');
+});
+
+await step('columnMapping — source 가산점이 동점 공통 후보보다 source 후보를 선호', async () => {
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  // '상품정보' 는 카페24 productName 후보에 있지만 공통 후보에는 없다.
+  const headers = ['상품정보', '내용'];
+  const rows = [{ '상품정보': '셔츠', '내용': '핏이 예뻐요. 만족합니다.' }];
+  const m = autoMapColumns(headers, rows, 'cafe24');
+  assert.equal(m.productName?.column, '상품정보', '카페24 후보 매칭 실패');
+  assert.equal(m.productName?.matchedFrom, 'cafe24', `matchedFrom=${m.productName?.matchedFrom}`);
+});
+
+await step('columnMapping — SOURCE_FIELD_CANDIDATES 구조 검증', async () => {
+  const m = await import('../src/services/columnMapping.service.js');
+  assert(m.SOURCE_FIELD_CANDIDATES, 'SOURCE_FIELD_CANDIDATES export 안 됨');
+  for (const src of ['smartstore', 'cafe24', 'coupang', 'custom']) {
+    assert(m.SOURCE_FIELD_CANDIDATES[src], `${src} 키 누락`);
+  }
+  // 각 플랫폼이 9개 필드 모두 가짐 (custom 제외)
+  for (const src of ['smartstore', 'cafe24', 'coupang']) {
+    for (const f of m.FIELDS) {
+      assert(Array.isArray(m.SOURCE_FIELD_CANDIDATES[src][f]), `${src}.${f} 가 배열 아님`);
+      assert(m.SOURCE_FIELD_CANDIDATES[src][f].length > 0, `${src}.${f} 비어 있음`);
+    }
+  }
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

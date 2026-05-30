@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use 'variables' as *;
 @use 'mixins' as *;
 
@@ -201,6 +202,41 @@ h4 {
   padding: 12px 16px;
   font-size: 13px;
   margin-bottom: $sp-4;
+}
+
+// 상품명 컬럼 미선택 같은 "주의" 안내. 차단은 아니지만 강하게 알려야 할 때.
+.warn-banner {
+  background: $warning-soft;
+  border: 1px solid color.adjust($warning, $lightness: 25%);
+  color: #92400e;
+  border-radius: $r-sm;
+  padding: 12px 16px;
+  font-size: 13px;
+  margin-bottom: $sp-3;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+
+  &__title {
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  &__desc {
+    line-height: 1.55;
+  }
+}
+
+// 플랫폼 자동 추정 안내 같은 "도움말" 톤 박스.
+.hint-banner {
+  background: $primary-soft;
+  border: 1px solid $primary-200;
+  color: $primary-dark;
+  border-radius: $r-sm;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: $sp-3;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .state-box {

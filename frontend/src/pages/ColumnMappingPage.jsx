@@ -9,6 +9,12 @@ import SheetSelector from '../components/SheetSelector.jsx';
 import { getUpload, saveMapping, reparseUpload } from '../api/uploadApi.js';
 import { runAnalysis } from '../api/analysisApi.js';
 
+const SOURCE_LABELS = {
+  smartstore: '스마트스토어',
+  cafe24: '카페24',
+  coupang: '쿠팡',
+};
+
 export default function ColumnMappingPage() {
   const { uploadId } = useParams();
   const navigate = useNavigate();
@@ -104,6 +110,8 @@ export default function ColumnMappingPage() {
     );
 
   const hasMultipleSheets = (upload.sheets || []).length >= 2;
+  const productNameMissing = !mapping.productName;
+  const sourceLabel = SOURCE_LABELS[upload.source] || null;
 
   return (
     <div>
@@ -114,6 +122,24 @@ export default function ColumnMappingPage() {
       <Stepper current={2} />
 
       {error && <div className="error-banner">{error}</div>}
+
+      {productNameMissing && (
+        <div className="warn-banner" role="alert">
+          <div className="warn-banner__title">⚠ 상품명 컬럼이 선택되지 않았습니다.</div>
+          <div className="warn-banner__desc">
+            상품별 리포트를 보려면 상품명 컬럼을 선택하는 것을 권장합니다.
+            상품명 없이 진행하면 모든 리뷰가 ‘미지정 상품’으로 묶일 수 있습니다.
+          </div>
+        </div>
+      )}
+
+      {sourceLabel && (
+        <div className="hint-banner">
+          <strong>{sourceLabel}</strong> 양식을 기준으로 컬럼을 자동 추정했습니다.
+          실제 엑셀 양식은 판매자센터 설정이나 다운로드 방식에 따라 달라질 수 있으니
+          분석 전 꼭 확인해 주세요.
+        </div>
+      )}
 
       {hasMultipleSheets && (
         <SectionCard

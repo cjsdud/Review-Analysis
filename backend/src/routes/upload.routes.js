@@ -33,7 +33,7 @@ function maskSheetParseResults(sheetParseResults) {
 function persistUpload({ originalName, source, parsed }) {
   const maskedRows = maskRows(parsed.rows || []);
   const headers = parsed.headers || [];
-  const mappingSuggestion = autoMapColumns(headers, maskedRows);
+  const mappingSuggestion = autoMapColumns(headers, maskedRows, source);
   const uploadId = nanoid();
 
   // XLSX 멀티시트 데이터는 모두 마스킹 후 저장
@@ -62,6 +62,7 @@ function persistUpload({ originalName, source, parsed }) {
   return {
     uploadId,
     originalName,
+    source,
     rowCount: maskedRows.length,
     headers,
     sampleRows: maskedRows.slice(0, 5),
@@ -175,7 +176,7 @@ router.post('/:id/reparse', (req, res) => {
   const nextHeaderIdx = headerRowIndex != null ? headerRowIndex : sp.detectedHeaderRowIndex || 0;
   // 저장된 matrix 는 이미 마스킹된 상태이므로 그대로 사용
   const { headers, rows } = rowsFromMatrix(sp.matrix || [], nextHeaderIdx);
-  const mappingSuggestion = autoMapColumns(headers, rows);
+  const mappingSuggestion = autoMapColumns(headers, rows, row.source);
 
   db.prepare(
     `UPDATE upload_files
