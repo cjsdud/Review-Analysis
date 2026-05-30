@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import UploadPage from './pages/UploadPage.jsx';
@@ -18,11 +18,20 @@ import AdminReportsPage from './pages/admin/AdminReportsPage.jsx';
 import AdminSettingsPage from './pages/admin/AdminSettingsPage.jsx';
 import AdminAnnouncementsPage from './pages/admin/AdminAnnouncementsPage.jsx';
 import AdminActionLogsPage from './pages/admin/AdminActionLogsPage.jsx';
+import { useAuth } from './auth/AuthContext.jsx';
+
+// / 진입 분기: 로그인 사용자는 분석 히스토리(앱 홈), 비로그인은 랜딩 페이지.
+function HomeRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (user) return <Navigate to="/history" replace />;
+  return <LandingPage />;
+}
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Layout />}>
         <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />

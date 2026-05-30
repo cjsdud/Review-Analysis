@@ -25,7 +25,6 @@ export default function AnalysisHistoryPage() {
         setItems(Array.isArray(data) ? data : []);
       } catch (e) {
         // 401 은 ProtectedRoute 가 /login 으로 보내므로 여기에 도달하지 않음.
-        // 다른 에러만 표시.
         setError(e.message);
       } finally {
         setLoading(false);
@@ -39,8 +38,22 @@ export default function AnalysisHistoryPage() {
     <div>
       <PageHeader
         title="분석 히스토리"
-        subtitle="현재 서버에 저장된 최근 분석 결과입니다. 로그인 기능 도입 후에는 본인 분석만 표시됩니다."
+        subtitle="이전에 분석한 리뷰 리포트를 다시 확인할 수 있어요."
+        actions={
+          <button className="btn btn--primary" onClick={() => navigate('/upload')}>
+            새 리뷰 파일 업로드
+          </button>
+        }
       />
+
+      {/* 무료 베타 안내 — 데이터 초기화 가능성 자연스럽게 전달 */}
+      <div className="beta-notice" role="note">
+        <span className="beta-notice__ico" aria-hidden="true">🧪</span>
+        <div className="beta-notice__body">
+          <b>무료 베타 기간</b>에는 서버 점검·재배포 과정에서 이전 분석 히스토리가 초기화될 수
+          있습니다. 필요한 리포트는 상품 상세에서 CSV 로 저장하거나 화면을 캡처해 두세요.
+        </div>
+      </div>
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -50,10 +63,12 @@ export default function AnalysisHistoryPage() {
       >
         {items.length === 0 ? (
           <EmptyState
-            title="아직 저장된 분석이 없어요"
-            desc="리뷰 파일을 업로드하고 분석을 실행하면 여기에 히스토리가 쌓입니다."
-            actionLabel="리뷰 업로드하기"
+            title="아직 분석한 리포트가 없어요"
+            desc="리뷰 파일을 업로드하면 상품별 문제와 리뷰 반응을 정리해 드립니다. 처음이라면 샘플 데이터로 결과 화면을 먼저 살펴봐도 좋아요."
+            actionLabel="리뷰 파일 업로드하기"
             actionTo="/upload"
+            secondaryActionLabel="샘플 데이터로 먼저 체험하기"
+            secondaryActionTo="/upload?sample=1"
           />
         ) : (
           <ul className="history-list">
@@ -98,14 +113,6 @@ export default function AnalysisHistoryPage() {
           </ul>
         )}
       </SectionCard>
-
-      <div className="ops-note">
-        <span className="ops-note__ico">ℹ️</span>
-        <div>
-          현재는 로그인 기능이 없어 서버에 저장된 모든 분석이 표시됩니다. 실제 운영 환경에서는
-          로그인 후 본인 분석만 보이도록 제한하고, 보관 기간·삭제 기능을 함께 제공해야 합니다.
-        </div>
-      </div>
     </div>
   );
 }

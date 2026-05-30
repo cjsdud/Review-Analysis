@@ -9,7 +9,7 @@ export default function LoginPage() {
   const { login, register } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const from = location.state?.from || '/upload';
+  const from = location.state?.from || '/history';
 
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');

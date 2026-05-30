@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import BrandTitle from '../components/BrandTitle.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const PROBLEMS = [
   { icon: '🕒', title: '리뷰를 하나씩 읽기엔 시간이 너무 오래 걸려요', desc: '리뷰가 수백 건 쌓이는데, 어디서부터 봐야 할지 막막합니다.' },
@@ -16,6 +17,10 @@ const STEPS = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // 로그인 사용자는 분석 히스토리(앱 홈), 비로그인은 로그인 화면으로.
+  const startTarget = user ? '/history' : '/login';
+  const uploadTarget = user ? '/upload' : '/login';
 
   return (
     <div className="landing">
@@ -23,7 +28,7 @@ export default function LandingPage() {
         <div className="landing__brand">
           <BrandTitle size="md" clickable />
         </div>
-        <button className="btn btn--primary btn--sm" onClick={() => navigate('/upload')}>
+        <button className="btn btn--primary btn--sm" onClick={() => navigate(startTarget)}>
           시작하기
         </button>
       </nav>
@@ -41,10 +46,10 @@ export default function LandingPage() {
           분류하고 CS 답글 초안까지 정리합니다.
         </p>
         <div className="hero__cta">
-          <button className="btn btn--primary" onClick={() => navigate('/upload?sample=1')}>
+          <button className="btn btn--primary" onClick={() => navigate(user ? '/upload?sample=1' : '/login', { state: user ? undefined : { from: '/upload?sample=1' } })}>
             샘플 데이터로 체험하기
           </button>
-          <button className="btn btn--ghost" onClick={() => navigate('/upload')}>
+          <button className="btn btn--ghost" onClick={() => navigate(uploadTarget, uploadTarget === '/login' ? { state: { from: '/upload' } } : undefined)}>
             리뷰 파일 업로드하기
           </button>
         </div>
@@ -112,10 +117,10 @@ export default function LandingPage() {
       <section className="cta-section">
         <div className="cta-section__title">샘플 데이터로 먼저 확인해보세요</div>
         <div className="cta-section__buttons">
-          <button className="btn btn--primary" onClick={() => navigate('/upload?sample=1')}>
+          <button className="btn btn--primary" onClick={() => navigate(user ? '/upload?sample=1' : '/login', { state: user ? undefined : { from: '/upload?sample=1' } })}>
             샘플 데이터로 체험하기
           </button>
-          <button className="btn btn--ghost" onClick={() => navigate('/upload')}>
+          <button className="btn btn--ghost" onClick={() => navigate(uploadTarget, uploadTarget === '/login' ? { state: { from: '/upload' } } : undefined)}>
             리뷰 파일 업로드하기
           </button>
         </div>

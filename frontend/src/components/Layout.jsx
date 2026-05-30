@@ -1,11 +1,12 @@
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import AnnouncementBanner from './AnnouncementBanner.jsx';
 import BrandTitle from './BrandTitle.jsx';
 
 const NAV = [
-  { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
   { to: '/history', label: '분석 히스토리', icon: '🗂️' },
+  { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
   { to: '/pricing', label: '요금제', icon: '💳' },
   { to: '/settings', label: '매핑 템플릿', icon: '⚙️' },
 ];
@@ -15,11 +16,15 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, subscription, usage, logout } = useAuth();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+
   const title = (() => {
     if (location.pathname.startsWith('/upload')) return '리뷰 파일 업로드';
     if (location.pathname.startsWith('/mapping')) return '컬럼 매핑 확인';
     if (location.pathname.startsWith('/dashboard')) return '분석 대시보드';
     if (location.pathname.startsWith('/products')) return '상품 상세 리포트';
+    if (location.pathname.startsWith('/history')) return '분석 히스토리';
     if (location.pathname.startsWith('/settings')) return '매핑 템플릿';
     if (location.pathname.startsWith('/admin')) return '관리자 콘솔';
     return 'ReviewFit';
@@ -33,8 +38,47 @@ export default function Layout() {
       : 1;
   const showFlow = ['/upload', '/mapping', '/dashboard', '/products'].some((p) => location.pathname.startsWith(p));
 
+  // 라우트 변경 시 모바일 drawer / 계정 메뉴 자동 닫기
+  useEffect(() => {
+    setDrawerOpen(false);
+    setAccountOpen(false);
+  }, [location.pathname]);
+
+  // drawer 열렸을 때 body scroll lock + ESC 닫기
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [drawerOpen]);
+
+  function NavItems({ onClick }) {
+    return (
+      <>
+        {NAV.map((n) => (
+          <NavLink key={n.to} to={n.to} className="sidebar__link" onClick={onClick}>
+            <span className="ico" aria-hidden="true">{n.icon}</span>
+            <span className="sidebar__link-label">{n.label}</span>
+          </NavLink>
+        ))}
+        {user?.role === 'admin' && (
+          <NavLink to={ADMIN_NAV.to} className="sidebar__link" onClick={onClick}>
+            <span className="ico" aria-hidden="true">{ADMIN_NAV.icon}</span>
+            <span className="sidebar__link-label">{ADMIN_NAV.label}</span>
+          </NavLink>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="app-shell">
+      {/* 데스크톱 사이드바 — 모바일에서는 _layout.scss 가 display:none 처리 */}
       <aside className="sidebar">
         <div className="sidebar__brand">
           <BrandTitle size="md" clickable />
@@ -42,18 +86,7 @@ export default function Layout() {
         </div>
 
         <div className="sidebar__nav-label">메뉴</div>
-        {NAV.map((n) => (
-          <NavLink key={n.to} to={n.to} className="sidebar__link">
-            <span className="ico">{n.icon}</span>
-            {n.label}
-          </NavLink>
-        ))}
-        {user?.role === 'admin' && (
-          <NavLink to={ADMIN_NAV.to} className="sidebar__link">
-            <span className="ico">{ADMIN_NAV.icon}</span>
-            {ADMIN_NAV.label}
-          </NavLink>
-        )}
+        <NavItems />
 
         {showFlow && (
           <div className="sidebar__flow">
@@ -67,42 +100,68 @@ export default function Layout() {
         </div>
       </aside>
 
+      {/* 모바일 drawer — display:flex (max-width: bp-tablet) 일 때만 동작 */}
+      <div
+        className={`mobile-backdrop${drawerOpen ? ' is-open' : ''}`}
+        onClick={() => setDrawerOpen(false)}
+        aria-hidden={!drawerOpen}
+      />
+      <aside
+        className={`mobile-drawer${drawerOpen ? ' is-open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="메뉴"
+        aria-hidden={!drawerOpen}
+      >
+        <div className="mobile-drawer__head">
+          <BrandTitle size="sm" />
+          <button
+            type="button"
+            className="mobile-drawer__close"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="메뉴 닫기"
+          >
+            ✕
+          </button>
+        </div>
+        <nav className="mobile-drawer__nav">
+          <NavItems onClick={() => setDrawerOpen(false)} />
+        </nav>
+      </aside>
+
       <div className="main">
         <header className="topbar">
+          {/* 모바일 햄버거 */}
+          <button
+            type="button"
+            className="topbar__hamburger"
+            aria-label="메뉴 열기"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+
           <div className="topbar__crumbs">
-            <span>ReviewFit</span>
+            <span className="topbar__crumbs-root">ReviewFit</span>
             <span className="sep">/</span>
             <span className="here">{title}</span>
           </div>
+
           <div className="topbar__right">
             {user ? (
-              <div className="topbar__user">
-                {user.role === 'admin' && (
-                  <span className="tag tag--admin" title="관리자 계정">
-                    ADMIN
-                  </span>
-                )}
-                {subscription?.planCode && (
-                  <span className={`tag tag--${subscription.planCode === 'free' ? 'neutral' : 'success'}`} title="현재 플랜">
-                    {subscription.planName || subscription.planCode}
-                  </span>
-                )}
-                {usage && usage.monthlyAnalysisLimit != null && (
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    이번 달 {usage.monthlyAnalysisUsed} / {usage.monthlyAnalysisLimit}회
-                  </span>
-                )}
-                <span className="topbar__user-name">{displayName(user)}</span>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={async () => { await logout(); navigate('/login'); }}
-                >
-                  로그아웃
-                </button>
-              </div>
+              <UserMenu
+                user={user}
+                subscription={subscription}
+                usage={usage}
+                open={accountOpen}
+                onToggle={() => setAccountOpen((v) => !v)}
+                onClose={() => setAccountOpen(false)}
+                onLogout={async () => { await logout(); navigate('/login'); }}
+                onAdminConsole={() => navigate('/admin')}
+              />
             ) : (
-              <div className="topbar__user">
+              <div className="topbar__auth">
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigate('/login')}>
                   로그인
                 </button>
@@ -118,6 +177,77 @@ export default function Layout() {
           <Outlet />
         </div>
       </div>
+    </div>
+  );
+}
+
+// 계정 메뉴 — 모바일에서는 ADMIN/Free/사용량/로그아웃을 헤더에 펼치지 않고
+// 이 메뉴 안에 접어 한 줄을 유지. 데스크톱에서도 동일 구조로 통일.
+function UserMenu({ user, subscription, usage, open, onToggle, onClose, onLogout, onAdminConsole }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    }
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  const name = displayName(user);
+
+  return (
+    <div className="user-menu" ref={ref}>
+      <button
+        type="button"
+        className="user-menu__trigger"
+        onClick={onToggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="계정 메뉴"
+      >
+        <span className="user-menu__avatar" aria-hidden="true">{(name || '?').slice(0, 1).toUpperCase()}</span>
+        <span className="user-menu__name">{name}</span>
+        {user.role === 'admin' && (
+          <span className="tag tag--admin user-menu__admin-chip" title="관리자 계정">ADMIN</span>
+        )}
+        <span className="user-menu__caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="user-menu__pop" role="menu">
+          <div className="user-menu__row user-menu__row--head">
+            <div className="user-menu__head-name">{name}</div>
+            <div className="user-menu__head-email muted">{user.email}</div>
+          </div>
+          {(subscription?.planCode || (usage && usage.monthlyAnalysisLimit != null)) && (
+            <div className="user-menu__row">
+              {subscription?.planCode && (
+                <span className={`tag tag--${subscription.planCode === 'free' ? 'neutral' : 'success'}`}>
+                  {subscription.planName || subscription.planCode}
+                </span>
+              )}
+              {usage && usage.monthlyAnalysisLimit != null && (
+                <span className="muted user-menu__usage">
+                  이번 달 {usage.monthlyAnalysisUsed} / {usage.monthlyAnalysisLimit}회
+                </span>
+              )}
+            </div>
+          )}
+          {user.role === 'admin' && (
+            <button type="button" className="user-menu__item" role="menuitem" onClick={onAdminConsole}>
+              🛡️ 관리자 콘솔
+            </button>
+          )}
+          <button type="button" className="user-menu__item user-menu__item--danger" role="menuitem" onClick={onLogout}>
+            로그아웃
+          </button>
+        </div>
+      )}
     </div>
   );
 }

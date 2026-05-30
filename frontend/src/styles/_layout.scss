@@ -114,11 +114,29 @@
   border-bottom: 1px solid $border;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 0 $sp-8;
   position: sticky;
   top: 0;
   z-index: 10;
+
+  // 햄버거 — 데스크톱에서는 숨김. 모바일에서만 보임.
+  &__hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 18px;
+    color: $ink-700;
+    cursor: pointer;
+    flex-shrink: 0;
+    &:hover { background: $brand-50; }
+    &:focus-visible { @include focus-ring; }
+  }
 
   &__crumbs {
     display: flex;
@@ -126,13 +144,20 @@
     gap: 8px;
     font-size: 13px;
     color: $ink-400;
+    min-width: 0;
+    flex: 1;
 
     .here {
       font-weight: 700;
       color: $ink-900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
-    .sep {
+    .sep, &-root {
       color: $ink-400;
+      flex-shrink: 0;
     }
   }
   &__right {
@@ -141,7 +166,137 @@
     gap: 10px;
     font-size: 12px;
     color: $ink-500;
+    flex-shrink: 0;
   }
+  &__auth {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+// ===== 계정 메뉴 (트리거 + 팝오버) =====
+.user-menu {
+  position: relative;
+
+  &__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px 6px 6px;
+    background: #fff;
+    border: 1px solid $border;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    color: $ink-700;
+    max-width: 220px;
+    min-height: 36px;
+    &:hover { background: $brand-50; }
+    &:focus-visible { @include focus-ring; }
+  }
+  &__avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: $brand-100;
+    color: $brand-700;
+    font-weight: 700;
+    font-size: 12px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  &__name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 110px;
+    min-width: 0;
+  }
+  &__admin-chip {
+    margin-left: 2px;
+  }
+  &__caret {
+    color: $ink-400;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  &__pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 240px;
+    background: #fff;
+    border: 1px solid $border;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    padding: 8px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  &__row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: $ink-500;
+  }
+  &__row--head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px 6px;
+    border-bottom: 1px solid $border;
+    margin-bottom: 4px;
+  }
+  &__head-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: $ink-900;
+  }
+  &__head-email {
+    font-size: 12px;
+  }
+  &__usage {
+    font-size: 12px;
+  }
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    color: $ink-700;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    min-height: 40px;
+    &:hover { background: $brand-50; color: $brand-700; }
+    &:focus-visible { @include focus-ring; }
+    &--danger {
+      color: $danger;
+      &:hover { background: $danger-soft; color: $danger; }
+    }
+  }
+}
+
+// ===== 모바일 drawer + backdrop =====
+// 데스크톱에서는 display:none 유지. 768px 이하에서만 활성.
+.mobile-drawer {
+  display: none;
+}
+.mobile-backdrop {
+  display: none;
 }
 
 .content {
@@ -155,46 +310,130 @@
   }
 }
 
-// 반응형: 모바일에서 사이드바 단순화
+// 반응형: 모바일에서 사이드바 숨김 + 햄버거 + drawer 활성화.
+// 데스크톱 사이드바를 가로로 펼치던 기존 방식은 메뉴 라벨이 세로로 쪼개지는
+// 문제를 일으켜 제거. 대신 좌측 슬라이드 drawer 로 전환.
 @media (max-width: $bp-tablet) {
-  .app-shell {
-    flex-direction: column;
-  }
   .sidebar {
-    width: 100%;
-    height: auto;
-    position: relative;
-    flex-direction: row;
-    align-items: center;
-    gap: $sp-3;
-    padding: $sp-3 $sp-4;
-    border-right: none;
-    border-bottom: 1px solid $border;
-    overflow-x: auto;
+    display: none;
+  }
 
-    &__brand {
-      padding: 0;
-      flex-shrink: 0;
+  .topbar {
+    padding: 0 $sp-4;
+    gap: 8px;
+
+    &__hamburger {
+      display: inline-flex;
     }
-    &__nav-label,
-    &__flow,
-    &__footer {
+    // 모바일 헤더는 한 줄로 안정화 — breadcrumb 의 root("ReviewFit /") 는 숨기고
+    // 현재 페이지명만 표시. 한글이 세로로 깨지지 않도록 ellipsis + min-width:0.
+    &__crumbs-root, .sep {
       display: none;
     }
-    &__link {
-      padding: 6px 10px;
+    &__crumbs {
       font-size: 13px;
-      .ico {
-        display: none;
+      .here {
+        font-size: 14px;
       }
     }
   }
-  .topbar {
-    padding: 0 $sp-4;
-    &__crumbs {
-      font-size: 12px;
+
+  // 햄버거 클릭 시 등장하는 좌측 drawer + backdrop
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+    &.is-open {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.2s ease, visibility 0s;
     }
   }
+  .mobile-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(82vw, 320px);
+    max-width: 100%;
+    background: $surface;
+    border-right: 1px solid $border;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 6px 0 24px rgba(15, 23, 42, 0.12);
+    &.is-open { transform: translateX(0); }
+
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid $border;
+    }
+    &__close {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid $border;
+      background: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      &:hover { background: $brand-50; }
+    }
+    &__nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px;
+      overflow-y: auto;
+
+      .sidebar__link {
+        // drawer 내부 메뉴는 한 줄 가로로 안정 표시 (세로 쪼개짐 차단).
+        white-space: nowrap;
+        word-break: keep-all;
+        overflow-wrap: normal;
+        font-size: 15px;
+        padding: 12px 14px;
+        min-height: 48px;
+        .ico { font-size: 18px; }
+        .sidebar__link-label {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+    }
+  }
+
+  // 모바일 계정 메뉴 - 트리거에서 이름 숨기고 아바타+admin chip 만.
+  .user-menu {
+    &__trigger {
+      max-width: none;
+      padding: 4px 8px 4px 4px;
+    }
+    &__name {
+      display: none;
+    }
+    &__caret {
+      display: none;
+    }
+    &__pop {
+      // 모바일에서 화면 우측에 살짝 떨어져서 위치 — 화면 밖으로 안 나가도록.
+      right: -4px;
+      min-width: 260px;
+      max-width: calc(100vw - 24px);
+    }
+  }
+
+  .topbar__auth .btn {
+    min-height: 36px;
+  }
+
   .page-head__title {
     font-size: 18px;
   }

@@ -85,13 +85,6 @@ export default function UploadPage() {
         <LoadingState title="파일을 읽고 있어요" desc="컬럼을 자동으로 인식하는 중입니다…" />
       ) : (
         <>
-          {/* 빠른 체험 CTA (상단) */}
-          <div className="sample-cta">
-            <div className="sample-cta__hint">처음이신가요? 샘플 데이터로 어떤 결과가 나오는지 먼저 보세요.</div>
-            <button className="btn btn--subtle" onClick={handleSample}>
-              📊 샘플 데이터로 체험하기
-            </button>
-          </div>
 
           {/* 안내 패널 */}
           <div className="upload-hint">
@@ -139,11 +132,11 @@ export default function UploadPage() {
             <FileUploader onFile={handleUpload} disabled={loading} />
           </div>
 
-          {/* 하단 샘플 CTA */}
+          {/* 보조: 샘플 데이터로 테스트 — 메인 흐름은 위 파일 업로더. */}
           <div className="sample-cta">
-            <div className="sample-cta__hint">파일 준비가 어려우신가요?</div>
+            <div className="sample-cta__hint">파일이 준비되지 않았다면 샘플 데이터로 먼저 결과를 살펴볼 수 있어요.</div>
             <button className="btn btn--ghost" onClick={handleSample}>
-              📊 샘플 데이터로 체험하기
+              샘플 데이터로 테스트하기
             </button>
           </div>
 
