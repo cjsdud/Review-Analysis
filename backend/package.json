@@ -12,7 +12,8 @@
     "seed:xlsx": "node scripts/makeSampleXlsx.js",
     "cleanup:anonymous": "node scripts/cleanupAnonymousData.js",
     "cleanup:anonymous:confirm": "node scripts/cleanupAnonymousData.js --confirm",
-    "admin:promote": "node scripts/promoteAdmin.js"
+    "admin:promote": "node scripts/promoteAdmin.js",
+    "db:backup": "node scripts/backupDb.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

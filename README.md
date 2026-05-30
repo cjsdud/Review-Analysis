@@ -360,6 +360,20 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
   7. 근거 리뷰는 **부정도·매칭강도·길이** 기준으로 선별 + 유사 중복 제거
 - 모든 결과에 **근거 리뷰(evidenceReviews)** 와 **source(rule/llm/cluster/user)** 를 남겨 신뢰성과 사후 수정을 지원합니다.
 
+### Render 배포 시 SQLite DB 보존 주의사항 ⚠️
+- 원본 파일(CSV/XLSX)은 저장하지 않지만, **users / 분석 히스토리 / 관리자 설정 / 공지** 는 SQLite DB 에 저장됩니다.
+- **Render 일반 컨테이너 파일시스템은 ephemeral** — `backend/data/app.db` 같은 앱 디렉터리에 두면
+  새 배포/재시작 시 **모든 계정·분석·설정이 사라집니다.**
+- 운영 배포에서는 반드시 **Render Persistent Disk** 를 추가하고, mount path 안쪽을 `DB_PATH` 로 지정하세요.
+  - Disk mount path 예: `/var/data`
+  - 환경변수: `DB_PATH=/var/data/reviewfit/app.db`
+- `DB_PATH` 가 mount path 바깥이거나 비어 있으면 데이터는 보존되지 않습니다.
+- 부팅 로그에 `[db] SQLite path: …` / `[db] SQLite file exists: …` 가 출력되며,
+  운영 모드에서 ephemeral 경로가 감지되면 `[db][warning]` 경고가 함께 표시됩니다.
+- 백업: `npm run db:backup` (VACUUM INTO 기반 안전 스냅샷).
+- 자세한 절차/검증/트러블슈팅: [`docs/render-deployment.md`](docs/render-deployment.md).
+- 장기 운영 시에는 **PostgreSQL / Supabase 등 외부 DB 이전을 권장**합니다(동시성, 자동 백업, 고가용성).
+
 ### 데이터 저장 및 보관 정책
 요약 정책입니다. 자세한 표/계획은 [`docs/data-retention-policy.md`](docs/data-retention-policy.md) 참고.
 

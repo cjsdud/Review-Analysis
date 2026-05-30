@@ -45,9 +45,10 @@ UPLOAD_ROWS_TTL_MIN=60
   실제 LLM 을 쓰고 싶으면 `openai` / `gemini` / `claude` 중 하나로 바꾸고
   해당 API 키를 추가하세요 (`OPENAI_API_KEY` / `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`).
 - **DB_PATH=./data/app.db**: SQLite 파일은 컨테이너 디스크에 저장됩니다.
-  **Render Free 인스턴스는 재배포·재시작 시 디스크가 초기화됩니다.**
-  분석 결과를 영구 보관해야 하면 Render Disk(유료) 또는 외부 DB(Postgres 등) 로
-  이전을 고려하세요.
+  **Render Free/일반 컨테이너는 재배포·재시작 시 디스크가 초기화됩니다.**
+  운영(Production) 배포에서는 반드시 **Render Persistent Disk** 를 추가하고
+  `DB_PATH=/var/data/reviewfit/app.db` 처럼 mount path 안쪽으로 설정하세요.
+  자세한 절차/검증/백업: [`docs/render-deployment.md`](./render-deployment.md).
 
 ---
 

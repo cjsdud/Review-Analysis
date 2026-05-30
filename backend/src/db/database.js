@@ -5,11 +5,61 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/app.db');
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+// ───── SQLite 경로 해결 + 운영 영구 저장 검증 ─────
+// 운영(NODE_ENV=production)에서 DB_PATH 가 ephemeral 한 앱 디렉터리 내부면 재배포 시 데이터 손실.
+// Render 의 경우 Persistent Disk 를 만들고 mount path(예: /var/data) 안쪽을 DB_PATH 로 지정해야 한다.
+// 자세한 가이드: docs/render-deployment.md
+
+const DEFAULT_DB_PATH = path.join(__dirname, '../../data/app.db');
+const rawDbPath = process.env.DB_PATH || DEFAULT_DB_PATH;
+const dbPath = path.resolve(rawDbPath);
+const isProd = process.env.NODE_ENV === 'production';
+
+// 운영 환경에서 ephemeral 경로가 의심되면 경고 (강제 종료는 하지 않는다)
+function isEphemeralPath(p) {
+  // 1) DB_PATH 가 비어 있으면 ephemeral (default 가 앱 폴더 내부)
+  if (!process.env.DB_PATH) return true;
+  // 2) 절대경로가 아닌 상대경로면 cwd 기준 → ephemeral 가능성 매우 큼
+  if (!path.isAbsolute(rawDbPath)) return true;
+  // 3) Render 의 일반 코드 디렉터리는 영구 저장이 아님
+  if (p.startsWith('/opt/render/project')) return true;
+  // 4) 프로젝트 디렉터리 내부도 ephemeral 로 본다
+  const projectRoot = path.resolve(__dirname, '../../..');
+  if (p.startsWith(projectRoot + path.sep) || p === projectRoot) return true;
+  return false;
+}
+
+const willInitNew = !fs.existsSync(dbPath);
+try {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+} catch (e) {
+  console.warn(`[db][warning] DB 디렉터리 생성 실패: ${path.dirname(dbPath)} (${e.message})`);
+}
+
+console.info(`[db] SQLite path: ${dbPath}`);
+console.info(`[db] SQLite file exists: ${!willInitNew}`);
+if (willInitNew) {
+  console.info('[db] SQLite file not found. A new database will be initialized.');
+}
+
+if (isProd) {
+  if (!process.env.DB_PATH) {
+    console.warn('[db][warning] DB_PATH is not set in production. SQLite may be created in ephemeral storage and lost on next deploy/restart.');
+  }
+  if (isEphemeralPath(dbPath)) {
+    console.warn(
+      `[db][warning] DB path "${dbPath}" looks ephemeral on this host. ` +
+      'On Render, attach a Persistent Disk and set DB_PATH inside the mount path ' +
+      '(e.g. /var/data/reviewfit/app.db). See docs/render-deployment.md.',
+    );
+  }
+}
 
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
+
+// 외부에서 진단/백업 스크립트에서 사용할 수 있도록 export
+export const DB_PATH = dbPath;
 
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
 db.exec(schema);

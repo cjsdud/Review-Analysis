@@ -17,6 +17,7 @@
     "seed:xlsx": "npm --prefix backend run seed:xlsx",
     "cleanup:anonymous": "npm --prefix backend run cleanup:anonymous",
     "cleanup:anonymous:confirm": "npm --prefix backend run cleanup:anonymous:confirm",
-    "admin:promote": "npm --prefix backend run admin:promote --"
+    "admin:promote": "npm --prefix backend run admin:promote --",
+    "db:backup": "npm --prefix backend run db:backup"
   }
 }
