@@ -484,6 +484,33 @@ npm run cleanup:anonymous:confirm  # 실제 삭제 (--confirm)
   - 사용자 role/plan/할인/설정/공지 변경은 `admin_action_logs` 에 자동 기록
 - 자세한 운영 절차: [`docs/admin-guide.md`](docs/admin-guide.md), 설정 항목: [`docs/ops-settings.md`](docs/ops-settings.md)
 
+### 베타 테스트 계정 seed (Render Free)
+Render Free 처럼 디스크가 휘발성인 환경에서는 재배포/재시작 시 SQLite DB 가 초기화되어,
+이전에 가입한 계정과 분석 히스토리가 사라질 수 있습니다. 베타 검증 단계에서는 다음 환경변수로
+**서버 시작 시 관리자/베타 테스터 계정을 자동으로 보장**해 로그인 테스트와 관리자 접근을 즉시 가능하게 합니다.
+
+| 환경변수 | 설명 |
+|---|---|
+| `SEED_ACCOUNTS_ENABLED` | `true` 일 때만 seed 동작. 운영(Production)은 **반드시 `false`**. |
+| `SEED_ADMIN_EMAIL` | 관리자 시드 계정 이메일 |
+| `SEED_ADMIN_PASSWORD` | 관리자 시드 계정 비밀번호 (8자 이상, 권장 16자 이상) |
+| `SEED_TESTER_EMAIL` | 베타 테스터 시드 계정 이메일 |
+| `SEED_TESTER_PASSWORD` | 베타 테스터 시드 계정 비밀번호 (8자 이상) |
+
+동작 보장:
+- 비밀번호는 **bcrypt 해시로만 저장**되며 로그/응답에 절대 출력되지 않습니다.
+- 같은 이메일 사용자가 이미 있으면 새로 만들지 않습니다 (중복 방지).
+- 시드 admin 이메일이 이미 `role=user` 로 가입돼 있으면 `admin` 으로 자동 보정합니다.
+- 시드 tester 이메일이 이미 `admin` 인 경우는 **자동 강등하지 않습니다** (마지막 admin 보호).
+- 신규 시드 계정은 자동으로 free 구독이 함께 생성됩니다.
+- 비밀번호가 8자 미만이거나 비어 있으면 해당 시드만 skip 하고 warning 만 출력합니다.
+- `ADMIN_EMAILS` 와 별개로 동작하며 충돌하지 않습니다.
+
+> ⚠️ **보안 주의**: 비밀번호를 코드/문서에 절대 저장하지 마세요. 실제 값은 Render Environment Variables 에서만 설정하세요.
+> 베타 종료 후에는 `SEED_ACCOUNTS_ENABLED=false` 로 전환하고, 시드 계정의 비밀번호를 변경하거나 계정을 삭제하세요.
+
+자세한 환경변수 예시: [`docs/render-deployment.md` § Render Free 베타 환경 (Persistent Disk 없이)](docs/render-deployment.md).
+
 ### 지표 분리 (혼동 방지)
 - `negativeReviews` — 별점/감성 기준 **부정 리뷰 수**
 - `issueReviewCount` — 개선 이슈가 1개 이상 발견된 **리뷰 수**

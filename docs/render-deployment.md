@@ -191,6 +191,60 @@ DB_BACKUP_DIR=/var/data/reviewfit/backups npm run db:backup
 
 ---
 
+## Render Free 베타 환경 (Persistent Disk 없이)
+
+Render Free 인스턴스는 Persistent Disk 가 지원되지 않아 재배포 시 SQLite DB 가 초기화됩니다.
+정식 운영 전 베타 검증 단계에서는 **서버 시작 시 관리자/베타 테스터 계정을 자동 생성**해
+로그인 테스트를 즉시 가능하게 합니다.
+
+### 환경변수
+
+```env
+NODE_ENV=production
+DEMO_ALLOW_ANONYMOUS=false
+AUTH_JWT_SECRET=<강력한 랜덤 문자열>
+ADMIN_EMAILS=admin@example.com
+
+# ★ 베타 계정 seed (운영 전환 시 false 로)
+SEED_ACCOUNTS_ENABLED=true
+SEED_ADMIN_EMAIL=admin@example.com
+SEED_ADMIN_PASSWORD=<강력한_관리자_비밀번호>
+SEED_TESTER_EMAIL=beta@example.com
+SEED_TESTER_PASSWORD=<강력한_테스터_비밀번호>
+```
+
+### 동작 보장
+
+- 비밀번호는 **bcrypt 해시로만** 저장 — 로그/응답에 절대 노출되지 않음.
+- 같은 이메일 사용자가 이미 있으면 새로 만들지 않음 (중복 방지).
+- seed admin 이메일이 이미 `role=user` 면 `admin` 으로 자동 보정.
+- seed tester 이메일이 이미 `admin` 이면 자동 강등하지 않음 (마지막 admin 보호).
+- 신규 시드 계정은 자동으로 free 구독 생성.
+- 비밀번호 8자 미만은 해당 시드만 skip + warning.
+
+### 부팅 로그 (정상 예시)
+```
+[seed] Seed accounts enabled. Ensuring configured accounts...
+[seed] Admin seed email configured: admin@example.com
+[seed] Created seed admin account: admin@example.com
+[seed] Beta tester seed email configured: beta@example.com
+[seed] Created seed beta tester account: beta@example.com
+```
+
+### 베타 → 정식 운영 전환 시
+
+| 항목 | 베타 | 정식 운영 |
+|---|---|---|
+| Persistent Disk | 없음 (Free) | **반드시 설정** (Starter 이상) |
+| `SEED_ACCOUNTS_ENABLED` | `true` | **`false`** |
+| `SEED_*_PASSWORD` | env 에 임시 | env 에서 제거 / seed 계정 비밀번호 변경 |
+| `DB_PATH` | 기본값 (ephemeral) | `/var/data/reviewfit/app.db` |
+
+> ⚠️ 운영 전환 후에는 seed 계정의 비밀번호를 실제 운영자 계정으로 교체하거나 삭제하세요.
+> seed 계정은 베타 검증용이므로 장기간 그대로 두지 마세요.
+
+---
+
 ## 트러블슈팅
 
 | 증상 | 원인 / 해결 |

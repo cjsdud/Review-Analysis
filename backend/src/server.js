@@ -18,6 +18,7 @@ import announcementsRoutes from './routes/announcements.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
 import { maintenanceGate } from './middleware/maintenance.middleware.js';
+import { seedConfiguredAccounts } from './services/seedAccounts.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +100,16 @@ function runCleanup(reason) {
 runCleanup('startup');
 const purgeTimer = setInterval(() => runCleanup('interval'), UPLOAD_CLEANUP_INTERVAL_MIN * 60 * 1000);
 purgeTimer.unref?.();
+
+// ===== 베타 테스트용 계정 seed =====
+// SEED_ACCOUNTS_ENABLED=true 일 때만 동작. Render Free 처럼 디스크가 휘발성인 환경에서
+// 재배포 직후 로그인 테스트가 바로 가능하도록 관리자/베타 테스터 계정을 보장한다.
+// 비밀번호는 bcrypt 해시로만 저장되며 로그에는 절대 출력되지 않는다.
+try {
+  seedConfiguredAccounts();
+} catch (e) {
+  console.warn('[seed][warning] seedConfiguredAccounts 실패:', e.message);
+}
 
 app.listen(PORT, () => {
   const serving = isProd && distExists ? ', serving frontend/dist' : '';
