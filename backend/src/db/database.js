@@ -55,6 +55,51 @@ for (const p of SEED_PLANS) {
   upsertPlan.run(`plan_${p.code}`, p.code, p.name, p.price_krw, p.monthly_analysis_limit, p.max_reviews_per_analysis, p.features);
 }
 
+// app_settings 기본 시드 — 이미 있으면 INSERT OR IGNORE (운영 중 값 덮어쓰지 않음).
+const SEED_SETTINGS = [
+  // general
+  { key: 'maintenance_mode', value: 'false', type: 'boolean', category: 'general', label: '점검 모드', desc: 'true 면 일반 사용자 API 차단(관리자/health/공지 제외)' },
+  { key: 'signup_enabled',   value: 'true',  type: 'boolean', category: 'general', label: '회원가입 허용', desc: 'false 면 신규 가입 차단' },
+  // billing
+  { key: 'billing_enforce_limits', value: 'false', type: 'boolean', category: 'billing', label: '플랜 제한 실제 차단', desc: '환경변수 BILLING_ENFORCE_LIMITS 보다 우선 적용' },
+  // limits (plans 테이블의 override 역할)
+  { key: 'free_monthly_analysis_limit',    value: '1',   type: 'number', category: 'limits', label: 'Free: 월 분석 횟수' },
+  { key: 'free_max_reviews_per_analysis',  value: '100', type: 'number', category: 'limits', label: 'Free: 파일당 리뷰 수' },
+  { key: 'starter_monthly_analysis_limit', value: '10',  type: 'number', category: 'limits', label: 'Starter: 월 분석 횟수' },
+  { key: 'starter_max_reviews_per_analysis', value: '1000', type: 'number', category: 'limits', label: 'Starter: 파일당 리뷰 수' },
+  { key: 'pro_monthly_analysis_limit',     value: '50',  type: 'number', category: 'limits', label: 'Pro: 월 분석 횟수' },
+  { key: 'pro_max_reviews_per_analysis',   value: '5000', type: 'number', category: 'limits', label: 'Pro: 파일당 리뷰 수' },
+  // ui / notice
+  { key: 'notice_banner_enabled', value: 'false', type: 'boolean', category: 'notice', label: '공지 배너 표시', desc: 'announcements 와 별개로 단일 텍스트 배너 토글' },
+  { key: 'notice_banner_text',    value: '',      type: 'string',  category: 'notice', label: '공지 배너 텍스트' },
+  // report
+  { key: 'report_default_sort',   value: 'priority', type: 'string', category: 'report', label: '상품별 문제 정리 기본 정렬', desc: 'priority | negativeRatio | issues | reviews' },
+];
+const insertSetting = db.prepare(
+  `INSERT OR IGNORE INTO app_settings (key, value, value_type, label, description, category, is_public, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+);
+for (const s of SEED_SETTINGS) {
+  insertSetting.run(s.key, s.value, s.type, s.label || null, s.desc || null, s.category, 0);
+}
+
+// ADMIN_EMAILS 환경변수에 포함된 이메일은 부팅 시 자동으로 role=admin 으로 보정.
+// 운영 초기 관리자 계정 부트스트랩용. 콤마/공백 구분.
+const adminEmails = (process.env.ADMIN_EMAILS || '')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+if (adminEmails.length) {
+  const promote = db.prepare(
+    `UPDATE users SET role = 'admin', updated_at = CURRENT_TIMESTAMP
+       WHERE LOWER(email) = ? AND role != 'admin'`,
+  );
+  for (const email of adminEmails) {
+    const info = promote.run(email);
+    if (info.changes > 0) {
+      console.info(`[review-fit] ADMIN_EMAILS: ${email} promoted to admin`);
+    }
+  }
+}
+
 // 일정 시간(ttlMinutes)이 지난 업로드의 파싱 rows(JSON)를 비워 PII 잔존을 줄인다.
 // 정규화된 reviews 테이블은 유지되므로 분석에는 영향이 없다.
 // 입력: ttlMinutes(number). 출력: 비워진 행 수(number).

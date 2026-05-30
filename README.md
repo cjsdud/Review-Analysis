@@ -447,6 +447,29 @@ npm run cleanup:anonymous:confirm  # 실제 삭제 (--confirm)
   초과 시 `402 PLAN_LIMIT_EXCEEDED` 또는 `403 REVIEW_LIMIT_EXCEEDED` 를 반환합니다.
 - 실제 PG 결제 연동(토스페이먼츠/포트원)은 미구현 — [`docs/billing-integration-plan.md`](docs/billing-integration-plan.md) 참고.
 
+### 관리자 콘솔
+- 경로: `/admin` — `users.role = 'admin'` 사용자만 접근 가능. 일반 사용자는 백엔드에서 **403 FORBIDDEN**.
+- 메뉴:
+  - **대시보드** — 사용자/분석/리뷰/플랜 요약 + 최근 액션 10건
+  - **사용자 관리** — 검색·role/plan 필터, role/plan/구독상태 변경, 할인 추가
+  - **리포트 추이** — 기간(7d/30d/90d) × 그룹(일/주/월) 분석·리뷰·실패 수, 상위 사용자/source
+  - **운영 설정** — `app_settings` 카테고리별 수정 (사유 입력 시 액션 로그에 함께 저장)
+  - **공지/배너** — 공지 생성·수정·활성/비활성. 사용자 화면 상단 `AnnouncementBanner` 가 자동 표시 (localStorage 로 하루 닫기)
+  - **액션 로그** — 모든 관리자 변경 이력. actionType/targetType 필터 + 전/후 값
+- 관리자 승격: `npm run admin:promote -- <email>` 또는 환경변수 `ADMIN_EMAILS`(콤마 구분)로 부팅 시 자동 보정.
+- 운영 설정으로 즉시 바꿀 수 있는 항목 예시:
+  - `signup_enabled=false` → 신규 가입 차단 (`403 SIGNUP_DISABLED`)
+  - `maintenance_mode=true` → 일반 사용자 API 503, 관리자/공지/health 만 통과
+  - `billing_enforce_limits=true` → 플랜 월 분석 횟수/리뷰 수 제한 실제 차단
+  - `free/starter/pro_monthly_analysis_limit`, `*_max_reviews_per_analysis` → 플랜 한도 즉시 변경
+- 보안:
+  - 모든 `/api/admin/*` 는 `requireAdmin` 으로 차단 — 일반 사용자/비로그인 모두 401/403
+  - **마지막 admin 강등 차단** (`LAST_ADMIN_PROTECTED`)
+  - **본인 role 변경 금지** (`SELF_ROLE_CHANGE_BLOCKED`)
+  - **secret 키 변경 차단** — `AUTH_JWT_SECRET`/API KEY 류는 환경변수 전용
+  - 사용자 role/plan/할인/설정/공지 변경은 `admin_action_logs` 에 자동 기록
+- 자세한 운영 절차: [`docs/admin-guide.md`](docs/admin-guide.md), 설정 항목: [`docs/ops-settings.md`](docs/ops-settings.md)
+
 ### 지표 분리 (혼동 방지)
 - `negativeReviews` — 별점/감성 기준 **부정 리뷰 수**
 - `issueReviewCount` — 개선 이슈가 1개 이상 발견된 **리뷰 수**

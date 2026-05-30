@@ -13,6 +13,7 @@ import {
   signToken,
 } from '../middleware/auth.middleware.js';
 import { buildMeContext, getUserSubscription } from '../services/billing.service.js';
+import { getBooleanSetting } from '../services/settings.service.js';
 
 const router = Router();
 
@@ -35,6 +36,10 @@ function publicUser(row) {
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
+  // 운영 설정으로 신규 가입 차단 가능
+  if (!getBooleanSetting('signup_enabled', true)) {
+    return res.status(403).json({ error: 'SIGNUP_DISABLED', message: '현재 신규 가입이 제한되어 있습니다.' });
+  }
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || '잘못된 입력' });

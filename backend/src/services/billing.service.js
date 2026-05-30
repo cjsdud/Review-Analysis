@@ -5,8 +5,15 @@
 // 기본값은 false (MVP 개발 편의). 운영 모드에서는 true 로 설정.
 import { nanoid } from 'nanoid';
 import db from '../db/database.js';
+import { getBooleanSetting, getNumberSetting } from './settings.service.js';
 
-export const ENFORCE_LIMITS = String(process.env.BILLING_ENFORCE_LIMITS || 'false').toLowerCase() === 'true';
+// app_settings 의 billing_enforce_limits 가 환경변수보다 우선. 없으면 env fallback.
+const ENV_ENFORCE = String(process.env.BILLING_ENFORCE_LIMITS || 'false').toLowerCase() === 'true';
+export function isLimitsEnforced() {
+  return getBooleanSetting('billing_enforce_limits', ENV_ENFORCE);
+}
+// 하위 호환: 기존 코드/테스트 호환 위해 export. 가급적 isLimitsEnforced() 호출 권장.
+export const ENFORCE_LIMITS = ENV_ENFORCE;
 
 // 코드/이름 fallback 용 기본값 (DB seed 가 비어 있을 때 안전망).
 const DEFAULT_PLANS = {
@@ -15,10 +22,14 @@ const DEFAULT_PLANS = {
   pro:     { code: 'pro',     name: 'Pro',     price_krw: 0, monthly_analysis_limit: 50, max_reviews_per_analysis: 5000 },
 };
 
+// plans 테이블 + app_settings override 를 합쳐 최종 플랜 객체 반환.
 export function getPlanByCode(code) {
-  if (!code) return DEFAULT_PLANS.free;
-  const row = db.prepare('SELECT * FROM plans WHERE code = ? AND is_active = 1').get(code);
-  return row || DEFAULT_PLANS[code] || DEFAULT_PLANS.free;
+  if (!code) code = 'free';
+  const row = db.prepare('SELECT * FROM plans WHERE code = ? AND is_active = 1').get(code) || DEFAULT_PLANS[code] || DEFAULT_PLANS.free;
+  // app_settings 의 {code}_monthly_analysis_limit / {code}_max_reviews_per_analysis 가 있으면 override.
+  const monthLimit = getNumberSetting(`${code}_monthly_analysis_limit`, row.monthly_analysis_limit);
+  const reviewLimit = getNumberSetting(`${code}_max_reviews_per_analysis`, row.max_reviews_per_analysis);
+  return { ...row, monthly_analysis_limit: monthLimit, max_reviews_per_analysis: reviewLimit };
 }
 
 export function listPlans() {
@@ -81,7 +92,7 @@ export function recordUsage(userId, eventType, { analysisId, uploadId, amount = 
 // 분석 생성 가능 여부 체크.
 // 실패 시 { ok:false, status, body } 를 반환. 라우트에서 res.status().json() 하면 된다.
 export function checkCanCreateAnalysis(userId, reviewCount) {
-  if (!ENFORCE_LIMITS) return { ok: true };
+  if (!isLimitsEnforced()) return { ok: true };
   if (!userId) return { ok: true }; // 익명 데모 모드 — billing 적용 안 함
   const sub = getUserSubscription(userId);
   const plan = getPlanByCode(sub?.plan_code || 'free');
@@ -141,6 +152,6 @@ export function buildMeContext(user) {
       monthlyAnalysisLimit: plan.monthly_analysis_limit,
       maxReviewsPerAnalysis: plan.max_reviews_per_analysis,
     },
-    billingEnforced: ENFORCE_LIMITS,
+    billingEnforced: isLimitsEnforced(),
   };
 }

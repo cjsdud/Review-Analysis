@@ -1,0 +1,295 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 관리자 콘솔 (데스크톱 최적화) =====
+.admin-shell {
+  display: flex;
+  flex-direction: column;
+  gap: $sp-4;
+  min-width: 0;
+
+  &__header {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    padding: $sp-4 $sp-5;
+  }
+  &__title {
+    font-size: 20px;
+    font-weight: 800;
+  }
+  &__sub {
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  &__body {
+    min-width: 0;
+  }
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: $sp-3;
+}
+
+.admin-tab {
+  padding: 7px 12px;
+  border-radius: $r-md;
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-sub;
+  text-decoration: none;
+  border: 1px solid transparent;
+
+  &:hover {
+    background: $primary-soft;
+    color: $primary-dark;
+  }
+  &.is-active {
+    background: $primary;
+    color: #fff;
+  }
+}
+
+.admin-page {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-4 $sp-5;
+
+  h2 { margin-top: 0; }
+  h3 { font-size: 15px; }
+  h4 { font-size: 14px; margin: $sp-3 0 $sp-2; }
+}
+
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: $sp-3;
+
+  &--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.admin-stat {
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+
+  &__label {
+    font-size: 11px;
+    font-weight: 700;
+    color: $text-sub;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  &__value {
+    font-size: 22px;
+    font-weight: 800;
+    color: $text-main;
+    margin-top: 4px;
+  }
+  &__sub { font-size: 12px; margin-top: 2px; }
+}
+
+.admin-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: $sp-3 0;
+}
+
+.admin-input {
+  padding: 7px 10px;
+  border: 1px solid $border-strong;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  min-height: 36px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th, td {
+    padding: 8px 10px;
+    border-bottom: 1px solid $border;
+    text-align: left;
+    vertical-align: top;
+    word-break: keep-all;
+  }
+  th {
+    color: $text-sub;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background: $surface-2;
+  }
+  tbody tr:hover { background: $primary-soft; }
+
+  code {
+    background: $surface-2;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  @media (max-width: $bp-tablet) {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+.admin-users-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: $sp-4;
+  align-items: start;
+
+  @media (max-width: $bp-tablet) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-detail {
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+  position: sticky;
+  top: $sp-3;
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    h3 { margin: 0; word-break: break-all; }
+  }
+}
+
+.admin-form {
+  display: grid;
+  gap: 8px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-sub;
+
+    input, select, textarea {
+      padding: 7px 10px;
+      border: 1px solid $border-strong;
+      border-radius: 7px;
+      font-size: 13px;
+      background: #fff;
+      min-height: 34px;
+    }
+  }
+}
+
+.admin-card {
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+}
+
+.admin-settings-group {
+  margin-top: $sp-4;
+}
+
+.admin-settings-list {
+  display: grid;
+  gap: $sp-3;
+}
+
+.admin-setting-row {
+  background: $surface-2;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-3 $sp-4;
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  &__key {
+    background: $surface;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  &__edit {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+
+    input, select, textarea {
+      padding: 7px 10px;
+      border: 1px solid $border-strong;
+      border-radius: 7px;
+      font-size: 13px;
+      background: #fff;
+      min-height: 34px;
+    }
+
+    @media (max-width: $bp-tablet) {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+// ===== 공지/배너 사용자 표시 =====
+.announcement-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: $sp-3;
+}
+
+.announcement {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: $r-md;
+  border: 1px solid $border;
+  background: $surface;
+  font-size: 13px;
+  line-height: 1.5;
+
+  &__icon { flex-shrink: 0; font-size: 16px; }
+  &__body { flex: 1; min-width: 0; }
+  &__title { font-weight: 700; }
+  &__text { color: $text-sub; white-space: pre-wrap; word-break: keep-all; }
+  &__close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: $text-sub;
+    cursor: pointer;
+    padding: 0 4px;
+    align-self: flex-start;
+  }
+
+  &--info        { background: $primary-soft; border-color: $primary-200; }
+  &--warning     { background: $warning-soft; border-color: rgba($warning, 0.35); }
+  &--maintenance { background: $danger-soft;  border-color: $danger-border; }
+  &--promotion   { background: $success-soft; border-color: rgba($success, 0.3); }
+}

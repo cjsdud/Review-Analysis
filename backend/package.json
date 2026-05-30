@@ -11,7 +11,8 @@
     "check:llm": "node scripts/checkLlm.js",
     "seed:xlsx": "node scripts/makeSampleXlsx.js",
     "cleanup:anonymous": "node scripts/cleanupAnonymousData.js",
-    "cleanup:anonymous:confirm": "node scripts/cleanupAnonymousData.js --confirm"
+    "cleanup:anonymous:confirm": "node scripts/cleanupAnonymousData.js --confirm",
+    "admin:promote": "node scripts/promoteAdmin.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

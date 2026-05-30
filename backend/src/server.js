@@ -13,8 +13,11 @@ import historyRoutes from './routes/history.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import billingRoutes from './routes/billing.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import announcementsRoutes from './routes/announcements.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
+import { maintenanceGate } from './middleware/maintenance.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,10 +37,14 @@ app.use(cookieParser());
 
 // ===== API =====
 app.get('/api/health', (_req, res) => res.json({ ok: true, aiMode }));
+// 점검 모드 게이트 — health/auth/admin/announcements/active 를 제외한 일반 API 차단
+app.use(maintenanceGate);
 app.use('/api/auth', authRoutes); // POST /register /login /logout, GET /me
 // GET /api/me 별칭 — /api/auth/me 와 동일하게 동작
 app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
 app.use('/api/billing', billingRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/announcements', announcementsRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/analyses', historyRoutes); // 분석 히스토리 목록 (복수형)

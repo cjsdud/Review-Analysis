@@ -77,3 +77,17 @@ export function requireAuth(req, res, next) {
 }
 
 export const isDemoAllowed = DEMO_ALLOW_ANONYMOUS;
+
+// 관리자 인증 — requireAuth 통과 + role === 'admin'.
+// DEMO_ALLOW_ANONYMOUS 와 무관하게 항상 엄격 검사.
+export function requireAdmin(req, res, next) {
+  const user = attachUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'UNAUTHORIZED', message: '로그인이 필요합니다.' });
+  }
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'FORBIDDEN', message: '관리자 권한이 필요합니다.' });
+  }
+  req.user = user;
+  next();
+}

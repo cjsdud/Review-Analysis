@@ -179,3 +179,67 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_user_event ON usage_events(user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_usage_user_time ON usage_events(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+
+-- ===== 관리자 (operations) =====
+-- 관리자 변경 이력 로그. 운영 책임 추적 및 롤백 단서.
+CREATE TABLE IF NOT EXISTS admin_action_logs (
+  id TEXT PRIMARY KEY,
+  admin_user_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  before_value TEXT,
+  after_value TEXT,
+  reason TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (admin_user_id) REFERENCES users(id)
+);
+
+-- 운영 중 코드 배포 없이 변경 가능한 설정값. (API KEY 같은 secret 은 저장 금지)
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  value_type TEXT NOT NULL DEFAULT 'string',
+  label TEXT,
+  description TEXT,
+  category TEXT NOT NULL DEFAULT 'general',
+  is_public INTEGER NOT NULL DEFAULT 0,
+  updated_by TEXT,
+  updated_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 운영 공지/배너. 사용자 화면 상단에 노출.
+CREATE TABLE IF NOT EXISTS announcements (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'info',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  starts_at TEXT,
+  ends_at TEXT,
+  created_by TEXT,
+  updated_by TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT
+);
+
+-- 사용자별 할인/이벤트 적용. 실제 결제 계산에서 참조 가능.
+CREATE TABLE IF NOT EXISTS user_discounts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  discount_type TEXT NOT NULL,
+  discount_value INTEGER NOT NULL,
+  reason TEXT,
+  starts_at TEXT,
+  ends_at TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_logs_admin ON admin_action_logs(admin_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_admin_logs_target ON admin_action_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
+CREATE INDEX IF NOT EXISTS idx_user_discounts_user ON user_discounts(user_id, is_active);

@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import AnnouncementBanner from './AnnouncementBanner.jsx';
 
 const NAV = [
   { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
@@ -7,6 +8,7 @@ const NAV = [
   { to: '/pricing', label: '요금제', icon: '💳' },
   { to: '/settings', label: '매핑 템플릿', icon: '⚙️' },
 ];
+const ADMIN_NAV = { to: '/admin', label: '관리자 콘솔', icon: '🛡️' };
 
 export default function Layout() {
   const location = useLocation();
@@ -47,6 +49,12 @@ export default function Layout() {
             {n.label}
           </NavLink>
         ))}
+        {user?.role === 'admin' && (
+          <NavLink to={ADMIN_NAV.to} className="sidebar__link">
+            <span className="ico">{ADMIN_NAV.icon}</span>
+            {ADMIN_NAV.label}
+          </NavLink>
+        )}
 
         {showFlow && (
           <div className="sidebar__flow">
@@ -103,6 +111,7 @@ export default function Layout() {
           </div>
         </header>
         <div className="content">
+          <AnnouncementBanner />
           <Outlet />
         </div>
       </div>

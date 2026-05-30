@@ -10,6 +10,14 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
 import ProtectedRoute from './auth/ProtectedRoute.jsx';
+import AdminRoute from './auth/AdminRoute.jsx';
+import AdminLayout from './pages/admin/AdminLayout.jsx';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage.jsx';
+import AdminUsersPage from './pages/admin/AdminUsersPage.jsx';
+import AdminReportsPage from './pages/admin/AdminReportsPage.jsx';
+import AdminSettingsPage from './pages/admin/AdminSettingsPage.jsx';
+import AdminAnnouncementsPage from './pages/admin/AdminAnnouncementsPage.jsx';
+import AdminActionLogsPage from './pages/admin/AdminActionLogsPage.jsx';
 
 export default function App() {
   return (
@@ -24,6 +32,14 @@ export default function App() {
         <Route path="/history" element={<ProtectedRoute><AnalysisHistoryPage /></ProtectedRoute>} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="reports" element={<AdminReportsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="announcements" element={<AdminAnnouncementsPage />} />
+          <Route path="action-logs" element={<AdminActionLogsPage />} />
+        </Route>
       </Route>
     </Routes>
   );
