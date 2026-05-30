@@ -24,11 +24,8 @@
     <rect x="404" y="15" width="92" height="32"/>
     <rect x="404" y="75" width="84" height="32"/>
     <rect x="404" y="133" width="92" height="32"/>
-    <!-- W: 4 constant-width parallelogram strokes; strokes 2/3 share their entire top edge at the peak (562-594, 85) -->
-    <polygon points="492,15 524,15 557,165 525,165"/>
-    <polygon points="525,165 557,165 594,85 562,85"/>
-    <polygon points="562,85 594,85 631,165 599,165"/>
-    <polygon points="599,165 631,165 664,15 632,15"/>
+    <!-- W: single polygon outline with two outer negative Vs at top, a small diamond notch at peak center, and inner strokes converging at bottom-center (no bottom gap) -->
+    <polygon points="492,15 524,15 545,112 560,75 572,75 578,87 584,75 596,75 611,112 632,15 664,15 631,165 525,165"/>
   </g>
 
   <!-- FIT: bright blue -->
