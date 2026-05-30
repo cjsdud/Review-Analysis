@@ -436,53 +436,6 @@
   color: $text-main;
 }
 
-// ===== ProductsTable 모바일 카드형 변환 =====
-@media (max-width: $bp-tablet) {
-  .products-table {
-    display: block;
-
-    thead {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      border: 0;
-    }
-    tbody { display: block; }
-    tr {
-      display: block;
-      background: $card;
-      border: 1px solid $border;
-      border-radius: $r-md;
-      padding: $sp-3;
-      margin-bottom: $sp-3;
-      box-shadow: $shadow-xs;
-    }
-    td {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 6px 0;
-      border-bottom: 1px dashed $border;
-      gap: 10px;
-      max-width: 100%;
-
-      &:first-child { padding-top: 0; }
-      &:last-child { border-bottom: none; padding-bottom: 0; }
-
-      &::before {
-        content: attr(data-label);
-        flex-shrink: 0;
-        font-size: 11px;
-        font-weight: 700;
-        color: $text-sub;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        min-width: 80px;
-      }
-    }
-  }
-}
+// ProductsTable 은 카드 그리드(.product-summary-card)로 재작성되어
+// 더 이상 `<table class="products-table">` 모바일 변환이 필요 없습니다.
+// 모바일 1열 스택은 .product-summary-card 의 @media 규칙에서 처리합니다.

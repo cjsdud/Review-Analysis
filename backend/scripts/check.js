@@ -1119,6 +1119,174 @@ await step('billing — usage_events 에 analysis_created 기록됨', async () =
   assert.equal(row.amount, 1);
 });
 
+// ──────────────────────────────────────────────
+// 상품 정렬/필터 (프론트 순수 로직)
+// ──────────────────────────────────────────────
+await step('productSort — 기본 우선순위 정렬 (주의 필요 > 개선 우선 > 만족도)', async () => {
+  const { sortProducts } = await import('../../frontend/src/utils/productSort.js');
+  const products = [
+    { productKey: 'C', productName: 'C', productStatus: '만족도 높음', negativeRatio: 0.02, issueReviewCount: 1, totalIssueCount: 1, totalReviews: 80, averageRating: 4.8 },
+    { productKey: 'A', productName: 'A', productStatus: '주의 필요', negativeRatio: 0.30, issueReviewCount: 18, totalIssueCount: 22, totalReviews: 60, averageRating: 3.2 },
+    { productKey: 'D', productName: 'D', productStatus: '리뷰 부족', negativeRatio: 0.10, issueReviewCount: 1, totalIssueCount: 1, totalReviews: 4, averageRating: 4.0 },
+    { productKey: 'B', productName: 'B', productStatus: '개선 우선', negativeRatio: 0.20, issueReviewCount: 12, totalIssueCount: 14, totalReviews: 50, averageRating: 3.7 },
+  ];
+  const sorted = sortProducts(products, 'priority');
+  const order = sorted.map((p) => p.productKey).join(',');
+  assert.equal(order, 'A,B,D,C', `정렬 결과: ${order}`);
+});
+
+await step('productSort — 부정 비율 높은 순', async () => {
+  const { sortProducts } = await import('../../frontend/src/utils/productSort.js');
+  const products = [
+    { productKey: 'a', negativeRatio: 0.1 },
+    { productKey: 'b', negativeRatio: 0.3 },
+    { productKey: 'c', negativeRatio: 0.2 },
+  ];
+  const sorted = sortProducts(products, 'negativeRatio');
+  assert.deepEqual(sorted.map((p) => p.productKey), ['b', 'c', 'a']);
+});
+
+await step('productSort — 평균 별점 낮은 순 (null 은 맨 뒤)', async () => {
+  const { sortProducts } = await import('../../frontend/src/utils/productSort.js');
+  const products = [
+    { productKey: 'a', averageRating: 4.5 },
+    { productKey: 'b', averageRating: null },
+    { productKey: 'c', averageRating: 2.1 },
+  ];
+  const sorted = sortProducts(products, 'ratingAsc');
+  assert.deepEqual(sorted.map((p) => p.productKey), ['c', 'a', 'b']);
+});
+
+await step('productSort — 상태 필터 + 검색', async () => {
+  const { filterProducts, buildStatusFilters } = await import('../../frontend/src/utils/productSort.js');
+  const products = [
+    { productName: '린넨 와이드 팬츠', productStatus: '주의 필요' },
+    { productName: '오버핏 후드', productStatus: '만족도 높음' },
+    { productName: '플리츠 스커트', productStatus: '주의 필요' },
+  ];
+  const onlyWarn = filterProducts(products, { status: '주의 필요' });
+  assert.equal(onlyWarn.length, 2, `필터 후 ${onlyWarn.length}건`);
+  const search = filterProducts(products, { status: '전체', query: '린넨' });
+  assert.equal(search.length, 1);
+  const filters = buildStatusFilters(products);
+  assert.equal(filters[0].value, '전체');
+  assert.equal(filters[0].count, 3);
+  const warn = filters.find((f) => f.value === '주의 필요');
+  assert.equal(warn?.count, 2);
+});
+
+// ──────────────────────────────────────────────
+// 분석 권한 (analysis ownership) — Express e2e
+// ──────────────────────────────────────────────
+async function makeAnalysisApp({ demoAllowAnonymous = 'false' } = {}) {
+  process.env.DEMO_ALLOW_ANONYMOUS = demoAllowAnonymous;
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const analysisRoutes = (await import(`../src/routes/analysis.routes.js?t=${t}`)).default;
+  const historyRoutes = (await import(`../src/routes/history.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  app.use('/api/analysis', analysisRoutes);
+  app.use('/api/analyses', historyRoutes);
+  return app;
+}
+
+async function registerAndCookie(port, email) {
+  const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: 'longenoughpw' }),
+  });
+  if (r.status !== 201) throw new Error(`register failed: ${r.status}`);
+  // set-cookie 의 'reviewfit_token=...' 부분만 추출
+  const cookie = (r.setCookie || '').split(';')[0];
+  return { userId: r.body.user.id, cookie };
+}
+
+function insertAnalysisFor(userId, summary = {}) {
+  const dbMod = require('node:module').createRequire(import.meta.url);
+  return null; // placeholder — 실제로는 DB 직접 INSERT
+}
+
+await step('ownership — userA 의 analysis 를 userA 가 조회 → 200', async () => {
+  const app = await makeAnalysisApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId: aId, cookie: aCookie } = await registerAndCookie(port, `ownA_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_own_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{"totalReviews":3}', aId);
+
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}`, { headers: { cookie: aCookie } });
+    assert.equal(r.status, 200, `userA → 자기 분석 status=${r.status}`);
+    assert.equal(r.body.analysisId, aid);
+  } finally { srv.close(); }
+});
+
+await step('ownership — userB 가 userA 의 analysis 조회 → 403', async () => {
+  const app = await makeAnalysisApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId: aId } = await registerAndCookie(port, `ownA2_${Date.now()}@x.com`);
+    const { cookie: bCookie } = await registerAndCookie(port, `ownB2_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_own_x_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{}', aId);
+
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}`, { headers: { cookie: bCookie } });
+    assert.equal(r.status, 403, `cross-user status=${r.status}`);
+    assert.equal(r.body.error, 'FORBIDDEN');
+    // products / export / corrections 까지 모두 403
+    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/products`, { headers: { cookie: bCookie } });
+    assert.equal(r2.status, 403, `products status=${r2.status}`);
+  } finally { srv.close(); }
+});
+
+await step('ownership — /api/analyses 는 본인 분석만 반환 (익명 NULL 제외)', async () => {
+  const app = await makeAnalysisApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId: aId, cookie: aCookie } = await registerAndCookie(port, `ownA3_${Date.now()}@x.com`);
+    const { userId: bId } = await registerAndCookie(port, `ownB3_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_own_a_' + nanoid();
+    const bid = 'an_own_b_' + nanoid();
+    const nid = 'an_own_n_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{"totalReviews":1}', aId);
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(bid, null, 'done', '{"totalReviews":2}', bId);
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(nid, null, 'done', '{"totalReviews":3}', null);
+
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analyses?limit=50`, { headers: { cookie: aCookie } });
+    assert.equal(r.status, 200);
+    const ids = r.body.map((x) => x.id);
+    assert(ids.includes(aid), 'userA 자기 분석 누락');
+    assert(!ids.includes(bid), 'userB 분석이 userA 에게 노출됨');
+    assert(!ids.includes(nid), '익명(user_id NULL) 분석이 로그인 사용자에게 노출됨');
+  } finally { srv.close(); }
+});
+
+await step('ownership — 로그인 없이 보호 API 호출 시 401 (DEMO_ALLOW_ANONYMOUS=false)', async () => {
+  const app = await makeAnalysisApp({ demoAllowAnonymous: 'false' });
+  const { srv, port } = await startServer(app);
+  try {
+    const r1 = await jsonFetch(`http://127.0.0.1:${port}/api/analyses`);
+    assert.equal(r1.status, 401);
+    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/anything`);
+    assert.equal(r2.status, 401);
+  } finally { srv.close(); }
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

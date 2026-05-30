@@ -24,6 +24,8 @@ export default function AnalysisHistoryPage() {
         const data = await getAnalyses(50);
         setItems(Array.isArray(data) ? data : []);
       } catch (e) {
+        // 401 은 ProtectedRoute 가 /login 으로 보내므로 여기에 도달하지 않음.
+        // 다른 에러만 표시.
         setError(e.message);
       } finally {
         setLoading(false);

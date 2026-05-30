@@ -8,6 +8,7 @@ import SentimentBar from '../components/SentimentBar.jsx';
 import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
 import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import ReviewsModal from '../components/ReviewsModal.jsx';
+import AccessError from '../components/AccessError.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 
 export default function ProductDetailPage() {
@@ -15,6 +16,7 @@ export default function ProductDetailPage() {
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [accessKind, setAccessKind] = useState(null);
   const [error, setError] = useState('');
 
   // 모달 상태
@@ -41,7 +43,11 @@ export default function ProductDetailPage() {
         const data = await getProductDetail(analysisId, productKey);
         setProduct(data);
       } catch (e) {
-        setError(e.message);
+        const status = e.status;
+        if (status === 401) setAccessKind('AUTH_REQUIRED');
+        else if (status === 403) setAccessKind('FORBIDDEN');
+        else if (status === 404) setAccessKind('NOT_FOUND');
+        else setError(e.message);
       } finally {
         setLoading(false);
       }
@@ -84,6 +90,7 @@ export default function ProductDetailPage() {
   }
 
   if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
+  if (accessKind) return <AccessError kind={accessKind} />;
   if (error)
     return (
       <div>

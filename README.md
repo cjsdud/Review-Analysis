@@ -391,6 +391,27 @@ npm run cleanup:anonymous:confirm  # 실제 삭제 (--confirm)
 - 보존: `users`, `plans`, `subscriptions`, `payments`, `usage_events`.
 - 실제 삭제 전 DB 백업 권장. 자세한 내용은 [`docs/data-retention-policy.md`](docs/data-retention-policy.md) 참고.
 
+### 상품별 문제 정리 UI
+- 대시보드 "상품별 문제 정리" 는 카드 그리드 레이아웃으로, 좌측에 상품명/상태/주요 이슈 chip,
+  우측에 리뷰 수·평균 별점·부정 비율·개선 이슈 수 4개 metric + 감성 분포 bar + 상세 버튼이 배치됩니다.
+- 상품명은 `word-break: keep-all` + 2줄 line-clamp 로 처리되어 좁은 화면에서도 한 글자씩 세로로 쪼개지지 않습니다.
+- 모바일 (≤768px) 에서는 1열 카드로 자연스럽게 스택되고, 상세 버튼은 최소 높이 44px.
+- **기본 정렬**(`개선 우선순`): 상태 우선순위(주의 필요 > 개선 우선 > 좋은데 고칠 점 있음 > 보통 > 리뷰 부족 > 만족도 높음)
+  → 부정 비율 → 개선 이슈 리뷰 수 → 총 이슈 수 → 전체 리뷰 수.
+- 상단 툴바에 **상태 chip 필터**(전체/주의 필요/개선 우선/...) 와 **상품명 검색**, **정렬 셀렉트**(개선 우선순/부정 비율/이슈/리뷰/별점) 제공.
+- 빈 상태: 분석된 상품이 없으면 "아직 분석된 상품이 없습니다.", 필터 결과 0건이면 "조건에 맞는 상품이 없습니다.",
+  이슈가 없는 상품은 "감지된 주요 이슈 없음".
+
+### 권한 가드 (본인 데이터만 노출)
+- 로그인 사용자는 **본인의 분석 리포트만** 조회할 수 있습니다 — 다른 사용자의 분석 URL 접근 시 백엔드가 403 반환.
+- 보호 API 5종(`/api/analyses`, `/api/analysis/:id`, `/api/analysis/:id/products`,
+  `/api/analysis/:id/products/:productKey`, `/api/analysis/:id/export.csv`, `/api/analysis/:id/corrections`,
+  `/api/uploads*`)은 모두 `requireAuth` + 소유권 비교(`analysis_jobs.user_id === req.user.id`)로 차단됩니다.
+- `GET /api/analyses` 는 로그인 사용자에게 **본인 분석만 반환**하며,
+  과거 익명(`user_id IS NULL`) 분석은 일반 사용자의 히스토리에 노출되지 않습니다.
+- 프론트는 401 → 로그인 페이지로 자동 이동(`ProtectedRoute`), 403/404 는 `AccessError` 컴포넌트로
+  "이 분석 리포트에 접근할 권한이 없습니다." / "분석 리포트를 찾을 수 없습니다." 안내.
+
 ### 분석 히스토리 (다시 보기)
 - `analysis_jobs` 1건 = 분석 1회 실행 단위(upload_id, status, summary, created_at, user_id).
 - `GET /api/analyses?limit=20` — 최근 분석 목록(최신순). **로그인 사용자는 본인 분석만 반환**,

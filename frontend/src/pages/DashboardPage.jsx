@@ -9,6 +9,7 @@ import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
+import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
 
 export default function DashboardPage() {
@@ -17,6 +18,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [accessKind, setAccessKind] = useState(null); // 'AUTH_REQUIRED' | 'FORBIDDEN' | 'NOT_FOUND' | null
   const [error, setError] = useState('');
   const [chartType, setChartType] = useState('bar');
 
@@ -27,7 +29,12 @@ export default function DashboardPage() {
         setSummary(a.summary);
         setProducts(ps);
       } catch (e) {
-        setError(e.message);
+        // 권한/존재 에러는 AccessError 로 분기
+        const status = e.status;
+        if (status === 401) setAccessKind('AUTH_REQUIRED');
+        else if (status === 403) setAccessKind('FORBIDDEN');
+        else if (status === 404) setAccessKind('NOT_FOUND');
+        else setError(e.message);
       } finally {
         setLoading(false);
       }
@@ -39,6 +46,7 @@ export default function DashboardPage() {
   }
 
   if (loading) return <LoadingState title="리포트를 준비하고 있어요" />;
+  if (accessKind) return <AccessError kind={accessKind} />;
   if (error)
     return (
       <div>
