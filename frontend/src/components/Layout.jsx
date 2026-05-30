@@ -75,9 +75,13 @@ export default function Layout() {
             <span className="here">{title}</span>
           </div>
           <div className="topbar__right">
-            <span className="tag tag--neutral">MVP</span>
             {user ? (
               <div className="topbar__user">
+                {user.role === 'admin' && (
+                  <span className="tag tag--admin" title="관리자 계정">
+                    ADMIN
+                  </span>
+                )}
                 {subscription?.planCode && (
                   <span className={`tag tag--${subscription.planCode === 'free' ? 'neutral' : 'success'}`} title="현재 플랜">
                     {subscription.planName || subscription.planCode}
@@ -88,7 +92,7 @@ export default function Layout() {
                     이번 달 {usage.monthlyAnalysisUsed} / {usage.monthlyAnalysisLimit}회
                   </span>
                 )}
-                <span className="topbar__user-name">{user.name || user.email}</span>
+                <span className="topbar__user-name">{displayName(user)}</span>
                 <button
                   type="button"
                   className="btn btn--ghost btn--sm"
@@ -116,6 +120,19 @@ export default function Layout() {
       </div>
     </div>
   );
+}
+
+// 상단 표시명 정리 — seed 계정의 내부 명칭("Seed Admin"/"Seed Beta Tester") 은
+// 일반 사용자에게 자연스러운 라벨로 바꾸고, 그 외에는 user.name → email 앞부분 순.
+function displayName(user) {
+  if (!user) return '';
+  const name = (user.name || '').trim();
+  if (name === 'Seed Admin') return '관리자';
+  if (name === 'Seed Beta Tester') return '베타 테스터';
+  if (name) return name;
+  const email = user.email || '';
+  const local = email.split('@')[0];
+  return local || email;
 }
 
 // 사이드바용 세로 단계 표시 (간단 버전)

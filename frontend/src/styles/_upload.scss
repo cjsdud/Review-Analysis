@@ -2,6 +2,40 @@
 @use 'mixins' as *;
 
 // ===== 업로드 페이지 =====
+
+// 베타 안내 배너 — 부드러운 블루톤. 위험 경고 X.
+.beta-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 0 0 $sp-3;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 10px;
+  color: #1e3a8a;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+
+  &__ico {
+    font-size: 18px;
+    line-height: 1.2;
+    flex-shrink: 0;
+  }
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  @media (max-width: $bp-tablet) {
+    font-size: 12.5px;
+    padding: 10px 14px;
+  }
+}
+
 .upload-hint {
   @include surface;
   margin-bottom: $sp-4;

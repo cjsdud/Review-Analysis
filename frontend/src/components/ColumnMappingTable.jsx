@@ -6,7 +6,7 @@ const FIELD_INFO = {
   content: { label: '리뷰 내용', req: true, desc: '고객이 작성한 실제 리뷰 본문입니다. (필수)' },
   createdAt: { label: '작성일', req: false, desc: '월간 트렌드/리포트 기간 분석에 사용합니다.' },
   replyText: { label: '판매자 답글', req: false, desc: '기존 답글이 있으면 함께 보관합니다.' },
-  reviewId: { label: '리뷰 번호', req: false, desc: '플랫폼별 원본 식별자(있으면 추적용).' },
+  reviewId: { label: '리뷰 번호', req: false, desc: '플랫폼에서 부여한 리뷰 ID (있으면 추적용으로 사용).' },
   writer: { label: '작성자', req: false, desc: '분석에는 사용하지 않으며 자동 마스킹됩니다.' },
 };
 

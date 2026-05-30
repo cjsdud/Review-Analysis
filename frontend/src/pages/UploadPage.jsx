@@ -66,6 +66,17 @@ export default function UploadPage() {
         title="리뷰 파일 업로드"
         subtitle="CSV 또는 XLSX 파일을 올리면 다음 단계에서 컬럼을 자동으로 매핑해 드립니다."
       />
+
+      {/* 베타 안내 — 데이터 초기화 가능성 자연스럽게 안내. 너무 무섭게 보이지 않도록 부드러운 톤. */}
+      <div className="beta-notice" role="note">
+        <span className="beta-notice__ico" aria-hidden="true">🧪</span>
+        <div className="beta-notice__body">
+          <b>무료 베타 서비스입니다.</b>{' '}
+          분석 결과는 베타 점검 과정에서 초기화될 수 있어요. 필요한 리포트는
+          상품 상세에서 CSV 로 저장하거나 화면을 캡처해 두시는 걸 권장합니다.
+        </div>
+      </div>
+
       <Stepper current={1} />
 
       {error && <div className="error-banner">{error}</div>}
@@ -149,7 +160,7 @@ export default function UploadPage() {
             <ul>
               <li>분석에는 <b>상품명 · 별점 · 리뷰 내용</b>만 있어도 충분합니다.</li>
               <li>주문번호 · 전화번호 · 이메일 · 주소는 업로드 직후 <b>자동으로 가려집니다</b>.</li>
-              <li>업로드된 원본 파일은 <b>서버 디스크에 저장되지 않습니다</b> (메모리에서만 파싱).</li>
+              <li>업로드한 리뷰 파일은 <b>서버 디스크에 저장되지 않습니다</b> (메모리에서만 분석에 사용).</li>
               <li>파싱된 데이터도 분석 후 / 일정 시간 경과 후 <b>자동으로 비웁니다</b>.</li>
             </ul>
           </div>

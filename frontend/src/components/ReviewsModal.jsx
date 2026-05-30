@@ -272,7 +272,7 @@ export default function ReviewsModal({ open, onClose, reviews = [], productName,
       {filtered.length === 0 ? (
         <div className="muted" style={{ padding: 16 }}>
           {reviews.length === 0
-            ? '이 상품의 리뷰 원본 데이터를 불러올 수 없습니다.'
+            ? '이 상품의 리뷰 데이터를 불러올 수 없습니다.'
             : '조건에 맞는 리뷰가 없습니다.'}
         </div>
       ) : (
