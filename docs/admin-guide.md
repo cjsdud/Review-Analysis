@@ -18,13 +18,39 @@ npm run admin:promote -- admin@example.com
 npm run admin:promote -- admin@example.com --demote
 ```
 
-### 방법 B — 환경변수 `ADMIN_EMAILS`
+### 방법 B — 환경변수 `ADMIN_EMAILS` (권장)
 
-`.env` 또는 배포 환경변수에 콤마 구분으로 등록하면 부팅 시 자동으로 role=admin 으로 보정합니다.
+`.env` 또는 배포 환경변수에 쉼표 구분으로 등록합니다. 대소문자/공백은 무시합니다.
 
 ```
 ADMIN_EMAILS=admin1@example.com,admin2@example.com
 ```
+
+세 군데에서 자동으로 보정됩니다:
+
+1. **서버 부팅 시** — `ADMIN_EMAILS` 의 이메일을 가진 기존 사용자 role 을 admin 으로 보정.
+   (회원가입 전이면 `[admin] Configured admin email not found yet: <email>` 로그만 남기고 통과)
+2. **신규 회원가입 시** — `POST /api/auth/register` 가 이메일을 비교해 admin 으로 즉시 생성.
+3. **로그인 시** — 비밀번호 검증 성공 후 본인 이메일이 포함되어 있고 role 이 admin 이 아니면
+   즉시 admin 으로 보정. **서버 재시작 없이도 다음 로그인부터 admin 반영**.
+
+### 운영 적용 절차 (재배포 직후 확인)
+
+1. Render 등의 환경변수에 `ADMIN_EMAILS=admin@example.com` 추가
+2. 서버 재배포 (자동)
+3. 부팅 로그 확인:
+   ```
+   [admin] ADMIN_EMAILS configured: 1
+   [admin] Configured admin email not found yet: admin@example.com   ← 가입 전 정상
+   [admin] Configured admin promotion complete. promoted=0
+   ```
+4. 해당 이메일로 `/login` 에서 회원가입 → 응답 `user.role === "admin"` 인지 확인
+5. `GET /api/me` 호출 → `user.role === "admin"` 확인
+6. `/admin` 접속 → 관리자 콘솔이 열리는지 확인
+7. `GET /api/admin/summary` 가 200 응답인지 확인
+
+> ⚠️ 환경변수 변경 후에는 **반드시 재배포/재시작** 이 필요합니다.
+> 다만 이미 가입된 사용자는 재시작 없이도 다음 로그인 시 자동 보정됩니다.
 
 ## 메뉴별 기능
 

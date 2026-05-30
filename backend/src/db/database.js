@@ -134,20 +134,30 @@ for (const s of SEED_SETTINGS) {
 }
 
 // ADMIN_EMAILS 환경변수에 포함된 이메일은 부팅 시 자동으로 role=admin 으로 보정.
-// 운영 초기 관리자 계정 부트스트랩용. 콤마/공백 구분.
+// 운영 초기 관리자 계정 부트스트랩용. 콤마/공백 구분, 대소문자 무시.
+// (services/adminEmails.service.js 의 promoteConfiguredAdminEmails 와 동일 정책 —
+//  database.js 는 서비스 import 가 어려워 inline 으로 유지하되 동일한 로그 포맷을 사용.)
 const adminEmails = (process.env.ADMIN_EMAILS || '')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 if (adminEmails.length) {
+  console.info(`[admin] ADMIN_EMAILS configured: ${adminEmails.length}`);
+  const findUser = db.prepare('SELECT id, role FROM users WHERE LOWER(email) = ?');
   const promote = db.prepare(
-    `UPDATE users SET role = 'admin', updated_at = CURRENT_TIMESTAMP
-       WHERE LOWER(email) = ? AND role != 'admin'`,
+    `UPDATE users SET role = 'admin', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
   );
+  let promoted = 0;
   for (const email of adminEmails) {
-    const info = promote.run(email);
-    if (info.changes > 0) {
-      console.info(`[review-fit] ADMIN_EMAILS: ${email} promoted to admin`);
+    const u = findUser.get(email);
+    if (!u) {
+      console.info(`[admin] Configured admin email not found yet: ${email}`);
+      continue;
     }
+    if (u.role === 'admin') continue;
+    promote.run(u.id);
+    promoted++;
+    console.info(`[admin] Promoted configured admin email: ${email}`);
   }
+  console.info(`[admin] Configured admin promotion complete. promoted=${promoted}`);
 }
 
 // 일정 시간(ttlMinutes)이 지난 업로드의 파싱 rows(JSON)를 비워 PII 잔존을 줄인다.

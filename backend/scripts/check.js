@@ -1757,6 +1757,172 @@ await step('reviews API — limit/offset 페이지네이션', async () => {
   } finally { srv.close(); }
 });
 
+// ──────────────────────────────────────────────
+// ADMIN_EMAILS — isAdminEmail / register / login / boot promotion
+// ──────────────────────────────────────────────
+await step('adminEmails — isAdminEmail 대소문자/공백 무시', async () => {
+  process.env.ADMIN_EMAILS = '  ADMIN@example.com , owner@Example.com ';
+  const m = await import('../src/services/adminEmails.service.js');
+  assert.equal(m.isAdminEmail('admin@example.com'), true);
+  assert.equal(m.isAdminEmail('ADMIN@EXAMPLE.com'), true);
+  assert.equal(m.isAdminEmail('  Owner@example.com  '), true);
+  assert.equal(m.isAdminEmail('user@example.com'), false);
+  assert.equal(m.isAdminEmail(''), false);
+  assert.equal(m.isAdminEmail(null), false);
+  process.env.ADMIN_EMAILS = '';
+  assert.equal(m.isAdminEmail('admin@example.com'), false);
+});
+
+async function makeAuthAdminApp() {
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const adminRoutes = (await import(`../src/routes/admin.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
+  app.use('/api/admin', adminRoutes);
+  return app;
+}
+
+await step('register — ADMIN_EMAILS 이메일은 admin role 로 생성, password_hash 응답 노출 금지', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  process.env.ADMIN_EMAILS = 'newadmin@example.com';
+  const app = await makeAuthAdminApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'NEWADMIN@example.com', password: 'longenoughpw' }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.user.role, 'admin', `role=${res.body.user.role}`);
+    assert(!('password_hash' in res.body.user), 'password_hash 응답에 포함됨');
+    assert(!('password' in res.body.user), 'password 응답에 포함됨');
+    // DB 확인
+    const { default: db } = await import('../src/db/database.js');
+    const row = db.prepare('SELECT role FROM users WHERE LOWER(email) = ?').get('newadmin@example.com');
+    assert.equal(row.role, 'admin');
+  } finally {
+    srv.close();
+    process.env.ADMIN_EMAILS = '';
+  }
+});
+
+await step('register — ADMIN_EMAILS 에 없는 이메일은 일반 user', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  process.env.ADMIN_EMAILS = 'someother@example.com';
+  const app = await makeAuthAdminApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: `regular_${Date.now()}@example.com`, password: 'longenoughpw' }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.user.role, 'user');
+  } finally {
+    srv.close();
+    process.env.ADMIN_EMAILS = '';
+  }
+});
+
+await step('login — ADMIN_EMAILS 보정: 기존 role=user 사용자가 로그인 시 admin 으로 보정', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  process.env.ADMIN_EMAILS = '';  // 가입 시점에는 비어 있음 → 일반 user 로 가입
+  const app = await makeAuthAdminApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const email = `late_admin_${Date.now()}@example.com`;
+    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'longenoughpw' }),
+    });
+    assert.equal(reg.body.user.role, 'user');
+
+    // 운영자가 나중에 ADMIN_EMAILS 에 이메일 추가
+    process.env.ADMIN_EMAILS = email;
+    const login = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'longenoughpw' }),
+    });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.user.role, 'admin', `로그인 후 role=${login.body.user.role}`);
+
+    // /api/me 도 admin
+    const cookie = (login.setCookie || '').split(';')[0];
+    const me = await jsonFetch(`http://127.0.0.1:${port}/api/me`, { headers: { cookie } });
+    assert.equal(me.body.user.role, 'admin');
+  } finally {
+    srv.close();
+    process.env.ADMIN_EMAILS = '';
+  }
+});
+
+await step('admin endpoint — ADMIN_EMAILS 로 생성된 admin 은 /api/admin/summary 접근 가능', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  process.env.ADMIN_EMAILS = `summary_admin_${Date.now()}@example.com`;
+  const app = await makeAuthAdminApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const email = process.env.ADMIN_EMAILS;
+    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'longenoughpw' }),
+    });
+    assert.equal(reg.body.user.role, 'admin');
+    const cookie = (reg.setCookie || '').split(';')[0];
+    // admin user → /api/admin/summary 200
+    const a = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie } });
+    assert.equal(a.status, 200, `admin summary status=${a.status}`);
+  } finally {
+    srv.close();
+    process.env.ADMIN_EMAILS = '';
+  }
+});
+
+await step('admin endpoint — 일반 user 403, 비로그인 401', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  process.env.ADMIN_EMAILS = '';
+  const app = await makeAuthAdminApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const email = `regular_${Date.now()}@example.com`;
+    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'longenoughpw' }),
+    });
+    const cookie = (reg.setCookie || '').split(';')[0];
+    const userCall = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie } });
+    assert.equal(userCall.status, 403);
+    const anonCall = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`);
+    assert.equal(anonCall.status, 401);
+  } finally { srv.close(); }
+});
+
+await step('promoteConfiguredAdminEmails — 서버 부팅 시 기존 user 보정', async () => {
+  process.env.ADMIN_EMAILS = '';
+  const { default: db } = await import('../src/db/database.js');
+  const { nanoid } = await import('nanoid');
+  const bcrypt = (await import('bcryptjs')).default;
+  const hash = await bcrypt.hash('pw', 4);
+  const email = `boot_admin_${Date.now()}@example.com`;
+  const id = nanoid();
+  db.prepare(`INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, 'user')`)
+    .run(id, email, hash, null);
+  // 사후에 ADMIN_EMAILS 추가 후 promote 호출
+  process.env.ADMIN_EMAILS = `OTHER@x.com, ${email.toUpperCase()}`;
+  const svc = await import('../src/services/adminEmails.service.js');
+  const result = svc.promoteConfiguredAdminEmails();
+  assert(result.promoted >= 1, `promoted=${result.promoted}`);
+  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(id);
+  assert.equal(row.role, 'admin');
+  process.env.ADMIN_EMAILS = '';
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

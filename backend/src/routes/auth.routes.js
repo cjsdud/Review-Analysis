@@ -14,6 +14,7 @@ import {
 } from '../middleware/auth.middleware.js';
 import { buildMeContext, getUserSubscription } from '../services/billing.service.js';
 import { getBooleanSetting } from '../services/settings.service.js';
+import { isAdminEmail, maybePromoteOnLogin } from '../services/adminEmails.service.js';
 
 const router = Router();
 
@@ -51,10 +52,16 @@ router.post('/register', async (req, res) => {
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const id = nanoid();
+  // ADMIN_EMAILS 에 포함된 이메일이면 가입과 동시에 admin role 부여.
+  // 대소문자/공백 무시는 isAdminEmail 내부에서 처리.
+  const role = isAdminEmail(email) ? 'admin' : 'user';
   db.prepare(
     `INSERT INTO users (id, email, password_hash, name, role)
-     VALUES (?, ?, ?, ?, 'user')`,
-  ).run(id, email, passwordHash, name || null);
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(id, email, passwordHash, name || null, role);
+  if (role === 'admin') {
+    console.info(`[admin] New user registered as admin (matches ADMIN_EMAILS): ${email}`);
+  }
 
   // 기본 free 구독 자동 생성
   getUserSubscription(id);
@@ -80,6 +87,10 @@ router.post('/login', async (req, res) => {
   if (!ok) {
     return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: '이메일 또는 비밀번호가 올바르지 않습니다.' });
   }
+  // 비밀번호 검증 성공 후에만 ADMIN_EMAILS 기준 보정.
+  // 서버 재시작 없이 ADMIN_EMAILS 가 추가된 경우에도 다음 로그인부터 admin 으로 보정됨.
+  const finalRole = maybePromoteOnLogin(row);
+  if (finalRole !== row.role) row.role = finalRole;
   const token = signToken({ sub: row.id, email: row.email });
   setAuthCookie(res, token);
   return res.json({ user: publicUser(row) });
