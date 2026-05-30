@@ -15,6 +15,7 @@ import {
 import { buildMeContext, getUserSubscription } from '../services/billing.service.js';
 import { getBooleanSetting } from '../services/settings.service.js';
 import { isAdminEmail, maybePromoteOnLogin } from '../services/adminEmails.service.js';
+import { isSeedReservedEmail } from '../services/seedAccounts.service.js';
 
 const router = Router();
 
@@ -46,6 +47,14 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || '잘못된 입력' });
   }
   const { email, password, name } = parsed.data;
+  // 베타 seed 로 예약된 이메일(SEED_ADMIN_EMAIL / SEED_TESTER_EMAIL)은 일반 회원가입을 차단.
+  // 보안 주의: 응답 메시지에서 admin/tester 구분을 절대 노출하지 않는다.
+  if (isSeedReservedEmail(email)) {
+    return res.status(409).json({
+      error: 'RESERVED_ACCOUNT_EMAIL',
+      message: '해당 이메일은 베타 테스트용으로 예약된 계정입니다. 운영자에게 문의해 주세요.',
+    });
+  }
   const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (exists) {
     return res.status(409).json({ error: 'EMAIL_TAKEN', message: '이미 가입된 이메일입니다.' });

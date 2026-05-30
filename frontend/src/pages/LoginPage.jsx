@@ -37,7 +37,7 @@ export default function LoginPage() {
       : await register(email, password, name);
     setBusy(false);
     if (!result.ok) {
-      setErr(humanize(result.error));
+      setErr(humanize(result.code, result.error));
       return;
     }
     navigate(from, { replace: true });
@@ -137,11 +137,16 @@ export default function LoginPage() {
   );
 }
 
-// 백엔드 에러 코드를 사용자 메시지로 변환
-function humanize(msg) {
-  if (!msg) return '요청 중 오류가 발생했습니다.';
-  if (msg === 'EMAIL_TAKEN') return '이미 가입된 이메일입니다.';
-  if (msg === 'INVALID_CREDENTIALS') return '이메일 또는 비밀번호가 올바르지 않습니다.';
-  if (msg === 'INVALID_INPUT') return '입력값을 확인해 주세요.';
-  return msg;
+// 백엔드 에러 코드를 사용자 메시지로 변환.
+// 보안 주의: RESERVED_ACCOUNT_EMAIL 은 admin/tester 구분을 절대 노출하지 않는다.
+function humanize(code, msg) {
+  if (code === 'RESERVED_ACCOUNT_EMAIL') {
+    return '해당 이메일은 베타 테스트용으로 예약된 계정입니다. 운영자에게 문의해 주세요.';
+  }
+  if (code === 'EMAIL_TAKEN') return '이미 가입된 이메일입니다.';
+  if (code === 'INVALID_CREDENTIALS') return '이메일 또는 비밀번호가 올바르지 않습니다.';
+  if (code === 'INVALID_INPUT') return '입력값을 확인해 주세요.';
+  if (code === 'SIGNUP_DISABLED') return '현재 신규 가입이 제한되어 있습니다.';
+  if (msg) return msg;
+  return '요청 중 오류가 발생했습니다.';
 }

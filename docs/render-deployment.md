@@ -211,6 +211,10 @@ SEED_ADMIN_EMAIL=admin@example.com
 SEED_ADMIN_PASSWORD=<강력한_관리자_비밀번호>
 SEED_TESTER_EMAIL=beta@example.com
 SEED_TESTER_PASSWORD=<강력한_테스터_비밀번호>
+
+# (선택) 기존 사용자 admin 보정 / 비밀번호 재설정 토글
+SEED_ALLOW_PROMOTE_EXISTING=true   # 운영 전환 시 false 권장
+SEED_RESET_PASSWORDS=false         # true 면 부팅마다 env 값으로 덮어씀 — 운영에서는 false
 ```
 
 ### 동작 보장
@@ -218,9 +222,29 @@ SEED_TESTER_PASSWORD=<강력한_테스터_비밀번호>
 - 비밀번호는 **bcrypt 해시로만** 저장 — 로그/응답에 절대 노출되지 않음.
 - 같은 이메일 사용자가 이미 있으면 새로 만들지 않음 (중복 방지).
 - seed admin 이메일이 이미 `role=user` 면 `admin` 으로 자동 보정.
+  - `SEED_ALLOW_PROMOTE_EXISTING=false` 면 보정도 하지 않고 warning 만 출력.
 - seed tester 이메일이 이미 `admin` 이면 자동 강등하지 않음 (마지막 admin 보호).
 - 신규 시드 계정은 자동으로 free 구독 생성.
 - 비밀번호 8자 미만은 해당 시드만 skip + warning.
+- `SEED_RESET_PASSWORDS=true` 일 때만 부팅 시 seed 계정 비밀번호를 env 값으로 재설정.
+  운영자가 콘솔에서 비밀번호를 바꿔도 다음 재시작에 덮어쓰지 않도록 평소엔 `false` 유지 권장.
+
+### 예약된 이메일 (Reserved emails) — 보안
+
+`SEED_ADMIN_EMAIL` / `SEED_TESTER_EMAIL` 로 지정된 이메일은
+**`SEED_ACCOUNTS_ENABLED` 값과 무관하게** 일반 회원가입이 차단됩니다.
+일반 사용자가 운영자 이메일을 선점해 admin 권한을 가로채는 시나리오를 막기 위한 안전장치입니다.
+
+```
+POST /api/auth/register
+{ "email": "<SEED_ADMIN_EMAIL 과 동일>", ... }
+→ HTTP 409
+{ "error": "RESERVED_ACCOUNT_EMAIL",
+  "message": "해당 이메일은 베타 테스트용으로 예약된 계정입니다. 운영자에게 문의해 주세요." }
+```
+
+- 이메일 비교는 `trim + lowercase` — 대소문자/공백 변형도 모두 차단.
+- 응답 메시지는 admin / tester 구분을 **노출하지 않습니다** (보안: 어떤 계정이 관리자인지 힌트 금지).
 
 ### 부팅 로그 (정상 예시)
 ```
@@ -238,6 +262,8 @@ SEED_TESTER_PASSWORD=<강력한_테스터_비밀번호>
 | Persistent Disk | 없음 (Free) | **반드시 설정** (Starter 이상) |
 | `SEED_ACCOUNTS_ENABLED` | `true` | **`false`** |
 | `SEED_*_PASSWORD` | env 에 임시 | env 에서 제거 / seed 계정 비밀번호 변경 |
+| `SEED_ALLOW_PROMOTE_EXISTING` | `true` (기본) | **`false`** (기존 사용자 보호) |
+| `SEED_RESET_PASSWORDS` | `false` (기본) | `false` 유지 |
 | `DB_PATH` | 기본값 (ephemeral) | `/var/data/reviewfit/app.db` |
 
 > ⚠️ 운영 전환 후에는 seed 계정의 비밀번호를 실제 운영자 계정으로 교체하거나 삭제하세요.

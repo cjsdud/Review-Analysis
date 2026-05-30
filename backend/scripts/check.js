@@ -1932,6 +1932,8 @@ function cleanSeedEnv() {
   delete process.env.SEED_ADMIN_PASSWORD;
   delete process.env.SEED_TESTER_EMAIL;
   delete process.env.SEED_TESTER_PASSWORD;
+  delete process.env.SEED_ALLOW_PROMOTE_EXISTING;
+  delete process.env.SEED_RESET_PASSWORDS;
 }
 
 await step('seed — SEED_ACCOUNTS_ENABLED=false 면 아무 계정도 만들지 않음', async () => {
@@ -2117,6 +2119,227 @@ await step('seed — admin 로그인 후 /api/me role=admin + /admin 200, tester
     const tAdmin = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie: tCookie } });
     assert.equal(tAdmin.status, 403, `tester admin should be 403, got ${tAdmin.status}`);
   } finally { srv.close(); cleanSeedEnv(); }
+});
+
+// ──────────────────────────────────────────────
+// 베타 seed 이메일 예약 (Task B — reserved register / promote toggle / pw reset)
+// ──────────────────────────────────────────────
+
+await step('seed reserved — isSeedReservedEmail 대소문자/공백 무시 매칭', async () => {
+  cleanSeedEnv();
+  process.env.SEED_ADMIN_EMAIL = ' Admin@Example.COM ';
+  process.env.SEED_TESTER_EMAIL = 'BeTa@example.com';
+  const svc = await import('../src/services/seedAccounts.service.js');
+  assert.equal(svc.isSeedReservedEmail('admin@example.com'), true);
+  assert.equal(svc.isSeedReservedEmail('  ADMIN@EXAMPLE.COM '), true);
+  assert.equal(svc.isSeedReservedEmail('beta@example.com'), true);
+  assert.equal(svc.isSeedReservedEmail('other@example.com'), false);
+  assert.equal(svc.isSeedReservedEmail(''), false);
+  assert.equal(svc.isSeedReservedEmail(null), false);
+  // SEED_ACCOUNTS_ENABLED 값과 무관해야 한다
+  process.env.SEED_ACCOUNTS_ENABLED = 'false';
+  assert.equal(svc.isSeedReservedEmail('admin@example.com'), true);
+  cleanSeedEnv();
+});
+
+await step('seed reserved — getSeedAccountEmails 빈값 필터 + 정규화', async () => {
+  cleanSeedEnv();
+  const svc = await import('../src/services/seedAccounts.service.js');
+  assert.deepEqual(svc.getSeedAccountEmails(), []);
+  process.env.SEED_ADMIN_EMAIL = '  Mix@Case.io  ';
+  process.env.SEED_TESTER_EMAIL = '';
+  assert.deepEqual(svc.getSeedAccountEmails(), ['mix@case.io']);
+  cleanSeedEnv();
+});
+
+await step('seed reserved — /register 예약 이메일은 409 RESERVED_ACCOUNT_EMAIL', async () => {
+  cleanSeedEnv();
+  const adminEmail = `reserved_admin_${Date.now()}@example.com`;
+  const testerEmail = `reserved_tester_${Date.now()}@example.com`;
+  process.env.SEED_ADMIN_EMAIL = adminEmail;
+  process.env.SEED_TESTER_EMAIL = testerEmail;
+  // 일부러 SEED_ACCOUNTS_ENABLED 는 켜지 않음 — 그래도 예약은 유효해야 한다
+  process.env.SEED_ACCOUNTS_ENABLED = 'false';
+
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  const { srv, port } = await startServer(app);
+  try {
+    const r1 = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: adminEmail, password: 'valid-password-1234', name: '시도자' }),
+    });
+    assert.equal(r1.status, 409, `admin reserved status=${r1.status}`);
+    assert.equal(r1.body.error, 'RESERVED_ACCOUNT_EMAIL');
+    // 보안: admin/tester 구분이 응답 메시지에 노출되지 않아야 한다
+    assert(!/admin/i.test(r1.body.message || ''), `message leaks admin: ${r1.body.message}`);
+    assert(!/tester|베타 테스터|beta tester/i.test(r1.body.message || ''),
+      `message leaks tester: ${r1.body.message}`);
+
+    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: testerEmail, password: 'valid-password-1234' }),
+    });
+    assert.equal(r2.status, 409, `tester reserved status=${r2.status}`);
+    assert.equal(r2.body.error, 'RESERVED_ACCOUNT_EMAIL');
+    assert.equal(r1.body.message, r2.body.message, 'admin/tester 응답 메시지가 동일해야 함');
+  } finally { srv.close(); cleanSeedEnv(); }
+});
+
+await step('seed reserved — 예약 이메일은 대소문자/공백 변형도 차단', async () => {
+  cleanSeedEnv();
+  const base = `reserved_case_${Date.now()}@example.com`;
+  process.env.SEED_ADMIN_EMAIL = base;
+
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  const { srv, port } = await startServer(app);
+  try {
+    const variant = base.toUpperCase();
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: variant, password: 'valid-password-1234' }),
+    });
+    assert.equal(r.status, 409, `status=${r.status}`);
+    assert.equal(r.body.error, 'RESERVED_ACCOUNT_EMAIL');
+  } finally { srv.close(); cleanSeedEnv(); }
+});
+
+await step('seed reserved — 비예약 이메일은 정상 회원가입 통과', async () => {
+  cleanSeedEnv();
+  process.env.SEED_ADMIN_EMAIL = `reserved_only_${Date.now()}@example.com`;
+  process.env.SEED_TESTER_EMAIL = `reserved_only2_${Date.now()}@example.com`;
+
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  const { srv, port } = await startServer(app);
+  try {
+    const fresh = `normal_signup_${Date.now()}@example.com`;
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: fresh, password: 'valid-password-1234' }),
+    });
+    assert.equal(r.status, 201, `status=${r.status}, body=${JSON.stringify(r.body)}`);
+    assert.equal(r.body.user.role, 'user');
+    assert(!('password_hash' in r.body.user), 'password_hash 노출됨');
+  } finally { srv.close(); cleanSeedEnv(); }
+});
+
+await step('seed promote toggle — SEED_ALLOW_PROMOTE_EXISTING=false 면 기존 user 보정 안 함', async () => {
+  cleanSeedEnv();
+  const { default: db } = await import('../src/db/database.js');
+  const { nanoid } = await import('nanoid');
+  const bcrypt = (await import('bcryptjs')).default;
+  const email = `seed_no_promote_${Date.now()}@example.com`;
+  const id = nanoid();
+  const hash = await bcrypt.hash('preexisting-pw-1234', 4);
+  db.prepare(`INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, 'user')`)
+    .run(id, email, hash, null);
+
+  process.env.SEED_ACCOUNTS_ENABLED = 'true';
+  process.env.SEED_ADMIN_EMAIL = email;
+  process.env.SEED_ADMIN_PASSWORD = 'valid-password-1234';
+  process.env.SEED_ALLOW_PROMOTE_EXISTING = 'false';
+  const svc = await import('../src/services/seedAccounts.service.js');
+  const out = svc.seedConfiguredAccounts();
+  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(id);
+  assert.equal(row.role, 'user', `보정되면 안 됨: role=${row.role}`);
+  const adminResult = (out.results || []).find((r) => r.kind === 'admin');
+  assert.equal(adminResult.skipped, true);
+  assert.equal(adminResult.reason, 'promote_disabled');
+  cleanSeedEnv();
+});
+
+await step('seed promote toggle — 기본값(true)이면 기존 user 를 admin 으로 보정', async () => {
+  cleanSeedEnv();
+  const { default: db } = await import('../src/db/database.js');
+  const { nanoid } = await import('nanoid');
+  const bcrypt = (await import('bcryptjs')).default;
+  const email = `seed_default_promote_${Date.now()}@example.com`;
+  const id = nanoid();
+  const hash = await bcrypt.hash('preexisting-pw-1234', 4);
+  db.prepare(`INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, 'user')`)
+    .run(id, email, hash, null);
+
+  process.env.SEED_ACCOUNTS_ENABLED = 'true';
+  process.env.SEED_ADMIN_EMAIL = email;
+  process.env.SEED_ADMIN_PASSWORD = 'valid-password-1234';
+  // SEED_ALLOW_PROMOTE_EXISTING 미설정 → 기본 true
+  const svc = await import('../src/services/seedAccounts.service.js');
+  svc.seedConfiguredAccounts();
+  const row = db.prepare('SELECT role FROM users WHERE id = ?').get(id);
+  assert.equal(row.role, 'admin', `기본값이면 보정돼야 함: role=${row.role}`);
+  cleanSeedEnv();
+});
+
+await step('seed password reset — SEED_RESET_PASSWORDS=false 면 기존 비밀번호 유지', async () => {
+  cleanSeedEnv();
+  const { default: db } = await import('../src/db/database.js');
+  const bcrypt = (await import('bcryptjs')).default;
+  const email = `seed_no_reset_${Date.now()}@example.com`;
+  const originalPw = 'original-password-1234';
+
+  // 1) 첫 부팅 — seed 가 계정 생성
+  process.env.SEED_ACCOUNTS_ENABLED = 'true';
+  process.env.SEED_ADMIN_EMAIL = email;
+  process.env.SEED_ADMIN_PASSWORD = originalPw;
+  const svc = await import('../src/services/seedAccounts.service.js');
+  svc.seedConfiguredAccounts();
+  const beforeHash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
+    .get(email.toLowerCase()).password_hash;
+
+  // 2) env 비밀번호만 바꾸고 SEED_RESET_PASSWORDS 끈 채로 재부팅
+  process.env.SEED_ADMIN_PASSWORD = 'changed-password-9999';
+  process.env.SEED_RESET_PASSWORDS = 'false';
+  svc.seedConfiguredAccounts();
+  const afterHash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
+    .get(email.toLowerCase()).password_hash;
+  assert.equal(beforeHash, afterHash, 'reset=false 인데 해시가 바뀜');
+  // 원래 비밀번호로 여전히 검증 가능해야 함
+  assert.equal(bcrypt.compareSync(originalPw, afterHash), true);
+  cleanSeedEnv();
+});
+
+await step('seed password reset — SEED_RESET_PASSWORDS=true 면 env 값으로 재설정', async () => {
+  cleanSeedEnv();
+  const { default: db } = await import('../src/db/database.js');
+  const bcrypt = (await import('bcryptjs')).default;
+  const email = `seed_reset_${Date.now()}@example.com`;
+  const originalPw = 'original-password-1234';
+
+  process.env.SEED_ACCOUNTS_ENABLED = 'true';
+  process.env.SEED_ADMIN_EMAIL = email;
+  process.env.SEED_ADMIN_PASSWORD = originalPw;
+  const svc = await import('../src/services/seedAccounts.service.js');
+  svc.seedConfiguredAccounts();
+
+  const newPw = 'rotated-password-7777';
+  process.env.SEED_ADMIN_PASSWORD = newPw;
+  process.env.SEED_RESET_PASSWORDS = 'true';
+  svc.seedConfiguredAccounts();
+  const hash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
+    .get(email.toLowerCase()).password_hash;
+  assert.equal(bcrypt.compareSync(newPw, hash), true, '새 비밀번호로 인증 실패');
+  assert.equal(bcrypt.compareSync(originalPw, hash), false, '옛 비밀번호가 여전히 통과');
+  cleanSeedEnv();
 });
 
 await step('aiClient (mock)', async () => {

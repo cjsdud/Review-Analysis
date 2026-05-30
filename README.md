@@ -496,15 +496,34 @@ Render Free 처럼 디스크가 휘발성인 환경에서는 재배포/재시작
 | `SEED_ADMIN_PASSWORD` | 관리자 시드 계정 비밀번호 (8자 이상, 권장 16자 이상) |
 | `SEED_TESTER_EMAIL` | 베타 테스터 시드 계정 이메일 |
 | `SEED_TESTER_PASSWORD` | 베타 테스터 시드 계정 비밀번호 (8자 이상) |
+| `SEED_ALLOW_PROMOTE_EXISTING` | 기본 `true`. `false` 면 이미 존재하는 사용자를 admin 으로 절대 보정하지 않음 |
+| `SEED_RESET_PASSWORDS` | 기본 `false`. `true` 일 때만 부팅 시 seed 계정 비밀번호를 env 값으로 재설정 |
 
 동작 보장:
 - 비밀번호는 **bcrypt 해시로만 저장**되며 로그/응답에 절대 출력되지 않습니다.
 - 같은 이메일 사용자가 이미 있으면 새로 만들지 않습니다 (중복 방지).
-- 시드 admin 이메일이 이미 `role=user` 로 가입돼 있으면 `admin` 으로 자동 보정합니다.
+- 시드 admin 이메일이 이미 `role=user` 로 가입돼 있으면 `admin` 으로 자동 보정합니다
+  (`SEED_ALLOW_PROMOTE_EXISTING=false` 면 보정도 하지 않고 warning 만 출력).
 - 시드 tester 이메일이 이미 `admin` 인 경우는 **자동 강등하지 않습니다** (마지막 admin 보호).
 - 신규 시드 계정은 자동으로 free 구독이 함께 생성됩니다.
 - 비밀번호가 8자 미만이거나 비어 있으면 해당 시드만 skip 하고 warning 만 출력합니다.
 - `ADMIN_EMAILS` 와 별개로 동작하며 충돌하지 않습니다.
+
+#### 예약된 이메일 (Reserved emails) — 보안 정책
+
+`SEED_ADMIN_EMAIL` / `SEED_TESTER_EMAIL` 로 지정된 이메일은
+`SEED_ACCOUNTS_ENABLED` 값과 **관계없이** 일반 회원가입(`POST /api/auth/register`)이 차단됩니다.
+
+```json
+HTTP 409
+{ "error": "RESERVED_ACCOUNT_EMAIL",
+  "message": "해당 이메일은 베타 테스트용으로 예약된 계정입니다. 운영자에게 문의해 주세요." }
+```
+
+- 이메일 비교는 `trim + lowercase` 로 처리해 대소문자/공백 변형도 차단합니다.
+- 응답 메시지와 에러 코드는 **admin/tester 구분을 드러내지 않습니다**
+  (어떤 계정이 관리자인지 외부에 노출 금지).
+- 일반 사용자가 운영자 이메일을 선점(squat)해 admin 권한을 가로채는 시나리오를 차단합니다.
 
 > ⚠️ **보안 주의**: 비밀번호를 코드/문서에 절대 저장하지 마세요. 실제 값은 Render Environment Variables 에서만 설정하세요.
 > 베타 종료 후에는 `SEED_ACCOUNTS_ENABLED=false` 로 전환하고, 시드 계정의 비밀번호를 변경하거나 계정을 삭제하세요.

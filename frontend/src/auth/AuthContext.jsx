@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
       return { ok: true };
     } catch (e) {
       setError(e.message);
-      return { ok: false, error: e.message };
+      return { ok: false, error: e.message, code: e.code };
     }
   }, [refresh]);
 
@@ -48,7 +48,7 @@ export function AuthProvider({ children }) {
       return { ok: true };
     } catch (e) {
       setError(e.message);
-      return { ok: false, error: e.message };
+      return { ok: false, error: e.message, code: e.code };
     }
   }, [refresh]);
 
