@@ -767,6 +767,29 @@ await step('hybrid #string-rating — "5점" / "평점 4" / 공백 처리', asyn
   assert.equal(cls.sentiment, 'positive');
 });
 
+await step('hybrid #regression-1506 — "고객센터" 터 false-positive 안 잡힘', async () => {
+  // NEG_TERMS 의 짧은 surface '터' 가 "고객센터" prefix 로 잘못 매칭되던 버그.
+  // 이제 NEG_TERMS 에는 '터짐' / '터져' / '터지' 만 등록.
+  const m = await import('../src/services/reviewClassification.service.js');
+  const cls = m.classifyReview({
+    id: 'rg1', productName: 'P', rating: 4,
+    content: '배송은 늦었지만 고객센터 응대가 빨라서 크게 불만은 없어요.',
+  });
+  assert.equal(cls.sentiment, 'positive', `sentiment=${cls.sentiment}`);
+  // "고객센터" 가 마감/불량 으로 잡히면 안 됨 (옷이 터짐 false positive)
+  const labels = cls.categories.map((c) => c.issue).filter(Boolean);
+  assert(!labels.some((l) => /터/.test(l)), `터 관련 라벨 금지: ${labels.join(',')}`);
+});
+
+await step('hybrid #regression-1506 — "크게 불만은 없" 명시적 해소 → 부정 점수 완화', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const sig = m.analyzeTextSentiment('배송은 늦었지만 크게 불만은 없어요.');
+  assert(sig.acceptanceCount >= 1, `acceptanceCount=${sig.acceptanceCount}`);
+  assert.equal(sig.hasSevereComplaint, false);
+  // 별점 4 면 positive, 별점 2 라도 neutral 까지 완화
+  assert.equal(m.detectSentiment({ rating: 4, content: '배송은 늦었지만 크게 불만은 없어요.' }), 'positive');
+});
+
 await step('hybrid — analyzeTextSentiment helper export 검증', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const sig = m.analyzeTextSentiment('환불하고 싶습니다. 너무 실망스러워요.');

@@ -52,10 +52,11 @@ const POS_TERMS = [
 ];
 // NEG_TERMS: 부정 신호 어휘. '별로' 는 '색상별로/조금별로' 같은 합성어로 오탐이 잦아
 // 안전한 표면형(별로요/별로네/별로다/이 별로/가 별로/는 별로/은 별로)만 등록한다.
+// 짧은 한 글자 토큰(터/뜯)은 '고객센터/뜯다' 등에서 오탐되므로 더 긴 surface form 만 사용.
 const NEG_TERMS = [
   '작아', '작게', '작음', '짧', '좁', '헐렁', '벙벙', '타이트', '꽉 끼', '꽉 껴', '낑',
   '비침', '비쳐', '얇아', '얇음', '얇네', '까슬', '뻣뻣', '두꺼', '두툼해',
-  '불량', '하자', '터', '뜯', '구멍', '실밥', '보풀',
+  '불량', '하자', '터짐', '터져', '터지', '뜯어', '뜯김', '뜯겨', '구멍', '실밥', '보풀',
   '줄어', '늘어', '물빠짐', '이염',
   '늦', '지연', '구겨', '구김', '누락', '파손',
   '무거', '답답', '불편', '따가', '가려', '쓸려',
@@ -121,10 +122,24 @@ const REVERSAL_PHRASES = [
   '불편하지 않', '답답하지 않', '까슬거림 없', '까슬거리지 않',
   '하자 없', '하자가 없', '문제 없', '문제가 없', '이상 없', '이상이 없',
   '변형 없', '변형이 없',
+  '불만은 없', '불만 없', '크게 불만은 없', '큰 불만 없', '큰 불만은 없',
+  '신경 안 쓰', '신경 쓰이지 않', '거슬리지 않',
 ];
 export function hasNegationReversal(text) {
   if (!text) return false;
   return REVERSAL_PHRASES.some((p) => text.includes(p));
+}
+
+// 텍스트 전체 차원의 "불만 해소/타협" 표현 — 별도의 절에 있어도 전체 부정 점수를 완화한다.
+// 예: "배송은 늦었지만 크게 불만은 없어요" — 1번 절은 부정이지만 2번 절에서 해소.
+const COMPLAINT_RESOLUTION_PHRASES = [
+  '크게 불만은 없', '큰 불만 없', '큰 불만은 없', '불만은 없', '불만 없',
+  '신경 안 쓰', '신경 쓰이지 않', '거슬리지 않',
+  '크게 문제 없', '큰 문제 없', '문제 없',
+];
+function hasComplaintResolution(text) {
+  if (!text) return false;
+  return COMPLAINT_RESOLUTION_PHRASES.some((p) => text.includes(p));
 }
 
 // 그룹(토큰 배열) 중 부정되지 않은 첫 매칭 토큰 반환
@@ -446,6 +461,13 @@ export function analyzeTextSentiment(text) {
   if (positiveCount === 0) hasOnlyNegatedIssue = false;
   // 전체 텍스트 차원에서 reversal 만 있고 다른 부정 신호 없으면 onlyNegatedIssue
   if (reversalGlobal && negativeScore === 0) hasOnlyNegatedIssue = true;
+
+  // "크게 불만은 없", "신경 안 쓰여요" 같은 명시적 해소 표현이 있으면 acceptance 가산 + severe 해제
+  if (hasComplaintResolution(safe)) {
+    acceptanceCount++;
+    positiveScore += 0.6;
+    hasSevereComplaint = false;
+  }
 
   return {
     positiveScore,
