@@ -378,6 +378,19 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 5. **현재 MVP 한계** — 로그인이 없어 서버 DB의 분석 결과가 **사용자별로 분리되지 않습니다**.
    실제 운영 전에는 로그인, 사용자별 권한, 보관 기간, 삭제 기능이 필요합니다.
 
+#### 운영 전환 전 익명 테스트 데이터 정리
+MVP 동안 쌓인 익명(`user_id IS NULL`) 분석/업로드/리뷰는 운영 전환 직전에 일괄 정리할 수 있습니다.
+
+```bash
+npm run cleanup:anonymous          # dry-run: 삭제 대상 개수만 출력
+npm run cleanup:anonymous:confirm  # 실제 삭제 (--confirm)
+```
+
+- 삭제 대상: `user_corrections`, `review_classifications`, `product_analyses`, `analysis_jobs`,
+  `reviews`, `column_mappings`, `upload_files` 의 `user_id IS NULL` 행 (자식→부모 순 트랜잭션).
+- 보존: `users`, `plans`, `subscriptions`, `payments`, `usage_events`.
+- 실제 삭제 전 DB 백업 권장. 자세한 내용은 [`docs/data-retention-policy.md`](docs/data-retention-policy.md) 참고.
+
 ### 분석 히스토리 (다시 보기)
 - `analysis_jobs` 1건 = 분석 1회 실행 단위(upload_id, status, summary, created_at, user_id).
 - `GET /api/analyses?limit=20` — 최근 분석 목록(최신순). **로그인 사용자는 본인 분석만 반환**,

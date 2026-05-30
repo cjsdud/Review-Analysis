@@ -14,6 +14,8 @@
     "start": "npm --prefix backend run start",
     "render:build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install",
     "render:start": "npm --prefix backend run start",
-    "seed:xlsx": "npm --prefix backend run seed:xlsx"
+    "seed:xlsx": "npm --prefix backend run seed:xlsx",
+    "cleanup:anonymous": "npm --prefix backend run cleanup:anonymous",
+    "cleanup:anonymous:confirm": "npm --prefix backend run cleanup:anonymous:confirm"
   }
 }

@@ -44,6 +44,26 @@
 - 사용자는 본인 분석만 조회/삭제 가능.
 - 보관 기간(예: 90일) 경과 시 분석 결과 자동 삭제 옵션.
 
+## 운영 전환 전 익명 테스트 데이터 정리
+
+운영 모드로 전환하기 직전에 MVP 단계에서 쌓인 익명/테스트 분석 데이터(`user_id IS NULL`)를 정리할 수 있습니다.
+
+```bash
+# 1) 삭제 대상 개수만 확인 (dry-run)
+npm run cleanup:anonymous
+
+# 2) 실제 삭제 (--confirm 필수)
+npm run cleanup:anonymous:confirm
+```
+
+- **삭제 대상**: `user_corrections`, `review_classifications`, `product_analyses`,
+  `analysis_jobs`, `reviews`, `column_mappings`, `upload_files` 중 `user_id IS NULL` 인 행.
+  외래키 안전을 위해 자식 → 부모 순서로 트랜잭션 삭제하며, 실패 시 전체 롤백.
+- **절대 삭제하지 않음**: `users`, `plans`, `subscriptions`, `payments`, `usage_events`
+  (usage_events 는 `user_id NOT NULL` 이라 익명 행이 존재할 수 없음).
+- **실제 삭제 전 DB 백업을 권장**합니다 (`cp data/app.db data/app.db.bak`).
+- 한 번 더 실행해도 안전(idempotent): 더 이상 삭제할 익명 데이터가 없으면 0건으로 종료.
+
 ## 삭제 기능 TODO
 
 - [ ] 분석 단위 삭제 API (`DELETE /api/analysis/:id`) — 연결된 `product_analyses` /

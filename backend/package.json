@@ -9,7 +9,9 @@
     "dev": "node --watch src/server.js",
     "check": "node scripts/check.js",
     "check:llm": "node scripts/checkLlm.js",
-    "seed:xlsx": "node scripts/makeSampleXlsx.js"
+    "seed:xlsx": "node scripts/makeSampleXlsx.js",
+    "cleanup:anonymous": "node scripts/cleanupAnonymousData.js",
+    "cleanup:anonymous:confirm": "node scripts/cleanupAnonymousData.js --confirm"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
