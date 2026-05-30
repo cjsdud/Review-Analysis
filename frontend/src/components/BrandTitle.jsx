@@ -6,7 +6,7 @@
 //   <BrandTitle size="sm" clickable />            // 사이드바/탑바용 (홈으로)
 //
 // 자산:
-//   `frontend/src/assets/branding/reviewfit-logo.jpg`         — 풀 워드마크 (사용자 원본 JPG, 1231x294)
+//   `frontend/src/assets/branding/reviewfit-logo.png`         — 풀 워드마크 (투명 배경 PNG, 1089x150)
 //   `frontend/src/assets/branding/reviewfit-logo-compact.svg` — RF 컴팩트 아이콘 (favicon)
 //
 // 접근성:
@@ -20,7 +20,7 @@
 //   - 래스터(JPG) 라 다운스케일 시 또렷도 보정: image-rendering: -webkit-optimize-contrast (_brand.scss).
 
 import { Link } from 'react-router-dom';
-import wordmark from '../assets/branding/reviewfit-logo.jpg';
+import wordmark from '../assets/branding/reviewfit-logo.png';
 
 const SIZE_CLASS = {
   sm: 'brand-title--sm',
