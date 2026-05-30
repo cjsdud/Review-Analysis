@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import BrandTitle from '../components/BrandTitle.jsx';
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -46,8 +47,7 @@ export default function LoginPage() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-card__brand">
-          <span className="auth-card__brand-logo">R</span>
-          <span className="auth-card__brand-name">리뷰핏</span>
+          <BrandTitle size="lg" />
         </div>
         <h1 className="auth-card__title">
           {mode === 'login' ? '로그인' : '회원가입'}

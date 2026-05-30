@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import AnnouncementBanner from './AnnouncementBanner.jsx';
+import BrandTitle from './BrandTitle.jsx';
 
 const NAV = [
   { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
@@ -20,7 +21,8 @@ export default function Layout() {
     if (location.pathname.startsWith('/dashboard')) return '분석 대시보드';
     if (location.pathname.startsWith('/products')) return '상품 상세 리포트';
     if (location.pathname.startsWith('/settings')) return '매핑 템플릿';
-    return '리뷰핏';
+    if (location.pathname.startsWith('/admin')) return '관리자 콘솔';
+    return 'ReviewFit';
   })();
 
   // 사이드바 하단 흐름 표시용 단계
@@ -34,13 +36,10 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <NavLink to="/" className="sidebar__brand">
-          <span className="sidebar__brand-logo">R</span>
-          <span>
-            <div className="sidebar__brand-name">리뷰핏</div>
-            <div className="sidebar__brand-sub">패션 셀러 리뷰 리포트</div>
-          </span>
-        </NavLink>
+        <div className="sidebar__brand">
+          <BrandTitle size="md" clickable />
+          <div className="sidebar__brand-sub">패션 셀러 리뷰 리포트</div>
+        </div>
 
         <div className="sidebar__nav-label">메뉴</div>
         {NAV.map((n) => (
@@ -71,7 +70,7 @@ export default function Layout() {
       <div className="main">
         <header className="topbar">
           <div className="topbar__crumbs">
-            <span>리뷰핏</span>
+            <span>ReviewFit</span>
             <span className="sep">/</span>
             <span className="here">{title}</span>
           </div>

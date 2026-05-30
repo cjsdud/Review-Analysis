@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import BrandTitle from '../../components/BrandTitle.jsx';
 
 const TABS = [
   { to: '/admin', label: '대시보드', end: true },
@@ -13,7 +14,10 @@ export default function AdminLayout() {
   return (
     <div className="admin-shell">
       <header className="admin-shell__header">
-        <div className="admin-shell__title">관리자 콘솔</div>
+        <div className="admin-shell__brand-row">
+          <BrandTitle size="sm" clickable />
+          <span className="admin-shell__title">관리자 콘솔</span>
+        </div>
         <div className="admin-shell__sub muted">운영 책임자 전용 — 모든 변경은 액션 로그에 기록됩니다.</div>
         <nav className="admin-tabs" role="tablist">
           {TABS.map((t) => (

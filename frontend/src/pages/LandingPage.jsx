@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import BrandTitle from '../components/BrandTitle.jsx';
 
 const PROBLEMS = [
   { icon: '🕒', title: '리뷰를 하나씩 읽기엔 시간이 너무 오래 걸려요', desc: '리뷰가 수백 건 쌓이는데, 어디서부터 봐야 할지 막막합니다.' },
@@ -20,8 +21,7 @@ export default function LandingPage() {
     <div className="landing">
       <nav className="landing__nav">
         <div className="landing__brand">
-          <span className="landing__logo">R</span>
-          리뷰핏
+          <BrandTitle size="md" clickable />
         </div>
         <button className="btn btn--primary btn--sm" onClick={() => navigate('/upload')}>
           시작하기

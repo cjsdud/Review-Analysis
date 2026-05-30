@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ReviewFit 워드마크 (임시 SVG)
+  - 업로드된 PNG 와 동일한 디자인 사양으로 작성한 임시 자산입니다.
+  - 색상: 왼쪽 짙은 네이비(REVIEW) → 오른쪽 밝은 블루(FIT) 그라데이션
+  - 배경: 투명
+  - 실제 PNG 로 교체할 때는 같은 경로에 reviewfit-title.png 를 넣고
+    BrandTitle 컴포넌트의 import 경로만 .png 로 바꿔 주세요.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" role="img" aria-label="ReviewFit">
+  <title>ReviewFit</title>
+  <defs>
+    <!-- 왼쪽 짙은 네이비 → 오른쪽 밝은 블루 -->
+    <linearGradient id="rf-wordmark" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#0e2454"/>
+      <stop offset="55%"  stop-color="#0e2454"/>
+      <stop offset="72%"  stop-color="#1d4dbf"/>
+      <stop offset="100%" stop-color="#2a87ff"/>
+    </linearGradient>
+  </defs>
+  <text
+    x="50%" y="50%"
+    text-anchor="middle"
+    dominant-baseline="central"
+    font-family="'Inter', 'Manrope', 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-weight="900"
+    font-size="150"
+    letter-spacing="-3"
+    fill="url(#rf-wordmark)"
+  >REVIEWFIT</text>
+</svg>

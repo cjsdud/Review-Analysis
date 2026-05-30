@@ -2,6 +2,7 @@
 // 토큰/믹스인은 CSS를 출력하지 않고, 나머지 partial 이 실제 스타일을 emit 한다.
 @use 'global';
 @use 'layout';
+@use 'brand';
 @use 'landing';
 @use 'upload';
 @use 'mapping';

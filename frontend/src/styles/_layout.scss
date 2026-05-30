@@ -22,29 +22,20 @@
 
   &__brand {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
     padding: 4px 8px $sp-5;
 
-    &-logo {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, $brand, #60a5fa);
-      display: grid;
-      place-items: center;
-      color: #fff;
-      font-weight: 800;
-      box-shadow: 0 4px 10px rgba($brand, 0.35);
+    // 사이드바 안에서 워드마크는 너무 커지지 않게 한 단계 더 줄임
+    .brand-title--md {
+      height: 22px;
     }
-    &-name {
-      font-weight: 800;
-      font-size: 15px;
-      line-height: 1.1;
-    }
+
     &-sub {
       font-size: 11px;
       color: $ink-400;
+      padding-left: 2px;
     }
   }
 

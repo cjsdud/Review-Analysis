@@ -14,6 +14,12 @@
     border-radius: $r-md;
     padding: $sp-4 $sp-5;
   }
+  &__brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
   &__title {
     font-size: 20px;
     font-weight: 800;
