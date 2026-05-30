@@ -5,6 +5,7 @@ import SummaryCards from '../components/SummaryCards.jsx';
 const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
 import TopFixTargets from '../components/TopFixTargets.jsx';
+import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
@@ -116,6 +117,23 @@ export default function DashboardPage() {
             </div>
           </div>
           <TopFixTargets ranking={summary.productRankingByIssues} products={products} onSelect={goProduct} />
+        </>
+      )}
+
+      {/* 리뷰 내용 요약 — 긍정/부정/중립 카드 + 전체 보기 모달 */}
+      {summary.reviewHighlights && (
+        <>
+          <div className="page-head" style={{ marginBottom: 12, marginTop: 24 }}>
+            <div>
+              <div className="page-head__title" style={{ fontSize: 17 }}>
+                리뷰 내용 요약
+              </div>
+              <div className="page-head__sub">
+                고객 리뷰에서 자주 보이는 긍정 의견과 부정 의견을 함께 정리했습니다. 부정 리뷰와 개선 이슈는 별도 개념이며, 긍정 리뷰 안에도 개선 포인트가 포함될 수 있습니다.
+              </div>
+            </div>
+          </div>
+          <ReviewHighlightsSection highlights={summary.reviewHighlights} analysisId={analysisId} />
         </>
       )}
 

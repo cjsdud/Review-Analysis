@@ -1544,6 +1544,219 @@ await step('admin reports analytics — 기본 동작', async () => {
   } finally { srv.close(); }
 });
 
+// ──────────────────────────────────────────────
+// 리뷰 내용 요약 (reviewHighlights) — themes 분류 / 오분류 방지 / topReviews
+// ──────────────────────────────────────────────
+async function runAnalysisHelper(reviews) {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  return runAnalysis(reviews);
+}
+function makeReview(id, productName, rating, content, createdAt = '2026-05-01') {
+  return { id, productName, rating, content, createdAt, source: 'custom', writer: null, title: null, replyText: null, reviewId: id, storeId: null };
+}
+
+await step('reviewHighlights — summary 에 positive/negative/neutral 모두 포함', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    makeReview('a', 'X', 5, '핏이 예쁘고 만족합니다.'),
+    makeReview('b', 'X', 2, '사이즈가 너무 작아요. 한 사이즈 크게 추천.'),
+    makeReview('c', 'X', 3, '전반적으로 무난합니다.'),
+  ];
+  const { summary } = await runAnalysis(reviews);
+  assert(summary.reviewHighlights, 'reviewHighlights 누락');
+  assert(summary.reviewHighlights.positive, 'positive 누락');
+  assert(summary.reviewHighlights.negative, 'negative 누락');
+  assert(summary.reviewHighlights.neutral, 'neutral 누락');
+  // 합계는 total = positive+neutral+negative 와 같다
+  const total = summary.reviewHighlights.positive.total + summary.reviewHighlights.negative.total + summary.reviewHighlights.neutral.total;
+  assert.equal(total, summary.totalReviews, `total mismatch: ${total} vs ${summary.totalReviews}`);
+});
+
+await step('reviewHighlights — 긍정 리뷰 안 개선 이슈가 부정으로 분류되지 않음', async () => {
+  // 별점 5점 + 긍정 표현이지만 개선 이슈도 있는 리뷰
+  const reviews = [
+    makeReview('h1', 'X', 5, '핏은 예쁜데 허리가 조금 타이트해요. 그래도 만족합니다.'),
+  ];
+  const { summary } = await runAnalysisHelper(reviews);
+  const rh = summary.reviewHighlights;
+  assert.equal(rh.positive.total, 1, `positive=${rh.positive.total} (expected 1)`);
+  assert.equal(rh.negative.total, 0, `negative=${rh.negative.total} (expected 0 — positive review with issue shouldn't be negative)`);
+});
+
+await step('reviewHighlights — 부정 반전 표현 오분류 방지', async () => {
+  // "비침이 거의 없어요" / "마감이 나쁘지 않아요" 류 — 부정 테마로 잡히면 안 됨
+  const reviews = [
+    makeReview('rev1', 'X', 5, '비침이 거의 없고 원단이 탄탄해서 좋아요.'),
+    makeReview('rev2', 'X', 4, '마감이 나쁘지 않고 가격 대비 품질이 좋아서 색상별로 더 사고 싶어요.'),
+  ];
+  const { summary } = await runAnalysisHelper(reviews);
+  const rh = summary.reviewHighlights;
+  assert.equal(rh.positive.total, 2, `positive=${rh.positive.total}`);
+  // 부정 테마 어디에도 "비침이 있어요" / "마감이 아쉬워요" / "가격 대비 아쉬워요" 들어가면 실패
+  const negThemes = rh.negative.themes.map((t) => t.label);
+  assert(!negThemes.includes('비침이 있어요'),     `negative theme에 '비침이 있어요' 잘못 포함됨: ${negThemes.join(',')}`);
+  assert(!negThemes.includes('마감이 아쉬워요'),   `negative theme에 '마감이 아쉬워요' 잘못 포함됨: ${negThemes.join(',')}`);
+  assert(!negThemes.includes('가격 대비 아쉬워요'), `negative theme에 '가격 대비 아쉬워요' 잘못 포함됨: ${negThemes.join(',')}`);
+});
+
+await step('reviewHighlights — 부정 리뷰의 themes 추출', async () => {
+  const reviews = [
+    makeReview('n1', 'X', 2, '사진보다 색상이 너무 어둡고 원단도 얇아서 아쉬워요.'),
+  ];
+  const { summary } = await runAnalysisHelper(reviews);
+  const rh = summary.reviewHighlights;
+  assert.equal(rh.negative.total, 1);
+  const negThemes = rh.negative.themes.map((t) => t.label);
+  // 색상 차이 + 원단 얇음 둘 다 잡혀야 함
+  assert(negThemes.includes('색상이 화면과 달라요'), `색상 차이 누락: ${negThemes.join(',')}`);
+  assert(negThemes.includes('원단이 얇아요'),        `원단 얇음 누락: ${negThemes.join(',')}`);
+});
+
+await step('reviewHighlights — 사이즈 방향 정확성 (한 치수 작게 사세요)', async () => {
+  const reviews = [
+    makeReview('s1', 'X', 4, '생각보다 품이 커서 정핏을 원하면 한 치수 작게 사는 게 좋겠어요.'),
+  ];
+  const { summary } = await runAnalysisHelper(reviews);
+  // 이 리뷰의 sentiment 와 size 방향은 기존 reviewClassification 가 정확히 판정해야 함
+  // → 우리가 추가한 reviewHighlights 테마에서 "사이즈가 작아요" 가 잡히면 실패
+  const allThemes = [
+    ...summary.reviewHighlights.positive.themes,
+    ...summary.reviewHighlights.negative.themes,
+    ...summary.reviewHighlights.neutral.themes,
+  ].map((t) => t.label);
+  assert(!allThemes.includes('사이즈가 작아요'), `사이즈가 작아요 잘못 잡힘: ${allThemes.join(',')}`);
+});
+
+// ──────────────────────────────────────────────
+// /api/analysis/:id/reviews — 전체 보기 API (sentiment 필터 / ownership)
+// ──────────────────────────────────────────────
+async function makeReviewsApi() {
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const analysisRoutes = (await import(`../src/routes/analysis.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  app.use('/api/analysis', analysisRoutes);
+  return app;
+}
+
+await step('reviews API — ownership: userA 본인 분석 200', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  const app = await makeReviewsApi();
+  const { srv, port } = await startServer(app);
+  try {
+    const email = `rva_${Date.now()}@x.com`;
+    const { userId, cookie } = await registerAndCookie(port, email);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_rev_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{"totalReviews":1}', userId);
+    db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?,?,?,?,?,?)')
+      .run(`pa_${aid}`, aid, 'X', 'X', JSON.stringify({
+        productKey: 'X', productName: 'X',
+        reviews: [
+          { id: 'r1', productName: 'X', rating: 5, content: '좋아요', createdAt: '2026-05-01', sentiment: 'positive', detectedIssues: [] },
+          { id: 'r2', productName: 'X', rating: 2, content: '작아요', createdAt: '2026-05-02', sentiment: 'negative', detectedIssues: [{ category: '사이즈', issue: '작음', isActionableIssue: true }] },
+        ],
+      }), userId);
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all`, { headers: { cookie } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.total, 2);
+    assert.equal(r.body.items.length, 2);
+  } finally { srv.close(); }
+});
+
+await step('reviews API — sentiment 필터 정확성', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  const app = await makeReviewsApi();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId, cookie } = await registerAndCookie(port, `rva2_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_rev_f_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{}', userId);
+    db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?,?,?,?,?,?)')
+      .run(`pa_${aid}`, aid, 'X', 'X', JSON.stringify({
+        productKey: 'X', productName: 'X',
+        reviews: [
+          { id: 'p1', productName: 'X', rating: 5, content: '좋아요', sentiment: 'positive', detectedIssues: [] },
+          { id: 'p2', productName: 'X', rating: 5, content: '훌륭', sentiment: 'positive', detectedIssues: [] },
+          { id: 'n1', productName: 'X', rating: 2, content: '나빠요', sentiment: 'negative', detectedIssues: [] },
+          { id: 'm1', productName: 'X', rating: 3, content: '무난', sentiment: 'neutral', detectedIssues: [] },
+        ],
+      }), userId);
+    const onlyPos = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=positive`, { headers: { cookie } });
+    assert.equal(onlyPos.body.total, 2, `positive=${onlyPos.body.total}`);
+    const onlyNeg = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=negative`, { headers: { cookie } });
+    assert.equal(onlyNeg.body.total, 1, `negative=${onlyNeg.body.total}`);
+    const onlyNeu = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=neutral`, { headers: { cookie } });
+    assert.equal(onlyNeu.body.total, 1, `neutral=${onlyNeu.body.total}`);
+    const all = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all`, { headers: { cookie } });
+    assert.equal(all.body.total, 4);
+  } finally { srv.close(); }
+});
+
+await step('reviews API — ownership: userB 가 userA 분석 접근 시 403', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  const app = await makeReviewsApi();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId: aId } = await registerAndCookie(port, `revA_${Date.now()}@x.com`);
+    const { cookie: bCookie } = await registerAndCookie(port, `revB_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_rev_x_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{}', aId);
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all`, { headers: { cookie: bCookie } });
+    assert.equal(r.status, 403);
+  } finally { srv.close(); }
+});
+
+await step('reviews API — 비로그인 401', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  const app = await makeReviewsApi();
+  const { srv, port } = await startServer(app);
+  try {
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/whatever/reviews`);
+    assert.equal(r.status, 401);
+  } finally { srv.close(); }
+});
+
+await step('reviews API — limit/offset 페이지네이션', async () => {
+  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+  const app = await makeReviewsApi();
+  const { srv, port } = await startServer(app);
+  try {
+    const { userId, cookie } = await registerAndCookie(port, `revp_${Date.now()}@x.com`);
+    const { default: db } = await import('../src/db/database.js');
+    const { nanoid } = await import('nanoid');
+    const aid = 'an_rev_p_' + nanoid();
+    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)')
+      .run(aid, null, 'done', '{}', userId);
+    const reviewsArr = [];
+    for (let i = 0; i < 25; i++) {
+      reviewsArr.push({ id: `r${i}`, productName: 'X', rating: 5, content: `좋아요 ${i}`, sentiment: 'positive', detectedIssues: [] });
+    }
+    db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?,?,?,?,?,?)')
+      .run(`pa_${aid}`, aid, 'X', 'X', JSON.stringify({ productKey: 'X', productName: 'X', reviews: reviewsArr }), userId);
+    const page1 = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all&limit=10&offset=0`, { headers: { cookie } });
+    assert.equal(page1.body.total, 25);
+    assert.equal(page1.body.items.length, 10);
+    const page2 = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all&limit=10&offset=10`, { headers: { cookie } });
+    assert.equal(page2.body.items.length, 10);
+    const page3 = await jsonFetch(`http://127.0.0.1:${port}/api/analysis/${aid}/reviews?sentiment=all&limit=10&offset=20`, { headers: { cookie } });
+    assert.equal(page3.body.items.length, 5);
+  } finally { srv.close(); }
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

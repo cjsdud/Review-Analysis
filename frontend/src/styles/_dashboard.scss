@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use 'variables' as *;
 @use 'mixins' as *;
 
@@ -164,88 +165,366 @@
   }
 }
 
-// ===== '이번에 먼저 고칠 상품' 강조 카드 =====
+// ===== '이번에 먼저 고칠 상품 TOP 3' (재설계) =====
 .fix-targets {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: $sp-3;
   margin-bottom: $sp-5;
 
-  @media (max-width: $bp-laptop) {
-    grid-template-columns: 1fr;
+  &--grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: $sp-3;
+  }
+
+  &__empty {
+    margin-bottom: $sp-5;
+  }
+
+  @media (max-width: $bp-tablet) {
+    &--grid { grid-template-columns: 1fr; }
   }
 }
+
 .fix-card {
-  position: relative;
-  background: linear-gradient(160deg, $primary-soft, $card 65%);
-  border: 1px solid $primary-light;
+  background: $card;
+  border: 1px solid $border;
   border-radius: $r-lg;
   padding: $sp-4 $sp-5;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: transform $transition, box-shadow $transition;
+  gap: $sp-3;
+  cursor: pointer;
+  transition: border-color $transition, box-shadow $transition, transform $transition;
+  box-shadow: $shadow-xs;
+  min-width: 0;
 
   &:hover {
-    transform: translateY(-2px);
+    border-color: $primary;
     box-shadow: $shadow-md;
-    border-color: $primary-200;
+  }
+  &:focus-visible {
+    outline: 2px solid $primary;
+    outline-offset: 2px;
   }
 
-  &__rank {
-    position: absolute;
-    top: $sp-4;
-    right: $sp-4;
-    width: 26px;
-    height: 26px;
-    border-radius: 8px;
-    background: $primary;
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-weight: 800;
-    font-size: 13px;
+  // TOP 1 강조 — 더 강한 좌측 accent line
+  &--rank-1 {
+    border-top: 3px solid $primary;
   }
-  &__name {
-    font-size: 15px;
-    font-weight: 800;
-    padding-right: 36px;
-    color: $text-main;
+  &--rank-2 {
+    border-top: 3px solid $primary-200;
   }
-  &__metrics {
+  &--rank-3 {
+    border-top: 3px solid color.adjust($primary-200, $lightness: 8%);
+  }
+
+  &__head {
     display: flex;
-    gap: 10px;
-    font-size: 12px;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  &__rank-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: $r-pill;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    background: $surface-2;
     color: $text-sub;
-    b {
-      color: $text-main;
-      font-weight: 700;
-    }
-  }
-  &__issues {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: 4px;
+    border: 1px solid $border;
 
-    li {
-      font-size: 13px;
+    &--1 { background: $primary; color: #fff; border-color: $primary; }
+    &--2 { background: $primary-soft; color: $primary-dark; border-color: $primary-200; }
+    &--3 { background: $surface-2; color: $text-sub; border-color: $border; }
+  }
+
+  &__name {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.35;
+    color: $text-main;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  &__metric {
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    &-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: $text-sub;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    &-value {
+      font-size: 16px;
+      font-weight: 800;
       color: $text-main;
-      padding-left: 12px;
-      position: relative;
-      &::before {
-        content: '•';
-        position: absolute;
-        left: 0;
-        color: $primary;
-        font-weight: 800;
-      }
+
+      &.is-warning { color: $danger; }
     }
   }
+
+  &__issues {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  &__issues-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: $text-sub;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  &__chip {
+    display: inline-block;
+    background: $primary-soft;
+    color: $primary-dark;
+    border: 1px solid $primary-200;
+    border-radius: $r-pill;
+    padding: 3px 9px;
+    font-size: 12px;
+    font-weight: 600;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+
+  &__why {
+    margin: 0;
+    color: $text-sub;
+    font-size: 13px;
+    line-height: 1.55;
+    word-break: keep-all;
+  }
+
   &__cta {
     margin-top: auto;
-    align-self: flex-start;
+    align-self: stretch;
+    min-height: 36px;
+  }
+
+  @media (max-width: $bp-tablet) {
+    padding: $sp-4;
+    &__cta { min-height: 44px; }
+    &__metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 480px) {
+    &__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+}
+
+// ===== 리뷰 내용 요약 (긍정/부정/중립 카드) =====
+.rh-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: $sp-3;
+  margin-bottom: $sp-5;
+
+  @media (max-width: $bp-laptop) {
+    grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: $bp-tablet) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rh-card {
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  padding: $sp-4 $sp-5;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-3;
+  box-shadow: $shadow-xs;
+  min-width: 0;
+
+  &--positive { border-top: 3px solid $success; }
+  &--negative { border-top: 3px solid $warning; }
+  &--neutral  { border-top: 3px solid $primary-200; }
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  &__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: $text-main;
+    word-break: keep-all;
+  }
+  &__count {
+    text-align: right;
+    flex-shrink: 0;
+    &-num {
+      display: block;
+      font-size: 22px;
+      font-weight: 800;
+      color: $text-main;
+      line-height: 1.1;
+    }
+    &-label {
+      font-size: 11px;
+    }
+  }
+
+  &__empty {
+    background: $surface-2;
+    border: 1px dashed $border;
+    border-radius: $r-md;
+    padding: $sp-3 $sp-4;
+    &-title { font-weight: 700; font-size: 13px; color: $text-main; }
+    &-desc { font-size: 12px; margin-top: 2px; }
+  }
+
+  &__theme-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  &__theme-intro {
+    font-size: 12px;
+  }
+  &__themes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  &__theme {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  &__theme-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: $r-pill;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    word-break: keep-all;
+    max-width: 75%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--positive { background: $success-soft; color: $success; border-color: rgba($success, 0.25); }
+    &--negative { background: $warning-soft; color: #b45309; border-color: rgba($warning, 0.3); }
+    &--neutral  { background: $primary-soft; color: $primary-dark; border-color: $primary-200; }
+  }
+  &__theme-count {
+    font-size: 12px;
+    color: $text-sub;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  &__reviews {
+    border-top: 1px dashed $border;
+    padding-top: $sp-3;
+  }
+  &__reviews-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: $text-sub;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  &__review-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  &__review {
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    padding: 8px 12px;
+  }
+  &__review-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: $text-sub;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+  &__review-rating {
+    color: #d97706;
+    font-weight: 700;
+  }
+  &__review-product {
+    color: $text-main;
+    font-weight: 700;
+    word-break: keep-all;
+  }
+  &__review-content {
+    font-size: 13px;
+    line-height: 1.55;
+    color: $text-main;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &__foot {
+    margin-top: auto;
+  }
+  &__cta {
+    width: 100%;
+    min-height: 36px;
+  }
+
+  @media (max-width: $bp-tablet) {
+    &__cta { min-height: 44px; }
   }
 }
 

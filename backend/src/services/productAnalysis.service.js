@@ -3,6 +3,12 @@ import { nanoid } from 'nanoid';
 import { applyReviewCorrections, classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.js';
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
+import {
+  extractPositiveKeywords,
+  extractFrequentKeywords,
+  buildReviewTrends,
+} from './keywordAnalysis.service.js';
+import { buildReviewHighlights } from './reviewHighlights.service.js';
 
 // 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외, 긍정/중립 제외).
 const meaningfulCategories = (c) =>
@@ -205,6 +211,11 @@ export async function runAnalysis(reviews, corrections = []) {
     const clsById = new Map(productCls.map((c) => [c.reviewId, c]));
     const productReviewList = productReviews.map((r) => maskedReviewForProduct(r, clsById.get(r.id)));
 
+    // 7) 키워드 + 추이 (신규)
+    const positiveKeywords = extractPositiveKeywords(productReviews, productCls);
+    const frequentKeywords = extractFrequentKeywords(productReviews, productCls);
+    const reviewTrends = buildReviewTrends(productReviews, productCls);
+
     products.push({
       productKey: productName,
       productName,
@@ -227,6 +238,10 @@ export async function runAnalysis(reviews, corrections = []) {
       replyTemplates,
       summary: report.summary || '',
       reviews: productReviewList,
+      // 신규 필드 (기존 필드는 그대로)
+      positiveKeywords,
+      frequentKeywords,
+      reviewTrends,
     });
   }
 
@@ -271,6 +286,21 @@ export async function runAnalysis(reviews, corrections = []) {
     topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
   });
 
+  // 전체 키워드 TOP 10 — 모든 리뷰 기준으로 한 번 더 추출 (상품별과 별도 집계라 합산이 아닌 전역 매칭)
+  const positiveKeywordsTop10All = extractPositiveKeywords(reviews, classifications);
+  const frequentKeywordsTop10All = extractFrequentKeywords(reviews, classifications);
+  const positiveKeywordsTop10 = positiveKeywordsTop10All.slice(0, 10).map((k) => ({
+    keyword: k.keyword,
+    count: k.count,
+    ratio: k.ratio,
+  }));
+  const frequentKeywordsTop10 = frequentKeywordsTop10All.slice(0, 10).map((k) => ({
+    keyword: k.keyword,
+    count: k.count,
+    ratio: k.ratio,
+    sentimentHint: k.sentimentHint,
+  }));
+
   const summary = {
     totalReviews,
     negativeReviews,
@@ -301,6 +331,10 @@ export async function runAnalysis(reviews, corrections = []) {
     })),
     aiComment: overall.summary,
     aiMode: aiClient.aiMode,
+    // 신규 필드
+    positiveKeywordsTop10,
+    frequentKeywordsTop10,
+    reviewHighlights: buildReviewHighlights(reviews, classifications),
   };
 
   return { analysisId: nanoid(), summary, products, classifications };

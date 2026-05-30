@@ -6,6 +6,7 @@ import { runAnalysis } from '../services/productAnalysis.service.js';
 import { buildAnalysisCsv } from '../services/export.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { checkCanCreateAnalysis, recordUsage } from '../services/billing.service.js';
+import { serializeReviewForList, sentimentOf } from '../services/reviewHighlights.service.js';
 
 const router = Router();
 
@@ -249,6 +250,70 @@ router.get('/:id/products/:productKey', requireAuth, (req, res) => {
   const product = JSON.parse(row.data);
   const corrections = loadCorrections(req.params.id, req.params.productKey);
   res.json(applyCorrections(product, corrections));
+});
+
+// GET /api/analysis/:id/reviews — 전체 보기용 리뷰 리스트 (sentiment/filter/sort/pagination)
+// query:
+//   sentiment=positive|neutral|negative|all (기본 all)
+//   hasIssue=true|false
+//   productName=...   keyword=...   rating=1-5   source=...
+//   sort=latest|oldest|ratingDesc|ratingAsc|issuesDesc (기본 latest)
+//   limit=20 (max 100), offset=0
+router.get('/:id/reviews', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
+
+  // product_analyses 에 저장된 product.reviews 를 모아 전체 리뷰 리스트를 구성한다.
+  // (uploads.rows 는 분석 후 NULL 처리되어 있을 수 있으므로 product_analyses 가 정답)
+  const productRows = db
+    .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
+    .all(req.params.id);
+  let allReviews = [];
+  for (const pr of productRows) {
+    try {
+      const p = JSON.parse(pr.data);
+      if (Array.isArray(p.reviews)) allReviews = allReviews.concat(p.reviews);
+    } catch { /* skip corrupt */ }
+  }
+
+  // 필터
+  const q = req.query;
+  const sentiment = (q.sentiment || 'all').toLowerCase();
+  const hasIssueFilter = q.hasIssue === 'true' ? true : q.hasIssue === 'false' ? false : null;
+  const productName = (q.productName || '').trim().toLowerCase();
+  const keyword = (q.keyword || '').trim().toLowerCase();
+  const rating = q.rating != null && q.rating !== '' ? Number(q.rating) : null;
+  const source = (q.source || '').trim();
+
+  let filtered = allReviews;
+  if (sentiment !== 'all') {
+    filtered = filtered.filter((r) => (r.sentiment || 'neutral') === sentiment);
+  }
+  if (hasIssueFilter !== null) {
+    filtered = filtered.filter((r) => {
+      const has = (r.detectedIssues || []).some((i) => i.isActionableIssue !== false && i.category !== '기타');
+      return hasIssueFilter ? has : !has;
+    });
+  }
+  if (productName) filtered = filtered.filter((r) => (r.productName || '').toLowerCase().includes(productName));
+  if (keyword)     filtered = filtered.filter((r) => (`${r.title || ''} ${r.content || ''}`).toLowerCase().includes(keyword));
+  if (rating != null && !Number.isNaN(rating)) filtered = filtered.filter((r) => r.rating === rating);
+  if (source)      filtered = filtered.filter((r) => (r.source || '') === source);
+
+  // 정렬
+  const sort = q.sort || 'latest';
+  const cmpDate = (a, b, dir = 1) => dir * String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  const issueCount = (r) => (r.detectedIssues || []).filter((i) => i.isActionableIssue !== false).length;
+  if (sort === 'oldest')      filtered = [...filtered].sort((a, b) => -cmpDate(a, b));
+  else if (sort === 'ratingDesc') filtered = [...filtered].sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+  else if (sort === 'ratingAsc')  filtered = [...filtered].sort((a, b) => (a.rating ?? 99) - (b.rating ?? 99));
+  else if (sort === 'issuesDesc') filtered = [...filtered].sort((a, b) => issueCount(b) - issueCount(a));
+  else                            filtered = [...filtered].sort((a, b) => cmpDate(a, b));
+
+  const limit = Math.max(1, Math.min(Number(q.limit) || 20, 100));
+  const offset = Math.max(0, Number(q.offset) || 0);
+  const total = filtered.length;
+  const items = filtered.slice(offset, offset + limit);
+  res.json({ items, total, limit, offset });
 });
 
 // GET /api/analysis/:id/export.csv — CSV 다운로드
