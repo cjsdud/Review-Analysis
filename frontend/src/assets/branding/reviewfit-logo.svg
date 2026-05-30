@@ -1,28 +1,46 @@
-<svg width="920" height="180" viewBox="0 0 920 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">ReviewFit Logo</title>
-  <desc id="desc">ReviewFit wordmark logo in navy and blue gradient</desc>
-  <defs>
-    <linearGradient id="reviewfitGradient" x1="60" y1="90" x2="860" y2="90" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#102A5C"/>
-      <stop offset="44%" stop-color="#1B5FC4"/>
-      <stop offset="76%" stop-color="#159AE8"/>
-      <stop offset="100%" stop-color="#22B8FF"/>
-    </linearGradient>
-    <filter id="softShadow" x="0" y="0" width="920" height="180" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#0B2A5A" flood-opacity="0.08"/>
-    </filter>
-  </defs>
+<svg width="960" height="180" viewBox="0 0 960 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rfTitle rfDesc">
+  <title id="rfTitle">ReviewFit</title>
+  <desc id="rfDesc">ReviewFit wordmark — REVIEW in navy, FIT in bright blue, transparent background</desc>
 
-  <g filter="url(#softShadow)">
-    <text
-      x="56"
-      y="119"
-      fill="url(#reviewfitGradient)"
-      font-family="Inter, Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-      font-size="88"
-      font-weight="900"
-      letter-spacing="-5.4">
-      REVIEWFIT
-    </text>
+  <!-- REVIEW: dark navy -->
+  <g fill="#0A1E4C">
+    <!-- R -->
+    <rect x="30" y="15" width="32" height="150"/>
+    <rect x="30" y="15" width="110" height="28"/>
+    <rect x="108" y="15" width="32" height="68"/>
+    <rect x="30" y="71" width="106" height="28"/>
+    <polygon points="62,99 96,99 140,165 108,165"/>
+    <!-- E1 -->
+    <rect x="144" y="15" width="32" height="150"/>
+    <rect x="144" y="15" width="92" height="28"/>
+    <rect x="144" y="76" width="84" height="28"/>
+    <rect x="144" y="137" width="92" height="28"/>
+    <!-- V -->
+    <polygon points="232,15 264,15 298,92 332,15 364,15 298,165"/>
+    <!-- I1 -->
+    <rect x="368" y="15" width="32" height="150"/>
+    <!-- E2 -->
+    <rect x="404" y="15" width="32" height="150"/>
+    <rect x="404" y="15" width="92" height="28"/>
+    <rect x="404" y="76" width="84" height="28"/>
+    <rect x="404" y="137" width="92" height="28"/>
+    <!-- W: 4 strokes meeting at two valleys + shared peak top -->
+    <polygon points="492,15 524,15 557,165 525,165"/>
+    <polygon points="525,165 557,165 594,85 562,85"/>
+    <polygon points="562,85 594,85 631,165 599,165"/>
+    <polygon points="599,165 631,165 664,15 632,15"/>
+  </g>
+
+  <!-- FIT: bright blue -->
+  <g fill="#1B73E8">
+    <!-- F -->
+    <rect x="686" y="15" width="32" height="150"/>
+    <rect x="686" y="15" width="92" height="28"/>
+    <rect x="686" y="76" width="78" height="28"/>
+    <!-- I2 -->
+    <rect x="782" y="15" width="32" height="150"/>
+    <!-- T -->
+    <rect x="818" y="15" width="112" height="28"/>
+    <rect x="858" y="15" width="32" height="150"/>
   </g>
 </svg>
