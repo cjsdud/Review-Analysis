@@ -5,9 +5,10 @@
 //   <BrandTitle size="lg" clickable={false} />    // 큰 워드마크 (로그인/랜딩)
 //   <BrandTitle size="sm" clickable />            // 사이드바/탑바용 (홈으로)
 //
-// 자산 교체:
-//   `frontend/src/assets/branding/reviewfit-title.svg` 또는 `.png` 가 공식 워드마크.
-//   PNG 로 바꾸려면 같은 경로에 reviewfit-title.png 를 두고 아래 import 만 .png 로 변경.
+// 자산:
+//   `frontend/src/assets/branding/reviewfit-title.png`     — 풀 해상도 원본 (1142x188, 트림+패딩 적용)
+//   `frontend/src/assets/branding/reviewfit-title@2x.png`  — 600x99 (retina/HiDPI 헤더용)
+//   `frontend/src/assets/branding/reviewfit-title@1x.png`  — 300x49 (저해상도/사이드바용)
 //
 // 접근성:
 //   - <img alt="ReviewFit"> 로 식별 가능.
@@ -18,9 +19,12 @@
 //   - height 기준으로 크기를 잡고 width:auto (비율 유지).
 //   - object-fit: contain, user-select: none, max-width: 100% 는 _brand.scss 에 정의.
 //   - 좁은 헤더에서 늘어나지 않도록 부모가 flex-shrink: 0 으로 감싸는 것을 권장.
+//   - srcset 으로 HiDPI 디스플레이에서 또렷하게.
 
 import { Link } from 'react-router-dom';
-import wordmark from '../assets/branding/reviewfit-title.svg';
+import wordmark from '../assets/branding/reviewfit-title.png';
+import wordmark1x from '../assets/branding/reviewfit-title@1x.png';
+import wordmark2x from '../assets/branding/reviewfit-title@2x.png';
 
 const SIZE_CLASS = {
   sm: 'brand-title--sm',
@@ -39,7 +43,8 @@ export default function BrandTitle({
 
   const img = (
     <img
-      src={wordmark}
+      src={wordmark1x}
+      srcSet={`${wordmark1x} 1x, ${wordmark2x} 2x, ${wordmark} 4x`}
       alt="ReviewFit"
       className="brand-title__img"
       draggable="false"
