@@ -121,7 +121,8 @@ function HighlightCard({ data, meta, onOpen }) {
   );
 }
 
-export default function ReviewHighlightsSection({ highlights, analysisId }) {
+// initialProductName 이 주어지면 모달이 자동으로 그 상품만 필터해서 보여준다 — 상품 상세에서 사용.
+export default function ReviewHighlightsSection({ highlights, analysisId, initialProductName = '' }) {
   const [openSentiment, setOpenSentiment] = useState(null); // null | 'positive' | 'negative' | 'neutral'
 
   if (!highlights) return null;
@@ -144,6 +145,7 @@ export default function ReviewHighlightsSection({ highlights, analysisId }) {
         onClose={() => setOpenSentiment(null)}
         analysisId={analysisId}
         initialSentiment={openSentiment || 'all'}
+        initialProductName={initialProductName}
       />
     </>
   );

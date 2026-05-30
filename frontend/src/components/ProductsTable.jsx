@@ -77,11 +77,14 @@ function pct(n) {
   return `${Math.round((n || 0) * 100)}%`;
 }
 
+// 카드당 표시할 주요 이슈 chip 최대 개수. 나머지는 "+N" 으로 축약해 카드 높이 폭주를 막는다.
+const MAX_CHIPS = 2;
+
 function ProductRowCard({ product: p, onSelect }) {
   const negPct = pct(p.negativeRatio);
-  // 목록 응답은 topIssue 1개만 내려옴 — 그대로 chip 으로 표시.
-  const chips = (p.topIssues || []).slice(0, 3);
-  const chipsToShow = chips.length ? chips : (p.topIssue ? [p.topIssue] : []);
+  const allChips = p.topIssues?.length ? p.topIssues : (p.topIssue ? [p.topIssue] : []);
+  const chipsToShow = allChips.slice(0, MAX_CHIPS);
+  const extraChipCount = Math.max(0, allChips.length - MAX_CHIPS);
 
   function go(e) {
     e?.stopPropagation();
@@ -98,8 +101,16 @@ function ProductRowCard({ product: p, onSelect }) {
     >
       <div className="product-summary-card__main">
         <div className="product-summary-card__title-row">
-          <div className="product-summary-card__title-text" title={p.productName}>
-            {p.productName}
+          <div className="product-summary-card__title-block">
+            <div className="product-summary-card__title-text" title={p.productName}>
+              {p.productName}
+            </div>
+            <div className="product-summary-card__title-meta muted">
+              리뷰 {p.totalReviews ?? 0}건
+              {p.averageRating != null && (
+                <span> · 평균 ★ {p.averageRating.toFixed(2)}</span>
+              )}
+            </div>
           </div>
           <ProductStatusBadge status={p.productStatus} />
         </div>
@@ -111,6 +122,14 @@ function ProductRowCard({ product: p, onSelect }) {
                 {iss.issueLabel}
               </span>
             ))}
+            {extraChipCount > 0 && (
+              <span
+                className="tag tag--neutral product-summary-card__chip-more"
+                title={`이외 ${extraChipCount}개 이슈`}
+              >
+                +{extraChipCount}
+              </span>
+            )}
           </div>
         ) : (
           <div className="product-summary-card__chips muted" style={{ fontSize: 12 }}>
@@ -121,10 +140,8 @@ function ProductRowCard({ product: p, onSelect }) {
 
       <div className="product-summary-card__side">
         <div className="product-summary-card__metrics">
-          <Metric label="리뷰" value={p.totalReviews ?? 0} />
-          <Metric label="평균 별점" value={p.averageRating != null ? `★ ${p.averageRating.toFixed(2)}` : '—'} />
           <Metric label="부정 비율" value={negPct} highlight={(p.negativeRatio || 0) >= 0.25} />
-          <Metric label="개선 이슈" value={`${p.issueReviewCount ?? 0}건`} />
+          <Metric label="개선 이슈 리뷰" value={`${p.issueReviewCount ?? 0}건`} />
         </div>
         <SentimentBar
           counts={p.sentimentCounts}

@@ -216,6 +216,10 @@ export async function runAnalysis(reviews, corrections = []) {
     const frequentKeywords = extractFrequentKeywords(productReviews, productCls);
     const reviewTrends = buildReviewTrends(productReviews, productCls);
 
+    // 8) 상품 단위 리뷰 반응 요약 (긍정/중립/부정 themes + topReviews)
+    //    전체 summary.reviewHighlights 와 별도 — 이 상품 리뷰만 입력.
+    const reviewHighlights = buildReviewHighlights(productReviews, productCls);
+
     products.push({
       productKey: productName,
       productName,
@@ -242,6 +246,7 @@ export async function runAnalysis(reviews, corrections = []) {
       positiveKeywords,
       frequentKeywords,
       reviewTrends,
+      reviewHighlights,
     });
   }
 

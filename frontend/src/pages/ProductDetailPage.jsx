@@ -8,6 +8,7 @@ import SentimentBar from '../components/SentimentBar.jsx';
 import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
 import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import ReviewsModal from '../components/ReviewsModal.jsx';
+import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 
@@ -153,6 +154,21 @@ export default function ProductDetailPage() {
           <div className="product-header__insight">{product.productInsight}</div>
         )}
       </div>
+
+      {/* 섹션: 이 상품의 리뷰 반응 (긍정/중립/부정) */}
+      {product.reviewHighlights && (
+        <SectionCard
+          title="이 상품의 리뷰 반응"
+          subtitle="해당 상품 리뷰에서 많이 보이는 긍정·중립·부정 의견을 정리했습니다. 각 카드의 ‘전체 보기’로 이 상품의 마스킹된 리뷰 데이터를 감성별로 확인할 수 있어요."
+          className="mb-5"
+        >
+          <ReviewHighlightsSection
+            highlights={product.reviewHighlights}
+            analysisId={analysisId}
+            initialProductName={product.productName}
+          />
+        </SectionCard>
+      )}
 
       {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard

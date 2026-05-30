@@ -801,6 +801,37 @@ await step('hybrid — analyzeTextSentiment helper export 검증', async () => {
   assert.equal(sig3.hasSevereComplaint, false);
 });
 
+// ──────────────────────────────────────────────
+// 상품 단위 reviewHighlights — 상품 상세 리뷰 반응 섹션용
+// ──────────────────────────────────────────────
+await step('상품 reviewHighlights — 상품 단위 positive/neutral/negative 분리', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: 'ph1', productName: 'A', rating: 5, content: '핏이 예쁘고 만족합니다.' },
+    { id: 'ph2', productName: 'A', rating: 5, content: '소재가 좋아요. 재구매 의사 있어요.' },
+    { id: 'ph3', productName: 'A', rating: 3, content: '무난해요.' },
+    { id: 'ph4', productName: 'A', rating: 1, content: '환불 원합니다. 너무 작아요. 실망이에요.' },
+    // 다른 상품은 섞이지 않아야 함
+    { id: 'pb1', productName: 'B', rating: 5, content: '좋아요 만족합니다.' },
+  ];
+  const { products } = await runAnalysis(reviews);
+  const a = products.find((p) => p.productName === 'A');
+  assert(a.reviewHighlights, 'reviewHighlights 없음');
+  assert.equal(a.reviewHighlights.positive.total, 2, `A positive=${a.reviewHighlights.positive.total}`);
+  assert.equal(a.reviewHighlights.neutral.total, 1);
+  assert.equal(a.reviewHighlights.negative.total, 1);
+  // 상품 A 의 highlights 에 B 리뷰가 섞이지 않아야 함
+  const allHighlightProducts = [
+    ...(a.reviewHighlights.positive.topReviews || []),
+    ...(a.reviewHighlights.neutral.topReviews || []),
+    ...(a.reviewHighlights.negative.topReviews || []),
+  ].map((r) => r.productName);
+  assert(allHighlightProducts.every((n) => n === 'A'), `A highlights 에 다른 상품 섞임: ${allHighlightProducts.join(',')}`);
+  // 상품 B 도 자체 highlights 가짐
+  const b = products.find((p) => p.productName === 'B');
+  assert.equal(b.reviewHighlights.positive.total, 1);
+});
+
 await step('상품 상태 — deriveProductStatus 분기 검증', async () => {
   const { deriveProductStatus } = await import('../src/services/productAnalysis.service.js');
   assert.equal(deriveProductStatus({ totalReviews: 5, positiveRatio: 0.8, negativeRatio: 0, issueRatio: 0 }), '리뷰 부족');

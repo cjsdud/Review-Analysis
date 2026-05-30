@@ -789,8 +789,10 @@
 }
 
 .product-summary-card {
+  // 상품명 영역이 카드 가로의 절반을 넘지 않도록 left 컬럼 폭을 강하게 제한.
+  // 우측 지표/감성바/액션이 안정적으로 보이는 공간을 확보한다.
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 360px);
   gap: $sp-4;
   background: $card;
   border: 1px solid $border;
@@ -823,7 +825,16 @@
     flex-wrap: wrap;
   }
 
-  // 핵심: 한글 상품명이 한 글자씩 세로로 쪼개지지 않도록 keep-all + 2줄 line-clamp.
+  // 상품명 + 보조 메타("리뷰 N건 · 평균 ★X") 를 한 묶음으로.
+  &__title-block {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  // 한글 상품명이 한 글자씩 세로로 쪼개지지 않도록 keep-all + 2줄 line-clamp.
   &__title-text {
     font-size: 16px;
     font-weight: 700;
@@ -831,13 +842,17 @@
     line-height: 1.4;
     word-break: keep-all;
     overflow-wrap: break-word;
-    flex: 1;
     min-width: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  &__title-meta {
+    font-size: 12px;
+    line-height: 1.3;
   }
 
   &__chips {
@@ -853,6 +868,12 @@
     }
   }
 
+  // "+N" 축약 칩 — 약간 더 진한 톤으로 구분.
+  &__chip-more {
+    font-weight: 700;
+    background: $surface-2;
+  }
+
   &__side {
     display: flex;
     flex-direction: column;
@@ -860,6 +881,8 @@
     min-width: 0;
   }
 
+  // 우측 핵심 지표 — 부정 비율 + 개선 이슈 리뷰 수 2개만 강조.
+  // 리뷰 수/평균 별점은 좌측 title-meta 로 이동했다.
   &__metrics {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
