@@ -23,6 +23,8 @@
     object-fit: contain;
     user-select: none;
     pointer-events: none;
+    // 래스터(JPG) 다운스케일 시 또렷도 보정
+    image-rendering: -webkit-optimize-contrast;
   }
 
   // 스크린리더 fallback (시각적으로는 숨김)

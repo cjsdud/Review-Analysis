@@ -6,8 +6,8 @@
 //   <BrandTitle size="sm" clickable />            // 사이드바/탑바용 (홈으로)
 //
 // 자산:
-//   `frontend/src/assets/branding/reviewfit-logo.svg`         — 풀 워드마크 (해상도 무관, 항상 또렷)
-//   `frontend/src/assets/branding/reviewfit-logo-compact.svg` — RF 컴팩트 아이콘 (favicon/앱 아이콘 후보, 현재 미사용 / TODO)
+//   `frontend/src/assets/branding/reviewfit-logo.jpg`         — 풀 워드마크 (사용자 원본 JPG, 1231x294)
+//   `frontend/src/assets/branding/reviewfit-logo-compact.svg` — RF 컴팩트 아이콘 (favicon)
 //
 // 접근성:
 //   - <img alt="ReviewFit"> 로 식별 가능.
@@ -17,10 +17,10 @@
 // 반응형:
 //   - height 기준으로 크기를 잡고 width:auto (비율 유지).
 //   - object-fit: contain, user-select: none, max-width 는 _brand.scss 에 정의.
-//   - SVG 라 모든 DPR / 줌 레벨에서 또렷 — srcset / image-rendering 트릭 불필요.
+//   - 래스터(JPG) 라 다운스케일 시 또렷도 보정: image-rendering: -webkit-optimize-contrast (_brand.scss).
 
 import { Link } from 'react-router-dom';
-import wordmark from '../assets/branding/reviewfit-logo.svg';
+import wordmark from '../assets/branding/reviewfit-logo.jpg';
 
 const SIZE_CLASS = {
   sm: 'brand-title--sm',
