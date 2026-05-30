@@ -1,0 +1,28 @@
+<svg width="920" height="180" viewBox="0 0 920 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">ReviewFit Logo</title>
+  <desc id="desc">ReviewFit wordmark logo in navy and blue gradient</desc>
+  <defs>
+    <linearGradient id="reviewfitGradient" x1="60" y1="90" x2="860" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#102A5C"/>
+      <stop offset="44%" stop-color="#1B5FC4"/>
+      <stop offset="76%" stop-color="#159AE8"/>
+      <stop offset="100%" stop-color="#22B8FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="0" y="0" width="920" height="180" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#0B2A5A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#softShadow)">
+    <text
+      x="56"
+      y="119"
+      fill="url(#reviewfitGradient)"
+      font-family="Inter, Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      font-size="88"
+      font-weight="900"
+      letter-spacing="-5.4">
+      REVIEWFIT
+    </text>
+  </g>
+</svg>

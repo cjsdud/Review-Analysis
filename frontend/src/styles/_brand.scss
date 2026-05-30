@@ -1,8 +1,9 @@
 @use 'variables' as *;
 
 // ===== BrandTitle (공식 워드마크) =====
-// 데스크톱: 헤더 약 28~40px, 모바일: 22~32px (height 기준).
-// width: auto + object-fit: contain 으로 비율 유지, 흐림/찌그러짐 방지.
+// SVG 워드마크라 모든 DPR / 줌에서 또렷 — height 만으로 크기를 잡고,
+// width:auto + object-fit:contain + max-width 로 비율 유지 / 헤더 폭 폭주 방지.
+// transform: scale() / filter: blur() / image-rendering: pixelated 사용 금지.
 .brand-title {
   display: inline-flex;
   align-items: center;
@@ -12,6 +13,7 @@
   user-select: none;
   flex-shrink: 0;
   max-width: 100%;
+  line-height: 1;
 
   &__img {
     display: block;
@@ -21,9 +23,6 @@
     object-fit: contain;
     user-select: none;
     pointer-events: none;
-    // 다운스케일 시 또렷하게
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
   }
 
   // 스크린리더 fallback (시각적으로는 숨김)
@@ -39,33 +38,49 @@
     border: 0;
   }
 
-  // 크기 (height 기준, width 자동)
+  // 크기 (height 기준, width 자동, max-width 로 헤더 폭주 방지)
   &--sm {
     height: 22px;
+    .brand-title__img { max-width: 140px; }
     @media (min-width: $bp-tablet + 1) {
       height: 26px;
+      .brand-title__img { max-width: 160px; }
     }
   }
   &--md {
     height: 28px;
+    .brand-title__img { max-width: 170px; }
     @media (min-width: $bp-tablet + 1) {
       height: 34px;
+      .brand-title__img { max-width: 200px; }
     }
   }
   &--lg {
     height: 40px;
+    .brand-title__img { max-width: 220px; }
     @media (min-width: $bp-tablet + 1) {
       height: 56px;
+      .brand-title__img { max-width: 300px; }
     }
   }
 
-  // 매우 좁은 화면(<360px) 안전망
-  @media (max-width: 360px) {
-    &--md { height: 24px; }
-    &--lg { height: 36px; }
+  // 모바일(≤390px) 안전망 — 헤더 메뉴와 겹치지 않도록 한 단계 더 축소
+  @media (max-width: 390px) {
+    &--sm {
+      height: 20px;
+      .brand-title__img { max-width: 120px; }
+    }
+    &--md {
+      height: 24px;
+      .brand-title__img { max-width: 140px; }
+    }
+    &--lg {
+      height: 36px;
+      .brand-title__img { max-width: 180px; }
+    }
   }
 
-  // 클릭 가능한 로고 형태의 hover 는 미세하게만
+  // 클릭 가능한 로고 hover/focus
   &[href]:hover {
     opacity: 0.85;
   }
