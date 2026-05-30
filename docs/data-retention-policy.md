@@ -37,7 +37,9 @@
 업로드/분석/리뷰/수정 내역에 `user_id` 가 채워져 사용자별로 분리 저장됩니다.
 
 - `GET /api/analyses` 와 `GET /api/analysis/:id` 는 본인 분석만 반환 (다른 사용자 분석은 403).
-- `DEMO_ALLOW_ANONYMOUS=true` 일 때만 익명 데모 흐름이 허용됩니다(MVP 기본). 운영에서는 `false` 권장.
+- `DEMO_ALLOW_ANONYMOUS=true` 일 때만 익명 데모 흐름이 허용됩니다(체험 환경 한정).
+  **기본값은 `false`** — 환경변수를 빠뜨려도 익명 접근이 열리지 않도록 안전한 기본값.
+  운영 환경에서는 반드시 `false` 유지.
 - 로그인 도입 후 적용 사항:
 - 업로드/분석/리뷰/수정 내역을 `user_id` 로 귀속.
 - `GET /api/analyses` 와 `GET /api/analysis/:id` 를 `req.user.id` 기준으로 필터링.

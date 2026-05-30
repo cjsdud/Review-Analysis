@@ -16,7 +16,8 @@ import ProductStatusBadge from './ProductStatusBadge.jsx';
 //   products: GET /products 응답 (productStatus, sentiment, topIssue 포함)
 //   onSelect(productKey)
 
-const STATUS_PRIORITY = {
+// 외부에서도 사용할 수 있도록 정렬 헬퍼를 export — DashboardPage 가 products 로 top3 를 미리 계산해 넘긴다.
+export const STATUS_PRIORITY = {
   '주의 필요': 5,
   '개선 우선': 4,
   '좋은데 고칠 점 있음': 3,
@@ -25,7 +26,8 @@ const STATUS_PRIORITY = {
   '만족도 높음': 0,
 };
 
-function sortByPriority(items) {
+// 우선 점검 정렬 — 1) status 우선순위 2) 부정 비율 3) 개선 이슈 리뷰 수 4) 총 이슈 수 5) 전체 리뷰 수
+export function sortFixTargets(items = []) {
   return [...items].sort((a, b) =>
     (STATUS_PRIORITY[b.productStatus] ?? 2) - (STATUS_PRIORITY[a.productStatus] ?? 2) ||
     (b.negativeRatio || 0) - (a.negativeRatio || 0) ||
@@ -34,6 +36,9 @@ function sortByPriority(items) {
     (b.totalReviews || 0) - (a.totalReviews || 0),
   );
 }
+
+// 하위 호환을 위한 내부 alias
+const sortByPriority = sortFixTargets;
 
 // 카드 하단에 한 줄로 보여주는 "왜 먼저 봐야 하는지" 설명 — 규칙 기반.
 function deriveWhyFirst(p) {
@@ -56,16 +61,21 @@ function deriveWhyFirst(p) {
 
 function pct(n) { return `${Math.round((n || 0) * 100)}%`; }
 
-export default function TopFixTargets({ ranking = [], products = [], onSelect }) {
-  // products 가 풍부한 메타를 가지므로 ranking 의 productKey 와 join 한다.
-  const productByKey = new Map(products.map((p) => [p.productKey, p]));
-  const enriched = ranking.map((r) => productByKey.get(r.productKey)).filter(Boolean);
-  // ranking 에 없는 상품도 우선순위 후보로 포함 (productStatus 가 위험한 경우)
-  for (const p of products) {
-    if (!enriched.some((x) => x.productKey === p.productKey)) enriched.push(p);
+export default function TopFixTargets({ items, ranking = [], products = [], onSelect }) {
+  // 우선순위:
+  //  1) items 가 명시적으로 넘어왔으면 그대로 사용 (DashboardPage 가 products 로 미리 계산)
+  //  2) 없으면 ranking+products join 으로 후보 구성 → sortFixTargets → top 3 (하위 호환)
+  let top;
+  if (Array.isArray(items)) {
+    top = items.slice(0, 3);
+  } else {
+    const productByKey = new Map(products.map((p) => [p.productKey, p]));
+    const enriched = ranking.map((r) => productByKey.get(r.productKey)).filter(Boolean);
+    for (const p of products) {
+      if (!enriched.some((x) => x.productKey === p.productKey)) enriched.push(p);
+    }
+    top = sortByPriority(enriched).slice(0, 3);
   }
-
-  const top = sortByPriority(enriched).slice(0, 3);
 
   if (top.length === 0) {
     return (
@@ -101,7 +111,7 @@ export default function TopFixTargets({ ranking = [], products = [], onSelect })
 
             <h3 className="fix-card__name" title={p.productName}>{p.productName}</h3>
 
-            <div className="fix-card__metrics">
+            <div className="fix-card__metrics fix-card__metrics--4">
               <div className="fix-card__metric">
                 <div className="fix-card__metric-label">전체 리뷰</div>
                 <div className="fix-card__metric-value">{p.totalReviews}</div>
@@ -115,6 +125,10 @@ export default function TopFixTargets({ ranking = [], products = [], onSelect })
               <div className="fix-card__metric">
                 <div className="fix-card__metric-label">개선 이슈</div>
                 <div className="fix-card__metric-value">{p.issueReviewCount ?? 0}건</div>
+              </div>
+              <div className="fix-card__metric">
+                <div className="fix-card__metric-label">총 이슈 수</div>
+                <div className="fix-card__metric-value">{p.totalIssueCount ?? 0}</div>
               </div>
             </div>
 

@@ -446,7 +446,7 @@ npm run cleanup:anonymous:confirm  # 실제 삭제 (--confirm)
 - 환경변수:
   - `AUTH_JWT_SECRET` — JWT 서명 비밀키 (운영에서 반드시 교체)
   - `AUTH_COOKIE_NAME=reviewfit_token`, `AUTH_TOKEN_EXPIRES_IN=7d`
-  - `DEMO_ALLOW_ANONYMOUS` — true 면 보호 라우트에서도 미인증을 허용 (MVP/체험용)
+  - `DEMO_ALLOW_ANONYMOUS` — true 면 보호 라우트에서도 미인증을 허용 (체험 환경 한정). **기본값 false**. 운영에서는 반드시 false.
   - `BILLING_ENFORCE_LIMITS` — true 면 플랜 월 분석 횟수 / 리뷰 수 제한이 실제로 차단
 
 #### 플랜 (현재 가격 미정, MVP 기준)

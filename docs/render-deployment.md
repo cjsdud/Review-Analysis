@@ -58,7 +58,8 @@ CLIENT_ORIGIN=https://your-app.onrender.com
 # ★ 영구 저장 핵심 — Persistent Disk mount path 안쪽 경로
 DB_PATH=/var/data/reviewfit/app.db
 
-# 운영 기준
+# 운영 기준 — DEMO_ALLOW_ANONYMOUS 는 환경변수를 빠뜨려도 기본값이 false 라 안전하지만,
+# 명시적으로 false 를 설정해 두는 것을 권장합니다.
 DEMO_ALLOW_ANONYMOUS=false
 BILLING_ENFORCE_LIMITS=true
 AUTH_JWT_SECRET=<반드시 강력한 임의값으로 교체>

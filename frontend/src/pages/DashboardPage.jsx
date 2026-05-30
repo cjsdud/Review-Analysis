@@ -4,7 +4,7 @@ import SummaryCards from '../components/SummaryCards.jsx';
 // CategoryChart는 ECharts를 포함해 무거우므로 lazy import — 대시보드 접근 시에만 로드
 const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
-import TopFixTargets from '../components/TopFixTargets.jsx';
+import TopFixTargets, { sortFixTargets } from '../components/TopFixTargets.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
@@ -105,18 +105,20 @@ export default function DashboardPage() {
       {/* 요약 지표 */}
       <SummaryCards summary={summary} />
 
-      {/* 이번에 먼저 고칠 상품 (TOP 3) */}
-      {summary.productRankingByIssues?.length > 0 && (
+      {/* 이번에 먼저 고칠 상품 (TOP 3) — products 전체에서 우선 점검 기준으로 정렬해 top 3 선정 */}
+      {products?.length > 0 && (
         <>
           <div className="page-head" style={{ marginBottom: 12 }}>
             <div>
               <div className="page-head__title" style={{ fontSize: 17 }}>
                 이번에 먼저 고칠 상품 TOP 3
               </div>
-              <div className="page-head__sub">개선 이슈가 가장 많은 상품부터 손대면 효과가 빠릅니다.</div>
+              <div className="page-head__sub">
+                부정 비율, 반복 이슈, 리뷰 수를 함께 보고 우선 점검할 상품을 추천합니다.
+              </div>
             </div>
           </div>
-          <TopFixTargets ranking={summary.productRankingByIssues} products={products} onSelect={goProduct} />
+          <TopFixTargets items={sortFixTargets(products).slice(0, 3)} onSelect={goProduct} />
         </>
       )}
 

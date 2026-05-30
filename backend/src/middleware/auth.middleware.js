@@ -4,14 +4,16 @@
 // optionalAuth: 토큰이 있으면 사용, 없으면 통과.
 //
 // DEMO_ALLOW_ANONYMOUS=true 이면 기존 익명 데모 플로우(샘플 데이터 체험 등)를 유지하기 위해
-// 보호 라우트에서도 requireAuth 가 optionalAuth 처럼 동작한다. 운영 모드에서는 false 로 둘 것.
+// 보호 라우트에서도 requireAuth 가 optionalAuth 처럼 동작한다.
+// 운영 기본은 false — 환경변수를 깜빡 잊었을 때 익명 접근이 열리지 않도록 안전한 기본값.
+// 데모/체험 환경에서만 명시적으로 DEMO_ALLOW_ANONYMOUS=true 로 켤 것.
 import jwt from 'jsonwebtoken';
 import db from '../db/database.js';
 
 const JWT_SECRET = process.env.AUTH_JWT_SECRET || 'reviewfit-dev-secret-change-me';
 export const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'reviewfit_token';
 export const TOKEN_EXPIRES_IN = process.env.AUTH_TOKEN_EXPIRES_IN || '7d';
-const DEMO_ALLOW_ANONYMOUS = String(process.env.DEMO_ALLOW_ANONYMOUS || 'true').toLowerCase() === 'true';
+const DEMO_ALLOW_ANONYMOUS = String(process.env.DEMO_ALLOW_ANONYMOUS || 'false').toLowerCase() === 'true';
 
 export function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
