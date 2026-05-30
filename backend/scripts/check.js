@@ -925,6 +925,200 @@ await step('columnMapping — SOURCE_FIELD_CANDIDATES 구조 검증', async () =
   }
 });
 
+// ──────────────────────────────────────────────
+// 인증 / 소유권 / 사용량 (Express 앱을 띄워 e2e 테스트)
+// ──────────────────────────────────────────────
+async function makeApp({ demoAllowAnonymous = 'false', enforceLimits = 'false' } = {}) {
+  process.env.DEMO_ALLOW_ANONYMOUS = demoAllowAnonymous;
+  process.env.BILLING_ENFORCE_LIMITS = enforceLimits;
+  // 모듈 캐시 무효화: middleware/auth 와 billing.service 는 import 시점에 env 를 읽으므로
+  // 동적으로 import 하기 위해 cache-busting 쿼리스트링을 붙인다.
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const billingRoutes = (await import(`../src/routes/billing.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
+  app.use('/api/billing', billingRoutes);
+  return app;
+}
+
+async function startServer(app) {
+  return await new Promise((resolve) => {
+    const srv = app.listen(0, () => resolve({ srv, port: srv.address().port }));
+  });
+}
+
+async function jsonFetch(url, opts = {}) {
+  const r = await fetch(url, opts);
+  let body = null;
+  try { body = await r.json(); } catch { body = null; }
+  const setCookie = r.headers.get('set-cookie');
+  return { status: r.status, body, setCookie };
+}
+
+await step('auth — 회원가입 성공 + password_hash 응답 노출 금지', async () => {
+  const app = await makeApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a1@example.com', password: 'longenoughpw', name: 'A' }),
+    });
+    assert.equal(res.status, 201, `status=${res.status}`);
+    assert(res.body?.user?.id, 'user.id 누락');
+    assert.equal(res.body.user.email, 'a1@example.com');
+    assert(!('password_hash' in (res.body.user || {})), 'password_hash 가 응답에 노출됨');
+    assert(!('password' in (res.body.user || {})), 'password 가 응답에 노출됨');
+    assert(res.setCookie && /reviewfit_token=/.test(res.setCookie), 'auth cookie 미발급');
+  } finally { srv.close(); }
+});
+
+await step('auth — 중복 이메일 → 409', async () => {
+  const app = await makeApp();
+  const { srv, port } = await startServer(app);
+  try {
+    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'b@example.com', password: 'longenoughpw' }),
+    });
+    const dup = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'b@example.com', password: 'longenoughpw' }),
+    });
+    assert.equal(dup.status, 409, `status=${dup.status}`);
+    assert.equal(dup.body?.error, 'EMAIL_TAKEN');
+  } finally { srv.close(); }
+});
+
+await step('auth — 로그인 성공 + 잘못된 비밀번호 → 401', async () => {
+  const app = await makeApp();
+  const { srv, port } = await startServer(app);
+  try {
+    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'c@example.com', password: 'longenoughpw' }),
+    });
+    const ok = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'c@example.com', password: 'longenoughpw' }),
+    });
+    assert.equal(ok.status, 200);
+    const bad = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'c@example.com', password: 'wrongpassword' }),
+    });
+    assert.equal(bad.status, 401, `status=${bad.status}`);
+    assert.equal(bad.body?.error, 'INVALID_CREDENTIALS');
+  } finally { srv.close(); }
+});
+
+await step('auth — /api/me 인증 필요 (cookie 없으면 401)', async () => {
+  const app = await makeApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/me`);
+    assert.equal(r.status, 401, `status=${r.status}`);
+  } finally { srv.close(); }
+});
+
+await step('password — DB 에 평문 비밀번호 저장 금지', async () => {
+  const app = await makeApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const password = 'plaintextpw1234';
+    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'pw@example.com', password }),
+    });
+    const { default: db } = await import('../src/db/database.js');
+    const row = db.prepare('SELECT password_hash FROM users WHERE email = ?').get('pw@example.com');
+    assert(row?.password_hash, 'password_hash 누락');
+    assert(row.password_hash !== password, 'password_hash 가 평문과 동일');
+    assert(row.password_hash.length > 30, 'bcrypt 해시 길이가 너무 짧음');
+  } finally { srv.close(); }
+});
+
+// ── ownership: 같은 분석에 다른 사용자가 접근하면 403 ──
+await step('ownership — userB 가 userA 의 analysis 접근 시 403', async () => {
+  // requireAuth 가 실제로 차단하도록 DEMO_ALLOW_ANONYMOUS=false 로 분리된 앱 사용
+  const { default: db, listAnalyses } = await import('../src/db/database.js');
+  // userA / userB 직접 DB 에 생성
+  const { nanoid } = await import('nanoid');
+  const bcrypt = (await import('bcryptjs')).default;
+  const hash = await bcrypt.hash('whatever1', 10);
+  const aId = nanoid();
+  const bId = nanoid();
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(aId, 'ua@example.com', hash);
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(bId, 'ub@example.com', hash);
+  const analysisId = 'an_owner_test_' + nanoid();
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)`,
+  ).run(analysisId, null, 'done', '{}', aId);
+
+  // listAnalyses 가 userA 에는 보이고 userB 에는 보이지 않아야 함
+  const aList = listAnalyses({ userId: aId });
+  const bList = listAnalyses({ userId: bId });
+  assert(aList.some((x) => x.id === analysisId), 'userA 가 자기 분석을 못 봄');
+  assert(!bList.some((x) => x.id === analysisId), 'userB 가 userA 의 분석을 봄');
+});
+
+// ── billing: free 플랜 월 1회 제한 + recordUsage 기록 ──
+await step('billing — free 월 1회 제한 계산', async () => {
+  process.env.BILLING_ENFORCE_LIMITS = 'true';
+  // billing.service 도 env 시점에 ENFORCE_LIMITS 를 읽으므로 캐시 무효화
+  const t = Date.now() + Math.random();
+  const billing = await import(`../src/services/billing.service.js?t=${t}`);
+  const { default: db } = await import('../src/db/database.js');
+  const { nanoid } = await import('nanoid');
+  const userId = 'usage_user_' + nanoid();
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(userId, `${userId}@x.com`, 'x');
+
+  // 첫 분석은 통과
+  const r1 = billing.checkCanCreateAnalysis(userId, 5);
+  assert(r1.ok, '첫 분석이 차단됨');
+  billing.recordUsage(userId, 'analysis_created', { analysisId: 'a1' });
+  // 두 번째는 plan limit=1 초과로 402
+  const r2 = billing.checkCanCreateAnalysis(userId, 5);
+  assert(!r2.ok, '월 1회 제한이 안 걸림');
+  assert.equal(r2.status, 402);
+  assert.equal(r2.body.error, 'PLAN_LIMIT_EXCEEDED');
+
+  // 리뷰 수 초과 검증 — 별도 신규 사용자
+  const rl = 'rl_user_' + nanoid();
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(rl, `${rl}@x.com`, 'x');
+  const r3 = billing.checkCanCreateAnalysis(rl, 9999);
+  assert(!r3.ok, '리뷰 수 제한이 안 걸림');
+  assert.equal(r3.body.error, 'REVIEW_LIMIT_EXCEEDED');
+});
+
+await step('billing — BILLING_ENFORCE_LIMITS=false 면 제한 통과', async () => {
+  process.env.BILLING_ENFORCE_LIMITS = 'false';
+  const t = Date.now() + Math.random();
+  const billing = await import(`../src/services/billing.service.js?t=${t}`);
+  const r = billing.checkCanCreateAnalysis('anyuser', 999999);
+  assert(r.ok, 'enforce=false 인데 제한이 걸림');
+});
+
+await step('billing — usage_events 에 analysis_created 기록됨', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const t = Date.now() + Math.random();
+  const billing = await import(`../src/services/billing.service.js?t=${t}`);
+  const { nanoid } = await import('nanoid');
+  const userId = 'rec_user_' + nanoid();
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(userId, `${userId}@x.com`, 'x');
+  billing.recordUsage(userId, 'analysis_created', { analysisId: 'foo', uploadId: 'bar' });
+  const row = db.prepare('SELECT * FROM usage_events WHERE user_id = ?').get(userId);
+  assert(row, 'usage_events 미기록');
+  assert.equal(row.event_type, 'analysis_created');
+  assert.equal(row.amount, 1);
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

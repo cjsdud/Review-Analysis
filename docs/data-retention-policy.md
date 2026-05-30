@@ -33,9 +33,12 @@
 
 ## 로그인 도입 후 정책
 
-현재는 인증이 없으므로 `user_id` 컬럼은 nullable 로만 추가되어 있고 항상 NULL 입니다.
-로그인 도입 후에는 다음을 적용합니다.
+로그인 기반 인증이 도입되었습니다. 회원가입 시 기본 free 구독이 자동 생성되며,
+업로드/분석/리뷰/수정 내역에 `user_id` 가 채워져 사용자별로 분리 저장됩니다.
 
+- `GET /api/analyses` 와 `GET /api/analysis/:id` 는 본인 분석만 반환 (다른 사용자 분석은 403).
+- `DEMO_ALLOW_ANONYMOUS=true` 일 때만 익명 데모 흐름이 허용됩니다(MVP 기본). 운영에서는 `false` 권장.
+- 로그인 도입 후 적용 사항:
 - 업로드/분석/리뷰/수정 내역을 `user_id` 로 귀속.
 - `GET /api/analyses` 와 `GET /api/analysis/:id` 를 `req.user.id` 기준으로 필터링.
 - 사용자는 본인 분석만 조회/삭제 가능.

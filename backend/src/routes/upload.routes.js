@@ -10,6 +10,7 @@ import { parseFile, rowsFromMatrix } from '../services/fileParser.service.js';
 import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid } from '../services/columnMapping.service.js';
 import { normalizeReviews } from '../services/normalizeReview.service.js';
 import { maskRows, maskMatrix } from '../services/privacyMasking.service.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = Router();
@@ -29,8 +30,8 @@ function maskSheetParseResults(sheetParseResults) {
 }
 
 // 파싱 결과를 마스킹해 upload_files 에 저장하고 응답 페이로드를 만드는 공용 헬퍼.
-// 입력: { originalName, source, parsed }  parsed = parseFile() 결과
-function persistUpload({ originalName, source, parsed }) {
+// 입력: { originalName, source, parsed, userId? }
+function persistUpload({ originalName, source, parsed, userId = null }) {
   const maskedRows = maskRows(parsed.rows || []);
   const headers = parsed.headers || [];
   const mappingSuggestion = autoMapColumns(headers, maskedRows, source);
@@ -43,8 +44,8 @@ function persistUpload({ originalName, source, parsed }) {
   db.prepare(
     `INSERT INTO upload_files
        (id, original_name, source, row_count, headers, rows, mapping_suggestion,
-        selected_sheet_name, selected_header_row_index, sheet_metas, sheet_parse_results)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        selected_sheet_name, selected_header_row_index, sheet_metas, sheet_parse_results, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     uploadId,
     originalName,
@@ -57,6 +58,7 @@ function persistUpload({ originalName, source, parsed }) {
     parsed.selectedHeaderRowIndex || 0,
     JSON.stringify(sheetMetas),
     JSON.stringify(sheetParseResults),
+    userId || null,
   );
 
   return {
@@ -85,8 +87,19 @@ const upload = multer({
   },
 });
 
+// 소유권 가드 — 익명 데모(req.user==null) 는 user_id=null 인 업로드만 접근.
+// 로그인 사용자는 자기 user_id 의 업로드만 접근.
+function assertOwnership(req, res, row) {
+  const ownerId = row.user_id || null;
+  const reqId = req.user?.id || null;
+  if (ownerId === reqId) return true;
+  // 익명이 다른 사용자의 데이터 접근 시도하거나, 사용자가 남의 데이터 접근 시 403
+  res.status(403).json({ error: 'FORBIDDEN', message: '이 업로드에 접근할 권한이 없습니다.' });
+  return false;
+}
+
 // POST /api/uploads — 파일 업로드 + 파싱 + 컬럼 자동 매핑 후보 반환
-router.post('/', upload.single('file'), (req, res) => {
+router.post('/', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
 
   const source = (req.body.source || 'custom').toLowerCase();
@@ -111,12 +124,14 @@ router.post('/', upload.single('file'), (req, res) => {
     originalName: req.file.originalname,
     source,
     parsed,
+    userId: req.user?.id || null,
   });
   res.json(payload);
 });
 
 // POST /api/uploads/sample — 내장 샘플 데이터로 업로드 흐름 시작 (체험하기)
-router.post('/sample', (_req, res) => {
+// requireAuth — 익명 데모 모드(DEMO_ALLOW_ANONYMOUS=true)면 user_id=null 로 저장.
+router.post('/sample', requireAuth, (req, res) => {
   const samplePath = path.join(__dirname, '../../../sample-data/sample_reviews_fashion.csv');
   if (!fs.existsSync(samplePath)) return res.status(404).json({ error: '샘플 파일을 찾을 수 없습니다.' });
   const buf = fs.readFileSync(samplePath);
@@ -125,14 +140,16 @@ router.post('/sample', (_req, res) => {
     originalName: 'sample_reviews_fashion.csv',
     source: 'smartstore',
     parsed,
+    userId: req.user?.id || null,
   });
   res.json(payload);
 });
 
 // GET /api/uploads/:id — 업로드 정보 조회
-router.get('/:id', (req, res) => {
+router.get('/:id', requireAuth, (req, res) => {
   const row = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!assertOwnership(req, res, row)) return;
   res.json({
     uploadId: row.id,
     originalName: row.original_name,
@@ -156,7 +173,7 @@ const reparseSchema = z.object({
   headerRowIndex: z.number().int().min(0).max(50).optional(),
 });
 
-router.post('/:id/reparse', (req, res) => {
+router.post('/:id/reparse', requireAuth, (req, res) => {
   const parsedBody = reparseSchema.safeParse(req.body);
   if (!parsedBody.success) {
     return res.status(400).json({ error: '잘못된 요청 형식', detail: parsedBody.error.issues });
@@ -165,6 +182,7 @@ router.post('/:id/reparse', (req, res) => {
 
   const row = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!assertOwnership(req, res, row)) return;
   if (!row.sheet_parse_results) {
     return res.status(400).json({ error: '이 파일은 시트 선택을 지원하지 않습니다(CSV).' });
   }
@@ -220,7 +238,7 @@ const mappingSchema = z.object({
 });
 
 // POST /api/uploads/:id/mapping — 확정 매핑 저장 + 정규화
-router.post('/:id/mapping', (req, res) => {
+router.post('/:id/mapping', requireAuth, (req, res) => {
   const parsed = mappingSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: '잘못된 매핑 형식', detail: parsed.error.issues });
 
@@ -233,6 +251,7 @@ router.post('/:id/mapping', (req, res) => {
 
   const uploadRow = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);
   if (!uploadRow) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!assertOwnership(req, res, uploadRow)) return;
   if (!uploadRow.rows) {
     return res.status(410).json({ error: '업로드 데이터가 만료되어 다시 업로드가 필요합니다.' });
   }
@@ -245,10 +264,11 @@ router.post('/:id/mapping', (req, res) => {
 
   if (!reviews.length) return res.status(400).json({ error: '정규화된 리뷰가 없습니다. content 컬럼을 확인하세요.' });
 
+  const ownerId = uploadRow.user_id || null;
   db.prepare('DELETE FROM reviews WHERE upload_id = ?').run(uploadRow.id);
   const insert = db.prepare(
-    `INSERT INTO reviews (id, upload_id, source, store_id, product_name, option_name, rating, title, content, writer, created_at, reply_text, review_id, raw)
-     VALUES (@id,@uploadId,@source,@storeId,@productName,@optionName,@rating,@title,@content,@writer,@createdAt,@replyText,@reviewId,@raw)`,
+    `INSERT INTO reviews (id, upload_id, source, store_id, product_name, option_name, rating, title, content, writer, created_at, reply_text, review_id, raw, user_id)
+     VALUES (@id,@uploadId,@source,@storeId,@productName,@optionName,@rating,@title,@content,@writer,@createdAt,@replyText,@reviewId,@raw,@userId)`,
   );
   const tx = db.transaction((items) => {
     for (const r of items) {
@@ -267,15 +287,16 @@ router.post('/:id/mapping', (req, res) => {
         replyText: r.replyText || null,
         reviewId: r.reviewId || null,
         raw: null,
+        userId: ownerId,
       });
     }
   });
   tx(reviews);
 
   db.prepare(
-    `INSERT INTO column_mappings (id, upload_id, template_name, source, mapping, is_template)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(nanoid(), uploadRow.id, templateName || null, uploadRow.source, JSON.stringify(cleanMapping), saveAsTemplate ? 1 : 0);
+    `INSERT INTO column_mappings (id, upload_id, template_name, source, mapping, is_template, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(nanoid(), uploadRow.id, templateName || null, uploadRow.source, JSON.stringify(cleanMapping), saveAsTemplate ? 1 : 0, ownerId);
 
   res.json({ uploadId: uploadRow.id, normalizedCount: reviews.length, mapping: cleanMapping });
 });

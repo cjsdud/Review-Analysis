@@ -33,6 +33,27 @@ ensureColumn('reviews', 'user_id', 'user_id TEXT');
 ensureColumn('analysis_jobs', 'user_id', 'user_id TEXT');
 ensureColumn('product_analyses', 'user_id', 'user_id TEXT');
 ensureColumn('user_corrections', 'user_id', 'user_id TEXT');
+ensureColumn('review_classifications', 'user_id', 'user_id TEXT');
+
+// 기본 요금제 seed (free/starter/pro). 가격은 미확정이므로 0 으로 두고 README/docs 에서 TODO.
+// 인덱스 기반 monthly_analysis_limit / max_reviews_per_analysis 도 함께 정의.
+const SEED_PLANS = [
+  { code: 'free',    name: 'Free',    price_krw: 0, monthly_analysis_limit: 1,  max_reviews_per_analysis: 100,  features: 'basic' },
+  { code: 'starter', name: 'Starter', price_krw: 0, monthly_analysis_limit: 10, max_reviews_per_analysis: 1000, features: 'standard' },
+  { code: 'pro',     name: 'Pro',     price_krw: 0, monthly_analysis_limit: 50, max_reviews_per_analysis: 5000, features: 'pro' },
+];
+const upsertPlan = db.prepare(
+  `INSERT INTO plans (id, code, name, price_krw, monthly_analysis_limit, max_reviews_per_analysis, features)
+   VALUES (?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(code) DO UPDATE SET
+     name = excluded.name,
+     monthly_analysis_limit = excluded.monthly_analysis_limit,
+     max_reviews_per_analysis = excluded.max_reviews_per_analysis,
+     features = excluded.features`,
+);
+for (const p of SEED_PLANS) {
+  upsertPlan.run(`plan_${p.code}`, p.code, p.name, p.price_krw, p.monthly_analysis_limit, p.max_reviews_per_analysis, p.features);
+}
 
 // 일정 시간(ttlMinutes)이 지난 업로드의 파싱 rows(JSON)를 비워 PII 잔존을 줄인다.
 // 정규화된 reviews 테이블은 유지되므로 분석에는 영향이 없다.
@@ -48,13 +69,21 @@ export function purgeStaleUploadRows(ttlMinutes = 60) {
 }
 
 // 최근 분석 히스토리 목록을 반환한다(최신순).
-// upload_files 와 join 해 originalName/source 를 가져오고, product_analyses 로 상품 수를 센다.
-// TODO(로그인): userId 가 주어지면 analysis_jobs.user_id = ? 로 필터링한다. 현재는 전체 반환.
-// 입력: { limit=20, userId=null }. 출력: 히스토리 row 배열.
-export function listAnalyses({ limit = 20, userId = null } = {}) {
+// 입력:
+//   - limit (기본 20)
+//   - userId: 로그인 사용자 ID. null 이고 includeAnonymous=true 면 user_id IS NULL 만.
+//   - includeAnonymous: userId 가 null 일 때 true 면 익명(user_id IS NULL) 분석만 반환.
+//     false 면 전체 반환(관리자/디버그용).
+export function listAnalyses({ limit = 20, userId = null, includeAnonymous = false } = {}) {
   const safeLimit = Math.max(1, Math.min(Math.floor(Number(limit) || 20), 200));
-  const where = userId ? 'WHERE j.user_id = ?' : '';
-  const params = userId ? [userId, safeLimit] : [safeLimit];
+  let where = '';
+  let params = [safeLimit];
+  if (userId) {
+    where = 'WHERE j.user_id = ?';
+    params = [userId, safeLimit];
+  } else if (includeAnonymous) {
+    where = 'WHERE j.user_id IS NULL';
+  }
   const rows = db
     .prepare(
       `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at,

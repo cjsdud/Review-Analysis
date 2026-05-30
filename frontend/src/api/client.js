@@ -4,6 +4,7 @@ import axios from 'axios';
 const client = axios.create({
   baseURL: '/api',
   timeout: 60000,
+  withCredentials: true, // httpOnly auth cookie 포함
 });
 
 client.interceptors.response.use(

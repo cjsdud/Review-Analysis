@@ -1,0 +1,181 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 로그인/회원가입 페이지 =====
+.auth-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: $sp-5 $sp-4;
+  background: $surface-2;
+  box-sizing: border-box;
+}
+
+.auth-card {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  box-shadow: $shadow-md;
+  padding: $sp-6 $sp-6;
+  width: 100%;
+  max-width: 420px;
+  word-break: keep-all;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: $sp-4;
+  }
+  &__brand-logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: $primary;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+  }
+  &__brand-name {
+    font-weight: 800;
+    color: $text-main;
+  }
+  &__title {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 800;
+  }
+  &__sub {
+    margin: 0 0 $sp-4;
+    color: $text-sub;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  &__switch {
+    margin-top: $sp-4;
+    font-size: 13px;
+    color: $text-sub;
+    text-align: center;
+  }
+  &__alt {
+    margin-top: $sp-3;
+    text-align: center;
+    font-size: 12px;
+  }
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: $sp-3;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-sub;
+
+    input {
+      padding: 10px 12px;
+      border: 1px solid $border-strong;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+      min-height: 44px;
+      box-sizing: border-box;
+
+      &:focus-visible {
+        @include focus-ring;
+        border-color: $primary;
+      }
+    }
+  }
+
+  .btn {
+    min-height: 44px;
+    margin-top: $sp-2;
+  }
+}
+
+.linklike {
+  background: none;
+  border: none;
+  color: $primary;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  &:hover { text-decoration: underline; }
+}
+
+// ===== 토픽바 사용자 영역 =====
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+
+  &-name {
+    font-size: 13px;
+    color: $text-main;
+    font-weight: 600;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: $bp-tablet) {
+    gap: 6px;
+    &-name { max-width: 100px; font-size: 12px; }
+  }
+}
+
+// ===== 요금제 페이지 =====
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: $sp-3;
+}
+
+.pricing-card {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: $sp-5 $sp-4;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-3;
+  word-break: keep-all;
+
+  &.is-current {
+    border-color: $primary;
+    box-shadow: 0 0 0 2px rgba($primary, 0.15);
+  }
+
+  &__name {
+    font-weight: 800;
+    font-size: 18px;
+  }
+  &__price {
+    font-size: 22px;
+    font-weight: 700;
+    color: $text-main;
+  }
+  &__features {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: $text-sub;
+  }
+
+  .btn {
+    margin-top: auto;
+    min-height: 44px;
+  }
+}

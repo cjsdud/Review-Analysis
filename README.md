@@ -380,10 +380,38 @@ Render Disk(유료) 또는 외부 DB로 옮기세요.
 
 ### 분석 히스토리 (다시 보기)
 - `analysis_jobs` 1건 = 분석 1회 실행 단위(upload_id, status, summary, created_at, user_id).
-- `GET /api/analyses?limit=20` — 최근 분석 목록(최신순). 현재 로그인 없음 → 전체 반환.
-  추후 로그인 도입 시 `user_id` 로 필터링(코드에 TODO 표시).
-- `GET /api/analysis/:id` — 특정 분석 재조회(summary + products + createdAt).
+- `GET /api/analyses?limit=20` — 최근 분석 목록(최신순). **로그인 사용자는 본인 분석만 반환**,
+  익명 데모 모드(`DEMO_ALLOW_ANONYMOUS=true`)에서는 user_id=NULL 인 분석만 반환.
+- `GET /api/analysis/:id` — 특정 분석 재조회(summary + products + createdAt). 소유자 확인.
 - 프론트 `/history` 화면에서 최근 분석을 카드형으로 보고 클릭 시 대시보드로 이동합니다.
+
+### 로그인 / 회원가입 / 플랜
+- 이메일+비밀번호 기반 인증. 비밀번호는 `bcryptjs` 로 해시 저장(평문 저장 금지).
+- 토큰은 JWT를 httpOnly cookie(`AUTH_COOKIE_NAME`, 기본 `reviewfit_token`)로 발급.
+  production 에서는 `secure: true`, `sameSite: 'lax'`.
+- API:
+  - `POST /api/auth/register` — `{ email, password, name? }` → 201 + cookie + `{ user }`
+  - `POST /api/auth/login` — `{ email, password }` → 200 + cookie + `{ user }`
+  - `POST /api/auth/logout` — cookie 제거
+  - `GET /api/me` (혹은 `/api/auth/me`) — `{ user, subscription, usage, billingEnforced }`
+  - `GET /api/billing/plans` — 공개 플랜 목록
+- 환경변수:
+  - `AUTH_JWT_SECRET` — JWT 서명 비밀키 (운영에서 반드시 교체)
+  - `AUTH_COOKIE_NAME=reviewfit_token`, `AUTH_TOKEN_EXPIRES_IN=7d`
+  - `DEMO_ALLOW_ANONYMOUS` — true 면 보호 라우트에서도 미인증을 허용 (MVP/체험용)
+  - `BILLING_ENFORCE_LIMITS` — true 면 플랜 월 분석 횟수 / 리뷰 수 제한이 실제로 차단
+
+#### 플랜 (현재 가격 미정, MVP 기준)
+| 플랜 | 월 분석 횟수 | 파일당 리뷰 수 |
+|---|---|---|
+| Free | 1회 | 100개 |
+| Starter | 10회 | 1,000개 |
+| Pro | 50회 | 5,000개 |
+
+- 회원가입 시 free 구독이 자동 생성됩니다.
+- `BILLING_ENFORCE_LIMITS=true` 일 때 분석 실행 전에 위 한도를 확인하고,
+  초과 시 `402 PLAN_LIMIT_EXCEEDED` 또는 `403 REVIEW_LIMIT_EXCEEDED` 를 반환합니다.
+- 실제 PG 결제 연동(토스페이먼츠/포트원)은 미구현 — [`docs/billing-integration-plan.md`](docs/billing-integration-plan.md) 참고.
 
 ### 지표 분리 (혼동 방지)
 - `negativeReviews` — 별점/감성 기준 **부정 리뷰 수**

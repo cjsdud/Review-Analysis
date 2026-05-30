@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -10,6 +11,8 @@ import uploadRoutes from './routes/upload.routes.js';
 import analysisRoutes from './routes/analysis.routes.js';
 import historyRoutes from './routes/history.routes.js';
 import aiRoutes from './routes/ai.routes.js';
+import authRoutes from './routes/auth.routes.js';
+import billingRoutes from './routes/billing.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
 
@@ -25,11 +28,16 @@ const UPLOAD_ROWS_TTL_MIN = Math.max(1, Number(process.env.UPLOAD_ROWS_TTL_MIN |
 const UPLOAD_CLEANUP_INTERVAL_MIN = Math.max(1, Number(process.env.UPLOAD_CLEANUP_INTERVAL_MIN || 10));
 const isProd = process.env.NODE_ENV === 'production';
 
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
+app.use(cookieParser());
 
 // ===== API =====
 app.get('/api/health', (_req, res) => res.json({ ok: true, aiMode }));
+app.use('/api/auth', authRoutes); // POST /register /login /logout, GET /me
+// GET /api/me 별칭 — /api/auth/me 와 동일하게 동작
+app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
+app.use('/api/billing', billingRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/analyses', historyRoutes); // 분석 히스토리 목록 (복수형)

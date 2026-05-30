@@ -105,3 +105,77 @@ CREATE TABLE IF NOT EXISTS user_corrections (
 CREATE INDEX IF NOT EXISTS idx_reviews_upload ON reviews(upload_id);
 CREATE INDEX IF NOT EXISTS idx_pa_analysis ON product_analyses(analysis_id);
 CREATE INDEX IF NOT EXISTS idx_cls_analysis ON review_classifications(analysis_id);
+
+-- ===== 로그인/요금제 기반 =====
+-- 사용자 계정. 비밀번호는 항상 해시(password_hash)로만 저장.
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name TEXT,
+  role TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT
+);
+
+-- 요금제 정의 (free/starter/pro). 가격/제한은 코드 또는 seed 로 관리.
+CREATE TABLE IF NOT EXISTS plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL UNIQUE,
+  price_krw INTEGER NOT NULL DEFAULT 0,
+  monthly_analysis_limit INTEGER,
+  max_reviews_per_analysis INTEGER,
+  features TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 사용자 구독 현황. 실제 PG 연동은 추후. 현재는 provider/billing_key 컬럼만 준비.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  plan_code TEXT NOT NULL DEFAULT 'free',
+  status TEXT NOT NULL DEFAULT 'active',
+  current_period_start TEXT,
+  current_period_end TEXT,
+  provider TEXT,
+  provider_customer_id TEXT,
+  provider_subscription_id TEXT,
+  billing_key_ref TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 사용량 이벤트 (월 분석 횟수 등을 집계할 때 사용)
+CREATE TABLE IF NOT EXISTS usage_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  analysis_id TEXT,
+  upload_id TEXT,
+  amount INTEGER NOT NULL DEFAULT 1,
+  metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 결제 기록 (현재는 PG 미연동, 구조만 준비)
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT,
+  provider_payment_id TEXT,
+  order_id TEXT,
+  amount_krw INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  raw_response TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_usage_user_event ON usage_events(user_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_usage_user_time ON usage_events(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);

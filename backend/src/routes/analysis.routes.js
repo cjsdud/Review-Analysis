@@ -4,8 +4,19 @@ import { z } from 'zod';
 import db from '../db/database.js';
 import { runAnalysis } from '../services/productAnalysis.service.js';
 import { buildAnalysisCsv } from '../services/export.service.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
+import { checkCanCreateAnalysis, recordUsage } from '../services/billing.service.js';
 
 const router = Router();
+
+// 소유권 확인: row.user_id 와 req.user.id 가 같아야 통과. 둘 다 null 이면 익명 데모로 허용.
+function assertOwnership(req, res, row, ownerField = 'user_id') {
+  const ownerId = row[ownerField] || null;
+  const reqId = req.user?.id || null;
+  if (ownerId === reqId) return true;
+  res.status(403).json({ error: 'FORBIDDEN', message: '이 분석에 접근할 권한이 없습니다.' });
+  return false;
+}
 
 // 저장된 사용자 수정(user_corrections)을 상품 분석 결과에 반영.
 // 입력: product(ProductAnalysis), corrections([{original,corrected}]).
@@ -110,54 +121,56 @@ function loadReviews(uploadId) {
   }));
 }
 
-// POST /api/analysis — 분석 실행
-router.post('/', async (req, res) => {
+// POST /api/analysis — 분석 실행 (로그인 필요 / 익명 데모는 환경변수로 허용)
+router.post('/', requireAuth, async (req, res) => {
   const schema = z.object({ uploadId: z.string().min(1) });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'uploadId가 필요합니다.' });
 
+  // 업로드 소유권 확인
+  const upload = db.prepare('SELECT id, original_name, user_id FROM upload_files WHERE id = ?').get(parsed.data.uploadId);
+  if (!upload) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
+  if (!assertOwnership(req, res, upload)) return;
+
   const reviews = loadReviews(parsed.data.uploadId);
   if (!reviews.length) return res.status(400).json({ error: '정규화된 리뷰가 없습니다. 먼저 컬럼 매핑을 완료하세요.' });
 
+  // 플랜 제한 확인 (BILLING_ENFORCE_LIMITS=true 일 때만 실제 차단)
+  const userId = req.user?.id || null;
+  const guard = checkCanCreateAnalysis(userId, reviews.length);
+  if (!guard.ok) return res.status(guard.status).json(guard.body);
+
   try {
-    // (1) review-level: 이전 user_corrections 의 핵심 키워드와 본문이 ≥2 겹치는 신규 리뷰는
-    //     분류 단계에서 곧장 corrected 로 치환된다 (source='correction').
     const allCorrections = loadAllCorrections();
     const { analysisId, summary, products, classifications } = await runAnalysis(reviews, allCorrections);
-
-    // (2) cluster-level: 동일 productKey + 원래 (category, issueLabel) 매칭 시 topIssue 의
-    //     라벨을 corrected 로 치환(보조 안전망). source='correction'.
     applyHistoricalCorrections(products);
 
-    // 샘플 데이터 여부 (대시보드 상단 배지 표시용).
-    const upRow = db.prepare('SELECT original_name FROM upload_files WHERE id = ?').get(parsed.data.uploadId);
-    summary.isSample = (upRow?.original_name || '').toLowerCase().startsWith('sample_reviews_fashion');
+    summary.isSample = (upload.original_name || '').toLowerCase().startsWith('sample_reviews_fashion');
 
-    db.prepare('INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)').run(
-      analysisId,
-      parsed.data.uploadId,
-      'done',
-      JSON.stringify(summary),
-    );
+    db.prepare(
+      'INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)',
+    ).run(analysisId, parsed.data.uploadId, 'done', JSON.stringify(summary), userId);
 
     const insertPa = db.prepare(
-      'INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?, ?, ?, ?, ?, ?)',
     );
     const insertCls = db.prepare(
-      'INSERT INTO review_classifications (id, analysis_id, review_pk, sentiment, categories) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO review_classifications (id, analysis_id, review_pk, sentiment, categories, user_id) VALUES (?, ?, ?, ?, ?, ?)',
     );
     const tx = db.transaction(() => {
       products.forEach((p, i) =>
-        insertPa.run(`${analysisId}_${i}`, analysisId, p.productKey, p.productName, JSON.stringify(p)),
+        insertPa.run(`${analysisId}_${i}`, analysisId, p.productKey, p.productName, JSON.stringify(p), userId),
       );
       classifications.forEach((c, i) =>
-        insertCls.run(`${analysisId}_c${i}`, analysisId, c.reviewId, c.sentiment, JSON.stringify(c.categories)),
+        insertCls.run(`${analysisId}_c${i}`, analysisId, c.reviewId, c.sentiment, JSON.stringify(c.categories), userId),
       );
     });
     tx();
 
-    // 분석 완료 후 더 이상 필요 없는 임시 파싱 데이터 제거 (PII 잔존 최소화).
-    // rows 뿐 아니라 XLSX 멀티시트 파싱 결과(sheet_parse_results)에도 마스킹된 리뷰가 남으므로 함께 비운다.
+    // 사용량 기록 (로그인 사용자만; 익명은 기록 안 함)
+    if (userId) recordUsage(userId, 'analysis_created', { analysisId, uploadId: parsed.data.uploadId });
+
+    // 분석 완료 후 임시 파싱 데이터 제거
     db.prepare('UPDATE upload_files SET rows = NULL, sheet_parse_results = NULL WHERE id = ?').run(
       parsed.data.uploadId,
     );
@@ -172,9 +185,10 @@ router.post('/', async (req, res) => {
 // GET /api/analysis/:id — 전체 결과 (히스토리 재조회용).
 // summary 외에 products(상품별 분석 결과 JSON 배열)와 createdAt 을 함께 반환해
 // 사용자가 히스토리에서 특정 분석을 다시 열 수 있게 한다.
-router.get('/:id', (req, res) => {
+router.get('/:id', requireAuth, (req, res) => {
   const job = db.prepare('SELECT * FROM analysis_jobs WHERE id = ?').get(req.params.id);
   if (!job) return res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
+  if (!assertOwnership(req, res, job)) return;
   const productRows = db
     .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
     .all(req.params.id);
@@ -188,8 +202,19 @@ router.get('/:id', (req, res) => {
   });
 });
 
+// 소유권 확인 헬퍼 — analysis_id 만 있을 때 사용 (products/products:key/export.csv/corrections 공용)
+function assertAnalysisOwnership(req, res) {
+  const job = db.prepare('SELECT user_id FROM analysis_jobs WHERE id = ?').get(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
+    return false;
+  }
+  return assertOwnership(req, res, job);
+}
+
 // GET /api/analysis/:id/products — 상품 목록 (대시보드용 요약)
-router.get('/:id/products', (req, res) => {
+router.get('/:id/products', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
   const rows = db.prepare('SELECT data FROM product_analyses WHERE analysis_id = ?').all(req.params.id);
   if (!rows.length) return res.status(404).json({ error: '상품 분석 결과가 없습니다.' });
   const products = rows.map((r) => JSON.parse(r.data));
@@ -215,7 +240,8 @@ router.get('/:id/products', (req, res) => {
 });
 
 // GET /api/analysis/:id/products/:productKey — 상품 상세 (저장된 사용자 수정 반영)
-router.get('/:id/products/:productKey', (req, res) => {
+router.get('/:id/products/:productKey', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
   const row = db
     .prepare('SELECT data FROM product_analyses WHERE analysis_id = ? AND product_key = ?')
     .get(req.params.id, req.params.productKey);
@@ -226,7 +252,8 @@ router.get('/:id/products/:productKey', (req, res) => {
 });
 
 // GET /api/analysis/:id/export.csv — CSV 다운로드
-router.get('/:id/export.csv', (req, res) => {
+router.get('/:id/export.csv', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
   const rows = db.prepare('SELECT data FROM product_analyses WHERE analysis_id = ?').all(req.params.id);
   if (!rows.length) return res.status(404).json({ error: '분석 결과가 없습니다.' });
   const products = rows.map((r) => JSON.parse(r.data));
@@ -247,12 +274,11 @@ const correctionSchema = z.object({
 
 // POST /api/analysis/:id/corrections — 사용자 분류 수정 저장
 // 재학습은 추후. 지금은 수정값을 user_corrections에 저장하고 상세 조회 시 반영한다.
-router.post('/:id/corrections', (req, res) => {
+router.post('/:id/corrections', requireAuth, (req, res) => {
   const parsed = correctionSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: '수정 형식이 올바르지 않습니다.', detail: parsed.error.issues });
 
-  const job = db.prepare('SELECT id FROM analysis_jobs WHERE id = ?').get(req.params.id);
-  if (!job) return res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
+  if (!assertAnalysisOwnership(req, res)) return;
 
   const { productKey, category, issueLabel, newCategory, newIssueLabel, reviewIds } = parsed.data;
   const id = nanoid();
@@ -262,17 +288,19 @@ router.post('/:id/corrections', (req, res) => {
     corrected: { category: newCategory, issueLabel: newIssueLabel },
     reviewIds: reviewIds || [],
   };
-  db.prepare('INSERT INTO user_corrections (id, analysis_id, review_pk, categories) VALUES (?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO user_corrections (id, analysis_id, review_pk, categories, user_id) VALUES (?, ?, ?, ?, ?)').run(
     id,
     req.params.id,
     productKey,
     JSON.stringify(payload),
+    req.user?.id || null,
   );
   res.json({ ok: true, correctionId: id, corrected: payload.corrected });
 });
 
 // GET /api/analysis/:id/corrections — 저장된 수정 목록 (검토/추후 반영용)
-router.get('/:id/corrections', (req, res) => {
+router.get('/:id/corrections', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
   const rows = db
     .prepare('SELECT id, review_pk, categories, created_at FROM user_corrections WHERE analysis_id = ? ORDER BY created_at DESC')
     .all(req.params.id);

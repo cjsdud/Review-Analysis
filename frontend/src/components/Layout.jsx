@@ -1,13 +1,17 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const NAV = [
   { to: '/upload', label: '리뷰 업로드', icon: '⬆️' },
   { to: '/history', label: '분석 히스토리', icon: '🗂️' },
+  { to: '/pricing', label: '요금제', icon: '💳' },
   { to: '/settings', label: '매핑 템플릿', icon: '⚙️' },
 ];
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, subscription, usage, logout } = useAuth();
   const title = (() => {
     if (location.pathname.startsWith('/upload')) return '리뷰 파일 업로드';
     if (location.pathname.startsWith('/mapping')) return '컬럼 매핑 확인';
@@ -65,6 +69,37 @@ export default function Layout() {
           </div>
           <div className="topbar__right">
             <span className="tag tag--neutral">MVP</span>
+            {user ? (
+              <div className="topbar__user">
+                {subscription?.planCode && (
+                  <span className={`tag tag--${subscription.planCode === 'free' ? 'neutral' : 'success'}`} title="현재 플랜">
+                    {subscription.planName || subscription.planCode}
+                  </span>
+                )}
+                {usage && usage.monthlyAnalysisLimit != null && (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    이번 달 {usage.monthlyAnalysisUsed} / {usage.monthlyAnalysisLimit}회
+                  </span>
+                )}
+                <span className="topbar__user-name">{user.name || user.email}</span>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={async () => { await logout(); navigate('/login'); }}
+                >
+                  로그아웃
+                </button>
+              </div>
+            ) : (
+              <div className="topbar__user">
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigate('/login')}>
+                  로그인
+                </button>
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/login', { state: { mode: 'register' } })}>
+                  회원가입
+                </button>
+              </div>
+            )}
           </div>
         </header>
         <div className="content">
