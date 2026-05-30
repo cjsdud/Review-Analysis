@@ -13,7 +13,7 @@ import { getAnalysisReviews } from '../api/reviewsApi.js';
 //   initialSentiment: 'positive' | 'neutral' | 'negative' | 'all'
 //   initialProductName?: string  (특정 상품 클릭 시 미리 필터)
 //
-// 페이지당 20건, "더 불러오기"로 추가 페이지 append.
+// 페이지당 20건. 페이지 번호(1~n) 클릭으로 해당 페이지만 교체 표시.
 
 const SENTIMENT_LABEL = { positive: '긍정', neutral: '중립', negative: '부정', all: '전체' };
 const SENTIMENT_TONE = { positive: 'is-good', neutral: 'is-neutral', negative: 'is-danger' };
@@ -96,21 +96,22 @@ export default function ReviewExplorerModal({
   const [sort, setSort] = useState('latest');
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState(1); // 1-indexed
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
   const PAGE_SIZE = 20;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // 모달이 열릴 때 또는 필터 변경 시 첫 페이지 리로드
-  const loadFirstPage = useCallback(async () => {
+  // 페이지 단위 로드 — 항상 교체(append 아님)
+  const loadPage = useCallback(async (targetPage) => {
     if (!open || !analysisId) return;
-    setLoading(true); setErr(''); setOffset(0);
+    setLoading(true); setErr('');
     try {
       const params = {
         sentiment,
         limit: PAGE_SIZE,
-        offset: 0,
+        offset: (targetPage - 1) * PAGE_SIZE,
         sort,
       };
       if (productName.trim()) params.productName = productName.trim();
@@ -120,6 +121,7 @@ export default function ReviewExplorerModal({
       const data = await getAnalysisReviews(analysisId, params);
       setItems(data.items || []);
       setTotal(data.total || 0);
+      setPage(targetPage);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -129,27 +131,13 @@ export default function ReviewExplorerModal({
 
   useEffect(() => { setSentiment(initialSentiment); }, [initialSentiment, open]);
   useEffect(() => { setProductName(initialProductName); }, [initialProductName, open]);
-  useEffect(() => { loadFirstPage(); }, [loadFirstPage]);
+  // 필터/정렬 변경 시 1페이지로 리셋해서 로드
+  useEffect(() => { loadPage(1); }, [loadPage]);
 
-  async function loadMore() {
-    const nextOffset = offset + PAGE_SIZE;
-    setLoading(true); setErr('');
-    try {
-      const params = {
-        sentiment, limit: PAGE_SIZE, offset: nextOffset, sort,
-      };
-      if (productName.trim()) params.productName = productName.trim();
-      if (keyword.trim())     params.keyword = keyword.trim();
-      if (rating)             params.rating = rating;
-      if (hasIssue !== '')    params.hasIssue = hasIssue;
-      const data = await getAnalysisReviews(analysisId, params);
-      setItems((prev) => prev.concat(data.items || []));
-      setOffset(nextOffset);
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setLoading(false);
-    }
+  function goToPage(n) {
+    const clamped = Math.min(Math.max(1, n), pageCount);
+    if (clamped === page || loading) return;
+    loadPage(clamped);
   }
 
   function goProduct(productKey) {
@@ -160,8 +148,13 @@ export default function ReviewExplorerModal({
   const summaryLine = useMemo(() => {
     if (loading && items.length === 0) return '불러오는 중…';
     if (total === 0) return '조건에 맞는 리뷰가 없습니다.';
-    return `총 ${total}건 중 ${items.length}건 표시`;
-  }, [loading, items.length, total]);
+    const start = (page - 1) * PAGE_SIZE + 1;
+    const end = Math.min(page * PAGE_SIZE, total);
+    return `총 ${total}건 중 ${start}–${end}건 (${page}/${pageCount} 페이지)`;
+  }, [loading, items.length, total, page, pageCount]);
+
+  // 페이지 번호 목록 — 많아지면 ... 으로 축약 (1, ..., page-1, page, page+1, ..., n)
+  const pageNumbers = useMemo(() => buildPageNumbers(page, pageCount), [page, pageCount]);
 
   return (
     <Modal
@@ -245,13 +238,60 @@ export default function ReviewExplorerModal({
         </ul>
       )}
 
-      {items.length < total && (
-        <div className="re-more">
-          <button type="button" className="btn btn--ghost" onClick={loadMore} disabled={loading}>
-            {loading ? '불러오는 중…' : `더 불러오기 (남은 ${total - items.length}건)`}
+      {pageCount > 1 && (
+        <nav className="re-pagination" aria-label="리뷰 페이지">
+          <button
+            type="button"
+            className="re-pagination__nav"
+            onClick={() => goToPage(page - 1)}
+            disabled={loading || page <= 1}
+            aria-label="이전 페이지"
+          >
+            ‹
           </button>
-        </div>
+          {pageNumbers.map((p, i) =>
+            p === '…' ? (
+              <span key={`gap-${i}`} className="re-pagination__gap" aria-hidden="true">…</span>
+            ) : (
+              <button
+                key={p}
+                type="button"
+                className={`re-pagination__page${p === page ? ' is-active' : ''}`}
+                onClick={() => goToPage(p)}
+                disabled={loading || p === page}
+                aria-current={p === page ? 'page' : undefined}
+                aria-label={`${p} 페이지`}
+              >
+                {p}
+              </button>
+            ),
+          )}
+          <button
+            type="button"
+            className="re-pagination__nav"
+            onClick={() => goToPage(page + 1)}
+            disabled={loading || page >= pageCount}
+            aria-label="다음 페이지"
+          >
+            ›
+          </button>
+        </nav>
       )}
     </Modal>
   );
+}
+
+// 페이지 번호 목록을 만든다. 페이지가 많으면 1, …, p-1, p, p+1, …, n 형태로 축약.
+function buildPageNumbers(page, pageCount) {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_, i) => i + 1);
+  }
+  const out = [1];
+  const start = Math.max(2, page - 1);
+  const end = Math.min(pageCount - 1, page + 1);
+  if (start > 2) out.push('…');
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < pageCount - 1) out.push('…');
+  out.push(pageCount);
+  return out;
 }

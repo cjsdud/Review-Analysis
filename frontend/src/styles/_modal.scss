@@ -596,9 +596,55 @@
   }
 }
 
-.re-more {
-  text-align: center;
-  margin-top: 12px;
+.re-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  margin-top: 16px;
 
-  .btn { min-height: 40px; padding: 0 20px; }
+  &__page,
+  &__nav {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border, #d8dde6);
+    background: #fff;
+    color: var(--text, #1f2937);
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+
+    &:hover:not(:disabled) {
+      background: #f3f6fb;
+      border-color: #b9c4d6;
+    }
+    &:focus-visible {
+      outline: 2px solid var(--primary, #1b73e8);
+      outline-offset: 2px;
+    }
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+  }
+
+  &__page.is-active {
+    background: var(--primary, #1b73e8);
+    border-color: var(--primary, #1b73e8);
+    color: #fff;
+    opacity: 1;
+    cursor: default;
+  }
+
+  &__gap {
+    min-width: 24px;
+    text-align: center;
+    color: var(--muted, #6b7280);
+    user-select: none;
+  }
 }
