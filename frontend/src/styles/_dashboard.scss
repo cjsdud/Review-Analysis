@@ -5,7 +5,11 @@
 // ===== 리포트 섹션 (대시보드/상품 상세 공통) =====
 // SectionNavigator 가 스크롤할 대상. sticky 헤더 + nav 가 겹치지 않도록 여유 padding.
 .report-section {
+  // 데스크톱: header(60) + section nav(~64) = ~124. 모바일은 compact nav(~46)+여백.
   scroll-margin-top: calc(var(--mobile-header-height, 60px) + 64px);
+  @media (max-width: $bp-tablet) {
+    scroll-margin-top: calc(var(--mobile-header-height, 60px) + 56px);
+  }
 }
 .report-section + .report-section,
 .report-section + .dash-grid,
@@ -87,14 +91,28 @@
     backdrop-filter: blur(10px);
     border-bottom: 1px solid $border;
   }
-  // 데스크톱만 sticky — 모바일은 본문 흐름에 자연스럽게 들어가 sticky 누적을 피함.
+  // stickyMode='desktop' — 데스크톱과 모바일 모두 sticky 유지.
+  // 단, 모바일에서는 더 compact 한 chip 크기/패딩/폰트로 본문 잠식을 줄임.
   &--sticky-desktop {
-    @media (min-width: ($bp-tablet + 1)) {
-      position: sticky;
-      top: var(--mobile-header-height, 60px);
-      background: rgba(248, 251, 255, 0.92);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid $border;
+    position: sticky;
+    top: var(--mobile-header-height, 60px);
+    background: rgba(248, 251, 255, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid $border;
+  }
+
+  // 모바일 compact: chip 작게, padding/gap 축소, font-size 작게.
+  @media (max-width: $bp-tablet) {
+    margin-bottom: var(--space-3, 12px);
+    padding: 6px var(--app-page-padding-mobile, 16px);
+
+    .section-navigator__list {
+      gap: 4px;
+    }
+    .section-navigator__chip {
+      min-height: 30px;
+      padding: 4px 10px;
+      font-size: 12px;
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReplyTemplateBox from '../components/ReplyTemplateBox.jsx';
 import IssueCard from '../components/IssueCard.jsx';
@@ -12,6 +12,7 @@ import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
+import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
 
 export default function ProductDetailPage() {
   const { analysisId, productKey } = useParams();
@@ -90,6 +91,18 @@ export default function ProductDetailPage() {
     setSelectedIssueFilter(null);
     setReviewsOpen(true);
   }
+
+  // 리뷰 모달용 필터된 리뷰 목록. (Rules of Hooks: early return 전에 호출)
+  //   - selectedIssueFilter 가 있으면 getReviewsForIssue 로 사전 필터
+  //     (대시보드/샘플과 동일 유틸)
+  //   - 없으면 전체 리뷰
+  // ReviewsModal 의 내부 initialIssueFilter 는 더 이상 의존하지 않음 — 같은
+  // 매칭 기준을 여러 곳에서 다르게 구현하지 않도록 페이지 레벨에서 한 번에 결정.
+  const modalReviews = useMemo(() => {
+    const all = product?.reviews || [];
+    if (!selectedIssueFilter) return all;
+    return getReviewsForIssue(all, selectedIssueFilter);
+  }, [product, selectedIssueFilter]);
 
   if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
   if (accessKind) return <AccessError kind={accessKind} />;
@@ -282,9 +295,8 @@ export default function ProductDetailPage() {
           setReviewsOpen(false);
           setSelectedIssueFilter(null);
         }}
-        reviews={product.reviews || []}
+        reviews={modalReviews}
         productName={product.productName}
-        initialIssueFilter={selectedIssueFilter}
       />
     </div>
   );
