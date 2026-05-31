@@ -9,6 +9,7 @@ import AnalysisHistoryPage from './pages/AnalysisHistoryPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
+import SampleReportPage from './pages/SampleReportPage.jsx';
 import ProtectedRoute from './auth/ProtectedRoute.jsx';
 import AdminRoute from './auth/AdminRoute.jsx';
 import AdminLayout from './pages/admin/AdminLayout.jsx';
@@ -33,6 +34,8 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<LoginPage />} />
+      {/* 공개 샘플 리포트 — 비로그인 접근 가능. 정적 데이터만 사용. */}
+      <Route path="/demo/sample-report" element={<SampleReportPage />} />
       <Route element={<Layout />}>
         <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
         <Route path="/mapping/:uploadId" element={<ProtectedRoute><ColumnMappingPage /></ProtectedRoute>} />

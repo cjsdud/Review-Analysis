@@ -122,10 +122,18 @@ function HighlightCard({ data, meta, onOpen }) {
 }
 
 // initialProductName 이 주어지면 모달이 자동으로 그 상품만 필터해서 보여준다 — 상품 상세에서 사용.
-export default function ReviewHighlightsSection({ highlights, analysisId, initialProductName = '' }) {
-  const [openSentiment, setOpenSentiment] = useState(null); // null | 'positive' | 'negative' | 'neutral'
+// onOpenSentiment 가 주어지면 내부 모달 대신 그 콜백을 호출 — /demo/sample-report 처럼
+// 실제 분석 API 를 호출하면 안 되는 공개 미리보기 페이지에서 사용한다.
+export default function ReviewHighlightsSection({
+  highlights,
+  analysisId,
+  initialProductName = '',
+  onOpenSentiment,
+}) {
+  const [openSentiment, setOpenSentiment] = useState(null);
 
   if (!highlights) return null;
+  const useExternalOpen = typeof onOpenSentiment === 'function';
 
   return (
     <>
@@ -135,18 +143,20 @@ export default function ReviewHighlightsSection({ highlights, analysisId, initia
             key={meta.key}
             data={highlights[meta.key]}
             meta={meta}
-            onOpen={() => setOpenSentiment(meta.key)}
+            onOpen={() => (useExternalOpen ? onOpenSentiment(meta.key) : setOpenSentiment(meta.key))}
           />
         ))}
       </div>
 
-      <ReviewExplorerModal
-        open={openSentiment !== null}
-        onClose={() => setOpenSentiment(null)}
-        analysisId={analysisId}
-        initialSentiment={openSentiment || 'all'}
-        initialProductName={initialProductName}
-      />
+      {!useExternalOpen && (
+        <ReviewExplorerModal
+          open={openSentiment !== null}
+          onClose={() => setOpenSentiment(null)}
+          analysisId={analysisId}
+          initialSentiment={openSentiment || 'all'}
+          initialProductName={initialProductName}
+        />
+      )}
     </>
   );
 }

@@ -1,0 +1,151 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== /demo/sample-report 공개 페이지 =====
+// Layout 컴포넌트를 거치지 않으므로 자체 헤더 + 본문 토큰을 정의한다.
+.demo-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f4f8ff 0%, #ffffff 220px);
+}
+
+.demo-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid $border;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  &__badge {
+    font-size: 11px;
+  }
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: $bp-tablet) {
+    padding: 10px 16px;
+    &__brand {
+      gap: 8px;
+    }
+  }
+}
+
+.demo-main {
+  max-width: $content-max;
+  margin: 0 auto;
+  padding: 28px 24px 72px;
+
+  @media (max-width: $bp-tablet) {
+    padding: 20px 16px 48px;
+  }
+}
+
+.demo-hero {
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: $shadow-xs;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+
+  &__title {
+    font-size: 22px;
+    font-weight: 800;
+    color: $text-main;
+    margin: 0 0 6px;
+  }
+  &__lede {
+    font-size: 14px;
+    color: $text-sub;
+    line-height: 1.55;
+    margin: 0 0 14px;
+  }
+  &__notice {
+    display: block;
+    padding: 12px 14px;
+    background: #f1f5f9;
+    border-left: 4px solid #475569;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.55;
+    margin-bottom: 16px;
+  }
+  &__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    .btn { min-height: 44px; }
+  }
+}
+
+// 하단 가입 유도 CTA
+.demo-cta {
+  margin-top: 32px;
+  padding: 28px 24px;
+  background: linear-gradient(140deg, #0a1e4c 0%, #1b73e8 100%);
+  border-radius: 16px;
+  color: #fff;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+
+  &__title {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  &__desc {
+    font-size: 14px;
+    line-height: 1.6;
+    opacity: 0.92;
+    margin-bottom: 16px;
+  }
+  &__buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 14px;
+
+    .btn { min-height: 44px; }
+    .btn--primary {
+      background: #fff;
+      color: $brand;
+      border-color: transparent;
+      &:hover { background: #eef6ff; color: $brand; }
+    }
+    .btn--ghost {
+      background: transparent;
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.5);
+      &:hover { background: rgba(255, 255, 255, 0.08); }
+    }
+  }
+  &__foot {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  @media (max-width: $bp-tablet) {
+    padding: 22px 18px;
+    &__title { font-size: 18px; }
+  }
+}

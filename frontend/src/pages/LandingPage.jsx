@@ -18,9 +18,18 @@ const STEPS = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  // 로그인 사용자는 분석 히스토리(앱 홈), 비로그인은 로그인 화면으로.
-  const startTarget = user ? '/history' : '/login';
-  const uploadTarget = user ? '/upload' : '/login';
+  // 비로그인은 가입 전 미리보기(/demo/sample-report)로, 로그인은 앱 홈(/history)으로.
+  const startTarget = user ? '/history' : '/demo/sample-report';
+  // 실제 업로드는 로그인 필요 — 비로그인이면 로그인 후 next 로 /upload 로 보낸다.
+  function goUpload() {
+    if (user) navigate('/upload');
+    else navigate('/login', { state: { from: '/upload' } });
+  }
+  function goSampleDemo() {
+    // 비로그인은 회원가입 없이 바로 공개 샘플 리포트. 로그인 사용자는 기존 sample analysis 흐름 유지.
+    if (user) navigate('/upload?sample=1');
+    else navigate('/demo/sample-report');
+  }
 
   return (
     <div className="landing">
@@ -46,14 +55,14 @@ export default function LandingPage() {
           분류하고 CS 답글 초안까지 정리합니다.
         </p>
         <div className="hero__cta">
-          <button className="btn btn--primary" onClick={() => navigate(user ? '/upload?sample=1' : '/login', { state: user ? undefined : { from: '/upload?sample=1' } })}>
-            샘플 데이터로 체험하기
+          <button className="btn btn--primary" onClick={goSampleDemo}>
+            샘플 데이터로 먼저 체험하기
           </button>
-          <button className="btn btn--ghost" onClick={() => navigate(uploadTarget, uploadTarget === '/login' ? { state: { from: '/upload' } } : undefined)}>
-            리뷰 파일 업로드하기
+          <button className="btn btn--ghost" onClick={goUpload}>
+            내 리뷰 파일 업로드하기
           </button>
         </div>
-        <div className="hero__note">설치·로그인 없이 CSV/XLSX만 올리면 됩니다. 개인정보는 업로드 즉시 자동 마스킹.</div>
+        <div className="hero__note">샘플 리포트는 회원가입 없이 바로 확인할 수 있어요. 내 리뷰 파일 분석은 로그인 후 가능합니다.</div>
       </header>
 
       {/* 2) 문제 제기 */}
@@ -117,11 +126,11 @@ export default function LandingPage() {
       <section className="cta-section">
         <div className="cta-section__title">샘플 데이터로 먼저 확인해보세요</div>
         <div className="cta-section__buttons">
-          <button className="btn btn--primary" onClick={() => navigate(user ? '/upload?sample=1' : '/login', { state: user ? undefined : { from: '/upload?sample=1' } })}>
-            샘플 데이터로 체험하기
+          <button className="btn btn--primary" onClick={goSampleDemo}>
+            샘플 데이터로 먼저 체험하기
           </button>
-          <button className="btn btn--ghost" onClick={() => navigate(uploadTarget, uploadTarget === '/login' ? { state: { from: '/upload' } } : undefined)}>
-            리뷰 파일 업로드하기
+          <button className="btn btn--ghost" onClick={goUpload}>
+            내 리뷰 파일 업로드하기
           </button>
         </div>
       </section>
