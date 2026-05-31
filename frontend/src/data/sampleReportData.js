@@ -185,3 +185,56 @@ export const SAMPLE_PRODUCTS = [
     ],
   },
 ];
+
+// 샘플 페이지의 IssueCard / chart 클릭 시 표시할 마스킹된 예시 리뷰.
+// 실제 고객 데이터처럼 보이지 않도록 가공된 표현만 사용.
+export const SAMPLE_REVIEWS = [
+  {
+    id: 'sr-1', productName: '린넨 와이드 팬츠', optionName: '베이지/M',
+    rating: 2, sentiment: 'negative', createdAt: '2026-04-20',
+    content: '평소 사이즈보다 작게 느껴져서 교환을 고민했어요. 허리 부분이 특히 타이트합니다.',
+    detectedIssues: [{ category: '사이즈', issueLabel: '허리가 작게 나옴', isActionableIssue: true }],
+  },
+  {
+    id: 'sr-2', productName: '슬림핏 데님 팬츠', optionName: '인디고/28',
+    rating: 2, sentiment: 'negative', createdAt: '2026-04-18',
+    content: '한 치수 크게 사는 걸 추천드려요. 평소 사이즈는 너무 작게 느껴졌어요.',
+    detectedIssues: [{ category: '사이즈', issueLabel: '전반적으로 작게 나옴', isActionableIssue: true }],
+  },
+  {
+    id: 'sr-3', productName: '베이직 반팔 티셔츠', optionName: '화이트/M',
+    rating: 2, sentiment: 'negative', createdAt: '2026-04-16',
+    content: '화이트 색상은 비침이 있어 단독으로 입기 어려웠어요.',
+    detectedIssues: [{ category: '소재/두께', issueLabel: '얇아서 비침이 있음', isActionableIssue: true }],
+  },
+  {
+    id: 'sr-4', productName: '여름 니트 가디건', optionName: '베이지/Free',
+    rating: 3, sentiment: 'neutral', createdAt: '2026-04-12',
+    content: '화면보다 색이 살짝 어둡지만 차분해서 만족합니다.',
+    detectedIssues: [{ category: '색상/화면 차이', issueLabel: '실물이 화면보다 어두움', isActionableIssue: true }],
+  },
+  {
+    id: 'sr-5', productName: '여름 니트 가디건', optionName: '베이지/Free',
+    rating: 2, sentiment: 'negative', createdAt: '2026-04-11',
+    content: '세탁 후 보풀이 많이 생겨서 몇 번 못 입을 것 같아요.',
+    detectedIssues: [{ category: '세탁/내구성', issueLabel: '보풀이 생김', isActionableIssue: true }],
+  },
+  {
+    id: 'sr-6', productName: '린넨 와이드 팬츠', optionName: '블랙/L',
+    rating: 4, sentiment: 'positive', createdAt: '2026-04-22',
+    content: '핏이 예쁘고 데일리로 입기 좋아요. 색상별로 더 사고 싶을 만큼 만족합니다.',
+    detectedIssues: [],
+  },
+  {
+    id: 'sr-7', productName: '데일리 셔츠', optionName: '오트밀/M',
+    rating: 4, sentiment: 'positive', createdAt: '2026-04-14',
+    content: '핏이 깔끔하고 오피스룩으로 무난해서 추천하고 싶어요.',
+    detectedIssues: [],
+  },
+  {
+    id: 'sr-8', productName: '베이직 반팔 티셔츠', optionName: '그레이/L',
+    rating: 3, sentiment: 'neutral', createdAt: '2026-04-17',
+    content: '어깨가 살짝 큰 것 같지만 편하게 입을 수 있어요.',
+    detectedIssues: [{ category: '사이즈', issueLabel: '어깨가 큼', isActionableIssue: true }],
+  },
+];

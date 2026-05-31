@@ -122,6 +122,7 @@ export default function ReviewExplorerModal({
       if (keyword.trim())     params.keyword = keyword.trim();
       if (rating)             params.rating = rating;
       if (hasIssue !== '')    params.hasIssue = hasIssue;
+      if (category)           params.category = category;
       const data = await getAnalysisReviews(analysisId, params);
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -131,7 +132,7 @@ export default function ReviewExplorerModal({
     } finally {
       setLoading(false);
     }
-  }, [open, analysisId, sentiment, sort, productName, keyword, rating, hasIssue]);
+  }, [open, analysisId, sentiment, sort, productName, keyword, rating, hasIssue, category]);
 
   useEffect(() => { setSentiment(initialSentiment); }, [initialSentiment, open]);
   useEffect(() => { setProductName(initialProductName); }, [initialProductName, open]);
@@ -165,10 +166,17 @@ export default function ReviewExplorerModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={titleFor(sentiment)}
-      description="이 분석에 사용된 마스킹된 리뷰 데이터입니다."
+      title={titleOverride || (category ? `${category} 관련 리뷰` : titleFor(sentiment))}
+      description={descriptionOverride || (category ? '해당 이슈가 감지된 리뷰를 모아 보여드립니다.' : '이 분석에 사용된 마스킹된 리뷰 데이터입니다.')}
       size="lg"
     >
+      {category && (
+        <div className="re-active-filter">
+          <span className="muted" style={{ fontSize: 12 }}>적용된 필터</span>
+          <span className="tag tag--neutral">카테고리: {category}</span>
+          <button type="button" className="linklike" onClick={() => setCategory('')}>해제</button>
+        </div>
+      )}
       <div className="re-toolbar">
         <div className="re-toolbar__chips" role="group" aria-label="감성 필터">
           {['all', 'positive', 'neutral', 'negative'].map((s) => (

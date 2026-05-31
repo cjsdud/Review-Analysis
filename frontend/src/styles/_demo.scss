@@ -96,6 +96,42 @@
   }
 }
 
+// 샘플 핵심 이슈 클릭 chip 목록
+.demo-issue-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  word-break: keep-all;
+}
+
+.demo-issue-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-main;
+  cursor: pointer;
+  min-height: 36px;
+  transition: background 0.15s, border-color 0.15s;
+  &:hover { background: $brand-50; border-color: $brand-200; }
+  &:focus-visible { @include focus-ring; }
+
+  &__count {
+    color: $primary;
+    font-weight: 700;
+    font-size: 12px;
+  }
+}
+
 // 하단 가입 유도 CTA
 .demo-cta {
   margin-top: 32px;

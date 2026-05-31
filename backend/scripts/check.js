@@ -2701,6 +2701,51 @@ await step('seed password reset — SEED_RESET_PASSWORDS=true 면 env 값으로 
   cleanSeedEnv();
 });
 
+// ──────────────────────────────────────────────
+// getReviewsForIssue 유틸 (프론트 순수 로직)
+// ──────────────────────────────────────────────
+await step('getReviewsForIssue — reviewIds 우선 매칭', async () => {
+  const { getReviewsForIssue } = await import('../../frontend/src/utils/getReviewsForIssue.js');
+  const reviews = [
+    { id: 'r1', detectedIssues: [{ category: '사이즈' }] },
+    { id: 'r2', detectedIssues: [{ category: '색상/화면 차이' }] },
+    { id: 'r3', detectedIssues: [{ category: '사이즈' }] },
+  ];
+  const out = getReviewsForIssue(reviews, { reviewIds: ['r1', 'r3'] });
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map((r) => r.id), ['r1', 'r3']);
+});
+
+await step('getReviewsForIssue — category 정규화 매칭 (사이즈/핏 → 사이즈)', async () => {
+  const { getReviewsForIssue } = await import('../../frontend/src/utils/getReviewsForIssue.js');
+  const reviews = [
+    { id: 'r1', detectedIssues: [{ category: '사이즈/핏', issueLabel: '허리 작음' }] },
+    { id: 'r2', detectedIssues: [{ category: '색상' }] },
+    { id: 'r3', detectedIssues: [{ category: '사이즈' }] },
+  ];
+  const out = getReviewsForIssue(reviews, { category: '사이즈' });
+  assert.equal(out.length, 2, `사이즈 카테고리 매칭: ${out.map((r) => r.id).join(',')}`);
+});
+
+await step('getReviewsForIssue — issueLabel 정확 매칭', async () => {
+  const { getReviewsForIssue } = await import('../../frontend/src/utils/getReviewsForIssue.js');
+  const reviews = [
+    { id: 'r1', detectedIssues: [{ category: '사이즈', issueLabel: '허리 작음' }] },
+    { id: 'r2', detectedIssues: [{ category: '사이즈', issueLabel: '어깨 큼' }] },
+  ];
+  const out = getReviewsForIssue(reviews, { issueLabel: '허리 작음' });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, 'r1');
+});
+
+await step('getReviewsForIssue — 매칭 없음 / null 입력 → []', async () => {
+  const { getReviewsForIssue } = await import('../../frontend/src/utils/getReviewsForIssue.js');
+  assert.deepEqual(getReviewsForIssue([], { category: '사이즈' }), []);
+  assert.deepEqual(getReviewsForIssue(null, { category: '사이즈' }), []);
+  assert.deepEqual(getReviewsForIssue([{ id: 'r1', detectedIssues: [] }], null), []);
+  assert.deepEqual(getReviewsForIssue([{ id: 'r1', detectedIssues: [] }], {}), []);
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });

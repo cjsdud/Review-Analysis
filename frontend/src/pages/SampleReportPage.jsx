@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import BrandTitle from '../components/BrandTitle.jsx';
 import SummaryCards from '../components/SummaryCards.jsx';
@@ -6,8 +6,10 @@ import TopFixTargets, { sortFixTargets } from '../components/TopFixTargets.jsx';
 import ProductsTable from '../components/ProductsTable.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import SectionCard from '../components/SectionCard.jsx';
+import Modal from '../components/Modal.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { SAMPLE_SUMMARY, SAMPLE_PRODUCTS } from '../data/sampleReportData.js';
+import { SAMPLE_SUMMARY, SAMPLE_PRODUCTS, SAMPLE_REVIEWS } from '../data/sampleReportData.js';
+import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
 
 // 공개 샘플 리포트 — 비로그인 사용자가 회원가입 없이 ReviewFit 결과 형태를
 // 미리 볼 수 있는 페이지. 실제 분석 API 호출 없이 정적 데이터만 사용한다.
@@ -23,6 +25,17 @@ export default function SampleReportPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const ctaRef = useRef(null);
+  // 샘플 이슈 클릭 → 정적 sample 리뷰 모달
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
+  const [issueModalTitle, setIssueModalTitle] = useState('');
+  const [issueModalReviews, setIssueModalReviews] = useState([]);
+
+  function openSampleIssueReviews(issue) {
+    const related = getReviewsForIssue(SAMPLE_REVIEWS, issue);
+    setIssueModalTitle(`${issue.issueLabel || issue.category} 관련 샘플 리뷰`);
+    setIssueModalReviews(related);
+    setIssueModalOpen(true);
+  }
 
   // 비로그인 첫 진입 시 페이지 최상단으로
   useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -164,6 +177,31 @@ export default function SampleReportPage() {
           <ProductsTable products={SAMPLE_PRODUCTS} onSelect={goToCTA} />
         </SectionCard>
 
+        {/* 샘플 핵심 이슈 — 클릭 시 정적 sample 리뷰 모달 (API 호출 없음) */}
+        <SectionCard
+          title="자주 발견되는 핵심 이슈"
+          subtitle="아래 이슈를 클릭하면 해당 이슈가 감지된 샘플 리뷰를 볼 수 있어요."
+          className="mt-5"
+        >
+          <ul className="demo-issue-list">
+            {SAMPLE_PRODUCTS.flatMap((p) =>
+              (p.topIssues || []).map((iss, i) => (
+                <li key={`${p.productKey}-${i}`}>
+                  <button
+                    type="button"
+                    className="demo-issue-chip"
+                    onClick={() => openSampleIssueReviews(iss)}
+                  >
+                    <span className="muted" style={{ marginRight: 6 }}>[{iss.category}]</span>
+                    {iss.issueLabel}
+                    <span className="demo-issue-chip__count">{iss.count}건</span>
+                  </button>
+                </li>
+              )),
+            )}
+          </ul>
+        </SectionCard>
+
         {/* 회원가입 유도 CTA */}
         <section ref={ctaRef} className="demo-cta">
           <div className="demo-cta__title">우리 상품 리뷰도 이렇게 보고 싶다면?</div>
@@ -183,6 +221,54 @@ export default function SampleReportPage() {
           </div>
         </section>
       </main>
+
+      <Modal
+        open={issueModalOpen}
+        onClose={() => setIssueModalOpen(false)}
+        title={issueModalTitle}
+        description="샘플 데이터에서 해당 이슈가 감지된 예시 리뷰입니다."
+        size="md"
+      >
+        {issueModalReviews.length === 0 ? (
+          <div className="state-box">
+            <div className="state-box__title">표시할 샘플 리뷰가 없습니다.</div>
+            <div className="state-box__desc muted">다른 이슈를 선택해 보시거나, 가입 후 직접 분석한 리뷰에서 확인할 수 있어요.</div>
+          </div>
+        ) : (
+          <ul className="re-list">
+            {issueModalReviews.map((r) => (
+              <li key={r.id} className="re-card">
+                <div className="re-card__head">
+                  <div className="re-card__meta">
+                    {r.rating != null && <span className="re-card__rating">★ {r.rating}</span>}
+                    <span className="tag tag--sample">샘플</span>
+                    {r.createdAt && <span className="muted">· {r.createdAt}</span>}
+                  </div>
+                  <div className="re-card__product">
+                    {r.productName}
+                    {r.optionName && <span className="muted re-card__option"> · {r.optionName}</span>}
+                  </div>
+                </div>
+                <div className="re-card__content">{r.content}</div>
+                {r.detectedIssues?.length > 0 && (
+                  <div className="re-card__chips">
+                    {r.detectedIssues.map((iss, i) => (
+                      <span key={i} className="re-card__chip">
+                        <span className="muted" style={{ marginRight: 4 }}>[{iss.category}]</span>{iss.issueLabel}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-4" style={{ textAlign: 'center' }}>
+          <button type="button" className="btn btn--primary" onClick={startAnalysis}>
+            회원가입하고 내 리뷰 분석하기
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

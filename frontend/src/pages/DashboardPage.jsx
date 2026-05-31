@@ -6,12 +6,13 @@ const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
 import TopFixTargets, { sortFixTargets } from '../components/TopFixTargets.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
+import ReviewExplorerModal from '../components/ReviewExplorerModal.jsx';
+import SentimentBar from '../components/SentimentBar.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
-import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
@@ -25,9 +26,9 @@ export default function DashboardPage() {
   const [accessKind, setAccessKind] = useState(null); // 'AUTH_REQUIRED' | 'FORBIDDEN' | 'NOT_FOUND' | null
   const [error, setError] = useState('');
   const [chartType, setChartType] = useState('bar');
-  // 차트에서 카테고리를 클릭하면 AllIssuesModal 을 그 카테고리로 사전 필터해서 연다.
-  const [issuesModalOpen, setIssuesModalOpen] = useState(false);
-  const [issuesModalCategory, setIssuesModalCategory] = useState('전체');
+  // 차트 클릭 → ReviewExplorerModal 을 그 카테고리로 사전 필터해서 직접 연다.
+  const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
+  const [reviewsModalCategory, setReviewsModalCategory] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -52,12 +53,12 @@ export default function DashboardPage() {
     navigate(`/products/${analysisId}/${encodeURIComponent(productKey)}`);
   }
 
-  // 차트(막대/원형) 클릭 → 해당 카테고리의 이슈 모달 열기.
-  // 모든 상품의 allIssues 를 평탄화한 뒤 AllIssuesModal 의 카테고리 필터를 미리 적용.
+  // 차트(막대/원형) 클릭 → 해당 카테고리의 관련 리뷰 모달 직접 열기.
+  // 백엔드 /api/analysis/:id/reviews?category=... 가 detectedIssues 기준 필터.
   function handleCategoryClick(categoryName) {
     const normalized = normalizeIssueCategory(categoryName);
-    setIssuesModalCategory(normalized);
-    setIssuesModalOpen(true);
+    setReviewsModalCategory(normalized);
+    setReviewsModalOpen(true);
   }
 
   if (loading) return <LoadingState title="리포트를 준비하고 있어요" />;
@@ -90,8 +91,6 @@ export default function DashboardPage() {
     { id: 'sec-product-table', label: '상품별 정리' },
   ].filter(Boolean);
 
-  // 모든 상품의 allIssues 를 합쳐 AllIssuesModal 에 넘긴다 (카테고리 사전 필터용).
-  const aggregatedIssues = (products || []).flatMap((p) => p.allIssues || p.topIssues || []);
 
   return (
     <div>
@@ -121,7 +120,8 @@ export default function DashboardPage() {
         }
       />
 
-      <SectionNavigator sections={navSections} />
+      {/* sticky 는 데스크톱만 — 모바일에서 topbar 와 누적되어 본문이 가려지지 않도록 */}
+      <SectionNavigator sections={navSections} stickyMode="desktop" enableKeyboard offset={120} />
 
       {/* 전체 요약 */}
       <section id="sec-summary" className="report-section">
@@ -151,7 +151,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* 전체 리뷰 반응 — 감성 분포 / 리뷰 내용 요약 묶기 */}
+      {/* 전체 리뷰 반응 요약 — 감성 분포 + 리뷰 내용 요약 한 섹션 */}
       {summary.reviewHighlights && (
         <section id="sec-review-reaction" className="report-section">
           <div className="page-head" style={{ marginBottom: 12 }}>
@@ -160,11 +160,33 @@ export default function DashboardPage() {
                 전체 리뷰 반응 요약
               </div>
               <div className="page-head__sub">
-                전체 리뷰의 긍정·중립·부정 비율과 대표 리뷰 내용을 함께 확인할 수 있습니다. 개선 이슈는 긍정 리뷰 안에서도 발견될 수 있어 부정 리뷰 수와 다를 수 있습니다.
+                전체 리뷰의 긍정·중립·부정 비율과 대표 반응을 함께 확인할 수 있어요.
               </div>
             </div>
           </div>
-          <ReviewHighlightsSection highlights={summary.reviewHighlights} analysisId={analysisId} />
+
+          <div className="review-reaction-summary">
+            <div className="review-reaction-summary__sentiment">
+              <div className="review-reaction-summary__sentiment-title">감성 분포</div>
+              <SentimentBar
+                counts={summary.sentimentCounts}
+                ratios={summary.sentimentRatios}
+                showLegend
+              />
+              <div className="review-reaction-summary__sentiment-numbers">
+                <span>긍정 {summary.sentimentCounts?.positive ?? 0}건</span>
+                <span className="muted">·</span>
+                <span>중립 {summary.sentimentCounts?.neutral ?? 0}건</span>
+                <span className="muted">·</span>
+                <span>부정 {summary.sentimentCounts?.negative ?? 0}건</span>
+              </div>
+              <div className="review-reaction-summary__sentiment-help">
+                개선 이슈는 긍정 리뷰 안에서도 발견될 수 있어, 부정 리뷰 수와 다를 수 있습니다.
+              </div>
+            </div>
+
+            <ReviewHighlightsSection highlights={summary.reviewHighlights} analysisId={analysisId} />
+          </div>
         </section>
       )}
 
@@ -245,12 +267,12 @@ export default function DashboardPage() {
         <ProductsTable products={products} onSelect={goProduct} />
       </SectionCard>
 
-      {/* 차트 클릭 시 열리는 카테고리 사전 필터 모달 */}
-      <AllIssuesModal
-        open={issuesModalOpen}
-        onClose={() => setIssuesModalOpen(false)}
-        allIssues={aggregatedIssues}
-        initialCategory={issuesModalCategory}
+      {/* 차트 클릭 시 열리는 카테고리 사전 필터 리뷰 모달 */}
+      <ReviewExplorerModal
+        open={reviewsModalOpen}
+        onClose={() => { setReviewsModalOpen(false); setReviewsModalCategory(''); }}
+        analysisId={analysisId}
+        initialCategory={reviewsModalCategory}
       />
     </div>
   );

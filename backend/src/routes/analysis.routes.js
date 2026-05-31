@@ -287,6 +287,8 @@ router.get('/:id/reviews', requireAuth, (req, res) => {
   const keyword = (q.keyword || '').trim().toLowerCase();
   const rating = q.rating != null && q.rating !== '' ? Number(q.rating) : null;
   const source = (q.source || '').trim();
+  const category = (q.category || '').trim();
+  const issueLabel = (q.issueLabel || '').trim();
 
   let filtered = allReviews;
   if (sentiment !== 'all') {
@@ -297,6 +299,25 @@ router.get('/:id/reviews', requireAuth, (req, res) => {
       const has = (r.detectedIssues || []).some((i) => i.isActionableIssue !== false && i.category !== '기타');
       return hasIssueFilter ? has : !has;
     });
+  }
+  // 차트 클릭 등으로 카테고리/이슈 사전 필터가 들어오면 detectedIssues 기준으로 매칭.
+  // 카테고리는 공백 차이만 허용 (정규화는 최소화 — 다른 이슈가 섞이지 않도록).
+  if (category) {
+    const cat = category.replace(/\s+/g, '').toLowerCase();
+    filtered = filtered.filter((r) =>
+      (r.detectedIssues || []).some(
+        (i) => (i.category || '').replace(/\s+/g, '').toLowerCase() === cat,
+      ),
+    );
+  }
+  if (issueLabel) {
+    const lbl = issueLabel.replace(/\s+/g, '').toLowerCase();
+    filtered = filtered.filter((r) =>
+      (r.detectedIssues || []).some((i) => {
+        const v = (i.issue || i.issueLabel || '').replace(/\s+/g, '').toLowerCase();
+        return v === lbl;
+      }),
+    );
   }
   if (productName) filtered = filtered.filter((r) => (r.productName || '').toLowerCase().includes(productName));
   if (keyword)     filtered = filtered.filter((r) => (`${r.title || ''} ${r.content || ''}`).toLowerCase().includes(keyword));

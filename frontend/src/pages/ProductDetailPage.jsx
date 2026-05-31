@@ -135,6 +135,9 @@ export default function ProductDetailPage() {
           { id: 'sec-product-detail-actions', label: '수정 체크리스트' },
           (product.replyTemplates || []).length > 0 ? { id: 'sec-product-replies', label: 'CS 답글 초안' } : null,
         ].filter(Boolean)}
+        stickyMode="desktop"
+        enableKeyboard
+        offset={120}
       />
 
       {/* 상단 헤더 */}
