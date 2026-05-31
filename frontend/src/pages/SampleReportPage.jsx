@@ -27,6 +27,41 @@ export default function SampleReportPage() {
   // 비로그인 첫 진입 시 페이지 최상단으로
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
+  // SEO — 페이지 전용 title/description/og 태그. unmount 시 원복.
+  // SPA 라 일부 크롤러가 동적 meta 를 완전히 반영하지 못할 수 있음 (한계 문서화).
+  useEffect(() => {
+    const prevTitle = document.title;
+    const TITLE = 'ReviewFit 샘플 리포트 미리보기';
+    const DESC = '리뷰 파일을 업로드하면 상품별 반복 이슈, 긍정·중립·부정 리뷰 반응, 근거 리뷰, CS 답글 초안을 어떻게 확인할 수 있는지 샘플 리포트로 미리 확인해 보세요.';
+    document.title = TITLE;
+    const tags = [
+      { selector: 'meta[name="description"]', attrs: { name: 'description', content: DESC } },
+      { selector: 'meta[property="og:title"]', attrs: { property: 'og:title', content: TITLE } },
+      { selector: 'meta[property="og:description"]', attrs: { property: 'og:description', content: DESC } },
+      { selector: 'meta[property="og:type"]', attrs: { property: 'og:type', content: 'website' } },
+    ];
+    const restoreFns = tags.map(({ selector, attrs }) => {
+      let el = document.head.querySelector(selector);
+      const created = !el;
+      const prevContent = el?.getAttribute('content') || null;
+      if (!el) {
+        el = document.createElement('meta');
+        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+        document.head.appendChild(el);
+      } else {
+        el.setAttribute('content', attrs.content);
+      }
+      return () => {
+        if (created) el.parentNode && el.parentNode.removeChild(el);
+        else if (prevContent != null) el.setAttribute('content', prevContent);
+      };
+    });
+    return () => {
+      document.title = prevTitle;
+      restoreFns.forEach((fn) => fn());
+    };
+  }, []);
+
   // 가입 CTA 위치로 부드럽게 스크롤 — 감성 카드 "전체 보기" 대체 동작.
   function goToCTA() {
     if (ctaRef.current) ctaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -44,7 +79,7 @@ export default function SampleReportPage() {
     navigate('/login');
   }
   function goSignup() {
-    navigate('/login', { state: { mode: 'register' } });
+    navigate('/signup?next=/upload');
   }
 
   return (

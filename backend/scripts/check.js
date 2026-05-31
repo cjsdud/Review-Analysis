@@ -1065,6 +1065,18 @@ await step('history — isSample 필드: source=sample 우선, 파일명 fallbac
     `사용자 임의 파일명 "sample_my_reviews_2026.csv" 는 isSample=false 여야 함 (got ${userFile.isSample})`);
 });
 
+await step('history — is_sample 컬럼이 source 보다 우선 적용된다', async () => {
+  const { default: db, listAnalyses } = await import('../src/db/database.js');
+  // is_sample = 1 + source != 'sample' — 명시적 컬럼이 우선
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)')
+    .run('uColCol', 'whatever.csv', 'custom');
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary, is_sample) VALUES (?, ?, ?, ?, ?)`)
+    .run('anCol', 'uColCol', 'done', '{}', 1);
+  const list = listAnalyses({ limit: 100 });
+  const item = list.find((x) => x.id === 'anCol');
+  assert.equal(item.isSample, true, `is_sample=1 이면 source 와 무관하게 true: ${item.isSample}`);
+});
+
 await step('history — listAnalyses limit 적용', async () => {
   const { listAnalyses } = await import('../src/db/database.js');
   const one = listAnalyses({ limit: 1 });

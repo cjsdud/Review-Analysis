@@ -86,10 +86,14 @@ export default function ReviewExplorerModal({
   analysisId,
   initialSentiment = 'all',
   initialProductName = '',
+  initialCategory = '',
+  title: titleOverride,
+  description: descriptionOverride,
 }) {
   const navigate = useNavigate();
   const [sentiment, setSentiment] = useState(initialSentiment);
   const [productName, setProductName] = useState(initialProductName);
+  const [category, setCategory] = useState(initialCategory);
   const [keyword, setKeyword] = useState('');
   const [rating, setRating] = useState('');
   const [hasIssue, setHasIssue] = useState(''); // '' | 'true' | 'false'
@@ -131,6 +135,7 @@ export default function ReviewExplorerModal({
 
   useEffect(() => { setSentiment(initialSentiment); }, [initialSentiment, open]);
   useEffect(() => { setProductName(initialProductName); }, [initialProductName, open]);
+  useEffect(() => { setCategory(initialCategory); }, [initialCategory, open]);
   // 필터/정렬 변경 시 1페이지로 리셋해서 로드
   useEffect(() => { loadPage(1); }, [loadPage]);
 

@@ -48,10 +48,10 @@
 .demo-main {
   max-width: $content-max;
   margin: 0 auto;
-  padding: 28px 24px 72px;
+  padding: var(--app-page-padding-desktop) var(--app-page-padding-desktop) 72px;
 
   @media (max-width: $bp-tablet) {
-    padding: 20px 16px 48px;
+    padding: var(--space-5) var(--app-page-padding-mobile) 48px;
   }
 }
 

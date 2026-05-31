@@ -85,6 +85,16 @@ ensureColumn('product_analyses', 'user_id', 'user_id TEXT');
 ensureColumn('user_corrections', 'user_id', 'user_id TEXT');
 ensureColumn('review_classifications', 'user_id', 'user_id TEXT');
 
+// 샘플 분석 표식 — 파일명/source 추론 없이 명시적 판별. 0=일반 업로드, 1=샘플 분석.
+ensureColumn('analysis_jobs', 'is_sample', 'is_sample INTEGER NOT NULL DEFAULT 0');
+// 기존 source='sample' 데이터 보정 (한 번만 의미 있음, 이미 1 이면 변화 없음)
+db.exec(`
+  UPDATE analysis_jobs
+  SET is_sample = 1
+  WHERE is_sample = 0
+    AND upload_id IN (SELECT id FROM upload_files WHERE source = 'sample')
+`);
+
 // 기본 요금제 seed (free/starter/pro). 가격은 미확정이므로 0 으로 두고 README/docs 에서 TODO.
 // 인덱스 기반 monthly_analysis_limit / max_reviews_per_analysis 도 함께 정의.
 const SEED_PLANS = [
@@ -191,7 +201,7 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
   }
   const rows = db
     .prepare(
-      `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at,
+      `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at, j.is_sample,
               u.original_name AS original_name, u.source AS source,
               (SELECT COUNT(*) FROM product_analyses p WHERE p.analysis_id = j.id) AS product_count
          FROM analysis_jobs j
@@ -210,9 +220,13 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
       summary = {};
     }
     const src = r.source || summary.source || null;
-    // 샘플 판별: source 'sample' 우선, 과거 데이터 호환을 위해 우리가 고정으로
-    // 사용하는 파일명 prefix 도 fallback. 사용자 임의 파일명은 더 이상 인정 안 함.
+    // 샘플 판별 우선순위:
+    //   1. analysis_jobs.is_sample 컬럼 (신규 표준)
+    //   2. upload_files.source === 'sample'
+    //   3. 고정 sample 파일명 정확 일치 (legacy 데이터 호환)
+    // 사용자 임의 파일명은 더 이상 sample 로 인정하지 않음.
     const isSample =
+      r.is_sample === 1 ||
       src === 'sample' ||
       (typeof r.original_name === 'string' &&
         r.original_name.toLowerCase() === 'sample_reviews_fashion.csv');

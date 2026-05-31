@@ -249,7 +249,7 @@ export default function Layout() {
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigate('/login')}>
                   로그인
                 </button>
-                <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/login', { state: { mode: 'register' } })}>
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/signup')}>
                   회원가입
                 </button>
               </div>

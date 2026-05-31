@@ -1,6 +1,7 @@
 node_modules/
 dist/
-data/
+# 백엔드 SQLite 데이터 디렉터리만 무시. 프론트의 src/data 같은 정적 모듈은 포함되어야 한다.
+backend/data/
 *.db
 *.db-*
 .env

@@ -1,17 +1,29 @@
 // 로그인 / 회원가입 페이지 (toggle 방식).
 // 이메일/비밀번호 기반. 로그인 성공 시 from(원래 가려던 곳) 또는 /upload 로 이동.
-import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import BrandTitle from '../components/BrandTitle.jsx';
 
-export default function LoginPage() {
-  const { login, register } = useAuth();
+// initialMode='login'  → /login 진입 시 로그인 폼
+// initialMode='register' → /signup 진입 시 회원가입 폼
+// next query param 또는 location.state.from 을 우선 이동 경로로 사용
+// 이미 로그인된 사용자가 다시 들어오면 next 또는 /history 로 즉시 이동.
+export default function LoginPage({ initialMode = 'login' }) {
+  const { user, login, register } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const from = location.state?.from || '/history';
+  const [searchParams] = useSearchParams();
+  const nextParam = searchParams.get('next');
+  const from = nextParam || location.state?.from || '/history';
 
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  useEffect(() => {
+    if (user) navigate(from, { replace: true });
+  }, [user, from, navigate]);
+
+  const [mode, setMode] = useState(location.state?.mode || initialMode); // 'login' | 'register'
+  // URL 이 /login ↔ /signup 사이를 오갈 때 mode 동기화
+  useEffect(() => { setMode(location.state?.mode || initialMode); }, [initialMode, location.state?.mode]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
@@ -115,14 +127,31 @@ export default function LoginPage() {
           {mode === 'login' ? (
             <>
               아직 계정이 없으신가요?{' '}
-              <button type="button" className="linklike" onClick={() => { setMode('register'); setErr(''); }}>
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  setMode('register'); setErr('');
+                  // URL 도 /signup 으로 동기화 (next 유지)
+                  const q = nextParam ? `?next=${encodeURIComponent(nextParam)}` : '';
+                  navigate(`/signup${q}`, { replace: true, state: { from } });
+                }}
+              >
                 회원가입
               </button>
             </>
           ) : (
             <>
               이미 계정이 있으신가요?{' '}
-              <button type="button" className="linklike" onClick={() => { setMode('login'); setErr(''); }}>
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  setMode('login'); setErr('');
+                  const q = nextParam ? `?next=${encodeURIComponent(nextParam)}` : '';
+                  navigate(`/login${q}`, { replace: true, state: { from } });
+                }}
+              >
                 로그인
               </button>
             </>

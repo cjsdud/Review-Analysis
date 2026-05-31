@@ -33,7 +33,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<LoginPage initialMode="login" />} />
+      <Route path="/signup" element={<LoginPage initialMode="register" />} />
       {/* 공개 샘플 리포트 — 비로그인 접근 가능. 정적 데이터만 사용. */}
       <Route path="/demo/sample-report" element={<SampleReportPage />} />
       <Route element={<Layout />}>

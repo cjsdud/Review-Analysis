@@ -149,10 +149,13 @@ h4 {
     background: $warning-soft;
     color: #b45309;
   }
-  // 관리자 배지 — 일반 사용자에게 노출되지 않으며, admin 본인 화면에서 권한을 확인하는 용도.
+  // 관리자 배지 — admin 본인 화면에서만 노출. 너무 튀지 않게 blue-navy 톤 + 가는 border.
+  // sample(slate dashed) / free(neutral) 와 색상 계층 구분.
   &--admin {
-    background: #ede9fe;
-    color: #6d28d9;
+    background: #eaf3ff;
+    color: #0f3f8f;
+    border: 1px solid #9ec9ff;
+    font-weight: 700;
     letter-spacing: 0.04em;
   }
   // 샘플 데이터 배지 — 실제 고객 데이터처럼 보이지 않도록 중립 회색톤.

@@ -153,8 +153,8 @@ router.post('/', requireAuth, async (req, res) => {
       (upload.original_name || '').toLowerCase() === 'sample_reviews_fashion.csv';
 
     db.prepare(
-      'INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)',
-    ).run(analysisId, parsed.data.uploadId, 'done', JSON.stringify(summary), userId);
+      'INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id, is_sample) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(analysisId, parsed.data.uploadId, 'done', JSON.stringify(summary), userId, summary.isSample ? 1 : 0);
 
     const insertPa = db.prepare(
       'INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?, ?, ?, ?, ?, ?)',

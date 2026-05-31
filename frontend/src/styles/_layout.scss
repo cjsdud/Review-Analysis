@@ -303,13 +303,13 @@
 }
 
 .content {
-  padding: $sp-8;
+  padding: var(--app-page-padding-desktop);
   max-width: $content-max;
   width: 100%;
   margin: 0 auto;
 
   @media (max-width: $bp-tablet) {
-    padding: $sp-5 $sp-4;
+    padding: var(--space-5) var(--app-page-padding-mobile);
   }
 }
 
