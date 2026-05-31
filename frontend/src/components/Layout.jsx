@@ -12,12 +12,18 @@ const NAV = [
 ];
 const ADMIN_NAV = { to: '/admin', label: '관리자 콘솔', icon: '🛡️' };
 
+// 포커스 가능한 요소 selector. focus trap 에서 Tab 순환 대상 결정용.
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, subscription, usage, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const drawerRef = useRef(null);
+  const hamburgerRef = useRef(null);
 
   const title = (() => {
     if (location.pathname.startsWith('/upload')) return '리뷰 파일 업로드';
@@ -44,16 +50,67 @@ export default function Layout() {
     setAccountOpen(false);
   }, [location.pathname]);
 
-  // drawer 열렸을 때 body scroll lock + ESC 닫기
+  // drawer 열렸을 때:
+  //   1) body scroll lock
+  //   2) ESC 로 닫기
+  //   3) focus trap — Tab/Shift+Tab 이 drawer 내부에서만 순환
+  //   4) drawer 열릴 때 내부 첫 번째 focusable 로 포커스 이동
+  //   5) drawer 닫힐 때 햄버거 버튼으로 포커스 복귀
   useEffect(() => {
     if (!drawerOpen) return;
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
+    const prevActive = document.activeElement;
     document.body.style.overflow = 'hidden';
-    const onKey = (e) => { if (e.key === 'Escape') setDrawerOpen(false); };
+
+    // 첫 focusable 로 이동 (close 버튼 또는 첫 메뉴)
+    const focusFirst = () => {
+      const root = drawerRef.current;
+      if (!root) return;
+      const items = root.querySelectorAll(FOCUSABLE_SELECTOR);
+      if (items.length > 0) items[0].focus();
+    };
+    // transform transition 끝나기 전에 포커스 옮기면 어색하므로 다음 tick.
+    const t = setTimeout(focusFirst, 0);
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDrawerOpen(false);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const root = drawerRef.current;
+      if (!root) return;
+      const items = Array.from(root.querySelectorAll(FOCUSABLE_SELECTOR));
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!root.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener('keydown', onKey);
+
     return () => {
-      document.body.style.overflow = prev;
+      clearTimeout(t);
+      document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
+      // 닫힐 때 햄버거 버튼으로 포커스 복귀 (없으면 이전 activeElement).
+      const target = hamburgerRef.current || (prevActive instanceof HTMLElement ? prevActive : null);
+      if (target && typeof target.focus === 'function') target.focus();
     };
   }, [drawerOpen]);
 
@@ -107,10 +164,12 @@ export default function Layout() {
         aria-hidden={!drawerOpen}
       />
       <aside
+        ref={drawerRef}
+        id="mobile-navigation-drawer"
         className={`mobile-drawer${drawerOpen ? ' is-open' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label="메뉴"
+        aria-label="모바일 메뉴"
         aria-hidden={!drawerOpen}
       >
         <div className="mobile-drawer__head">
@@ -133,10 +192,12 @@ export default function Layout() {
         <header className="topbar">
           {/* 모바일 햄버거 */}
           <button
+            ref={hamburgerRef}
             type="button"
             className="topbar__hamburger"
             aria-label="메뉴 열기"
             aria-expanded={drawerOpen}
+            aria-controls="mobile-navigation-drawer"
             onClick={() => setDrawerOpen(true)}
           >
             <span aria-hidden="true">☰</span>

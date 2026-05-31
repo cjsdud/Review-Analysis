@@ -133,6 +133,12 @@ h4 {
     color: #6d28d9;
     letter-spacing: 0.04em;
   }
+  // 샘플 데이터 배지 — 실제 고객 데이터처럼 보이지 않도록 중립 회색톤.
+  &--sample {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px dashed #cbd5e1;
+  }
 }
 
 // ===== 세그먼티드 토글 =====

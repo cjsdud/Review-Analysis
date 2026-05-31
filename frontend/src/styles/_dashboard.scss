@@ -680,6 +680,14 @@
     font-weight: 700;
     word-break: keep-all;
     overflow-wrap: break-word;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  // 샘플 데이터 배지 — 작게 표시, 줄바꿈 자연스럽게.
+  &__sample {
+    font-size: 11px;
   }
   &__meta {
     font-size: 12px;

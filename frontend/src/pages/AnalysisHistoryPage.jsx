@@ -12,6 +12,13 @@ function formatDate(s) {
   return String(s).replace('T', ' ').slice(0, 16);
 }
 
+// "샘플 데이터로 체험하기" 로 생성된 분석인지 판단.
+// 백엔드 sample 엔드포인트가 originalName 을 'sample_reviews_fashion.csv' 로 고정.
+function isSampleHistory(it) {
+  const name = (it?.originalName || '').toLowerCase();
+  return name.startsWith('sample_reviews_fashion');
+}
+
 export default function AnalysisHistoryPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
@@ -85,7 +92,15 @@ export default function AnalysisHistoryPage() {
               >
                 <div className="history-card__main">
                   <div className="history-card__name">
-                    {it.originalName || '(파일명 없음)'}
+                    {isSampleHistory(it) ? '샘플 리포트' : (it.originalName || '(파일명 없음)')}
+                    {isSampleHistory(it) && (
+                      <span
+                        className="tag tag--sample history-card__sample"
+                        title="샘플 데이터로 생성된 예시 리포트입니다."
+                      >
+                        샘플 데이터
+                      </span>
+                    )}
                   </div>
                   <div className="history-card__meta muted">
                     {formatDate(it.createdAt)}

@@ -395,16 +395,36 @@
 
       .sidebar__link {
         // drawer 내부 메뉴는 한 줄 가로로 안정 표시 (세로 쪼개짐 차단).
+        position: relative;
         white-space: nowrap;
         word-break: keep-all;
         overflow-wrap: normal;
         font-size: 15px;
-        padding: 12px 14px;
+        padding: 12px 14px 12px 18px;
         min-height: 48px;
         .ico { font-size: 18px; }
         .sidebar__link-label {
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        // 활성 메뉴: 좌측 accent bar + 배경 + 텍스트 강조.
+        // 데스크톱의 inset box-shadow 는 padding 큰 drawer 에서 가려질 수 있어
+        // ::before 로 별도 표시.
+        &.active {
+          background: $brand-50;
+          color: $brand-700;
+          font-weight: 700;
+          box-shadow: none;
+          &::before {
+            content: '';
+            position: absolute;
+            left: 6px;
+            top: 10px;
+            bottom: 10px;
+            width: 3px;
+            border-radius: 999px;
+            background: $brand;
+          }
         }
       }
     }
