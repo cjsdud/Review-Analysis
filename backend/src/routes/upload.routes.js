@@ -136,9 +136,12 @@ router.post('/sample', requireAuth, (req, res) => {
   if (!fs.existsSync(samplePath)) return res.status(404).json({ error: '샘플 파일을 찾을 수 없습니다.' });
   const buf = fs.readFileSync(samplePath);
   const parsed = parseFile(buf, 'sample_reviews_fashion.csv');
+  // source='sample' 로 명시 — 히스토리/응답에서 isSample 판별의 표준 기준.
+  // autoMapColumns 는 source='sample' 미정의 시 공통 후보로 자동 fallback 하므로
+  // 매핑 정확도에는 영향 없음.
   const payload = persistUpload({
     originalName: 'sample_reviews_fashion.csv',
-    source: 'smartstore',
+    source: 'sample',
     parsed,
     userId: req.user?.id || null,
   });

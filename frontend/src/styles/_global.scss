@@ -98,6 +98,28 @@ h4 {
   }
 }
 
+// ===== 레이아웃 토큰 (런타임 var() 로 참조 가능한 핵심 값) =====
+// SCSS 컴파일 시점 변수($sp-*, $sidebar-width 등) 와 별도로,
+// 모바일 헤더 / drawer / 안전영역 / 터치 타깃처럼 동적 조정이 필요한 값은
+// CSS custom property 로 둔다. 같은 의미의 값은 한 곳에서 관리.
+:root {
+  --app-sidebar-width: #{$sidebar-width};
+  --mobile-header-height: 60px;
+  --mobile-drawer-width: min(82vw, 320px);
+  --touch-target-md: 44px;
+
+  --space-2: #{$sp-2};
+  --space-3: #{$sp-3};
+  --space-4: #{$sp-4};
+  --space-5: #{$sp-5};
+  --space-6: #{$sp-6};
+
+  --app-page-padding-desktop: #{$sp-8};
+  --app-page-padding-mobile: #{$sp-4};
+
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 // ===== 태그/칩 =====
 .tag {
   display: inline-flex;

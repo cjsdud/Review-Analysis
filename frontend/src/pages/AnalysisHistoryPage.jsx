@@ -12,11 +12,13 @@ function formatDate(s) {
   return String(s).replace('T', ' ').slice(0, 16);
 }
 
-// "샘플 데이터로 체험하기" 로 생성된 분석인지 판단.
-// 백엔드 sample 엔드포인트가 originalName 을 'sample_reviews_fashion.csv' 로 고정.
+// 샘플 분석 판별 — 백엔드 isSample 우선, source === 'sample' fallback.
+// (과거 originalName prefix 추론 방식은 사용자가 임의로 sample 로 시작하는
+//  파일을 올렸을 때 오탐 가능성이 있어 제거.)
 function isSampleHistory(it) {
-  const name = (it?.originalName || '').toLowerCase();
-  return name.startsWith('sample_reviews_fashion');
+  if (!it) return false;
+  if (typeof it.isSample === 'boolean') return it.isSample;
+  return it.source === 'sample';
 }
 
 export default function AnalysisHistoryPage() {

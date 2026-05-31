@@ -146,7 +146,11 @@ router.post('/', requireAuth, async (req, res) => {
     const { analysisId, summary, products, classifications } = await runAnalysis(reviews, allCorrections);
     applyHistoricalCorrections(products);
 
-    summary.isSample = (upload.original_name || '').toLowerCase().startsWith('sample_reviews_fashion');
+    // 샘플 판별 표준: source === 'sample' 우선. 과거 데이터 호환을 위해 우리가
+    // 고정으로 사용하는 sample 파일명 매칭은 fallback.
+    summary.isSample =
+      upload.source === 'sample' ||
+      (upload.original_name || '').toLowerCase() === 'sample_reviews_fashion.csv';
 
     db.prepare(
       'INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)',

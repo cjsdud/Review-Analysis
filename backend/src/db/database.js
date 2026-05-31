@@ -209,10 +209,18 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
     } catch {
       summary = {};
     }
+    const src = r.source || summary.source || null;
+    // 샘플 판별: source 'sample' 우선, 과거 데이터 호환을 위해 우리가 고정으로
+    // 사용하는 파일명 prefix 도 fallback. 사용자 임의 파일명은 더 이상 인정 안 함.
+    const isSample =
+      src === 'sample' ||
+      (typeof r.original_name === 'string' &&
+        r.original_name.toLowerCase() === 'sample_reviews_fashion.csv');
     return {
       id: r.id,
       uploadId: r.upload_id,
-      source: r.source || summary.source || null,
+      source: src,
+      isSample,
       originalName: r.original_name || null,
       status: r.status,
       totalReviews: summary.totalReviews ?? null,

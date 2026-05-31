@@ -13,8 +13,33 @@ const NAV = [
 const ADMIN_NAV = { to: '/admin', label: '관리자 콘솔', icon: '🛡️' };
 
 // 포커스 가능한 요소 selector. focus trap 에서 Tab 순환 대상 결정용.
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+// summary/contenteditable/role=button/menuitem 같은 복합 인터랙티브도 포함.
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'summary',
+  '[contenteditable="true"]',
+  '[role="button"]:not([aria-disabled="true"])',
+  '[role="menuitem"]:not([aria-disabled="true"])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+// 실제로 보이고 포커스 가능한 요소만 필터링.
+function getVisibleFocusable(container) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)).filter((el) => {
+    if (el.hasAttribute('disabled')) return false;
+    if (el.getAttribute('aria-hidden') === 'true') return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    // position:fixed 내부 요소는 offsetParent 가 null 일 수 있어 rect 로 확인
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
 
 export default function Layout() {
   const location = useLocation();
@@ -64,9 +89,7 @@ export default function Layout() {
 
     // 첫 focusable 로 이동 (close 버튼 또는 첫 메뉴)
     const focusFirst = () => {
-      const root = drawerRef.current;
-      if (!root) return;
-      const items = root.querySelectorAll(FOCUSABLE_SELECTOR);
+      const items = getVisibleFocusable(drawerRef.current);
       if (items.length > 0) items[0].focus();
     };
     // transform transition 끝나기 전에 포커스 옮기면 어색하므로 다음 tick.
@@ -81,7 +104,7 @@ export default function Layout() {
       if (e.key !== 'Tab') return;
       const root = drawerRef.current;
       if (!root) return;
-      const items = Array.from(root.querySelectorAll(FOCUSABLE_SELECTOR));
+      const items = getVisibleFocusable(root);
       if (items.length === 0) {
         e.preventDefault();
         return;

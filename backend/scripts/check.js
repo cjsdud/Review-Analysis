@@ -1037,6 +1037,34 @@ await step('history — listAnalyses 가 최신순 목록 + summary 기반 메�
   assert.equal(item1.productCount, 2, 'product_analyses 카운트 실패');
 });
 
+await step('history — isSample 필드: source=sample 우선, 파일명 fallback, 일반 업로드는 false', async () => {
+  const { default: db, listAnalyses } = await import('../src/db/database.js');
+  // (a) source='sample' — 표준 sample 분석
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)')
+    .run('uSamp', 'sample_reviews_fashion.csv', 'sample');
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)`)
+    .run('anSamp', 'uSamp', 'done', '{}');
+  // (b) source='smartstore' + 정확한 sample 파일명 — fallback 으로 isSample=true
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)')
+    .run('uLegacySamp', 'sample_reviews_fashion.csv', 'smartstore');
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)`)
+    .run('anLegacySamp', 'uLegacySamp', 'done', '{}');
+  // (c) source='custom' + 사용자가 우연히 sample 로 시작하는 파일 — isSample=false 여야 함 (오탐 방지)
+  db.prepare('INSERT INTO upload_files (id, original_name, source) VALUES (?, ?, ?)')
+    .run('uUserSamp', 'sample_my_reviews_2026.csv', 'custom');
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, ?, ?)`)
+    .run('anUserSamp', 'uUserSamp', 'done', '{}');
+
+  const list = listAnalyses({ limit: 50 });
+  const std = list.find((x) => x.id === 'anSamp');
+  const legacy = list.find((x) => x.id === 'anLegacySamp');
+  const userFile = list.find((x) => x.id === 'anUserSamp');
+  assert.equal(std.isSample, true, `source=sample → isSample=true 기대, got ${std.isSample}`);
+  assert.equal(legacy.isSample, true, '정확한 sample 파일명은 fallback 으로 true');
+  assert.equal(userFile.isSample, false,
+    `사용자 임의 파일명 "sample_my_reviews_2026.csv" 는 isSample=false 여야 함 (got ${userFile.isSample})`);
+});
+
 await step('history — listAnalyses limit 적용', async () => {
   const { listAnalyses } = await import('../src/db/database.js');
   const one = listAnalyses({ limit: 1 });

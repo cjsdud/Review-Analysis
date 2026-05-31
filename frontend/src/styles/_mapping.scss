@@ -339,25 +339,26 @@
       order: 2;
     }
     // 모바일: CTA 영역을 하단 sticky 로 고정 — Safari 주소바에 가려지지 않도록
-    // safe-area-inset-bottom 만큼 추가 padding. 뒤 콘텐츠와 분리되도록
-    // 상단 border + 살짝 흰색 backdrop.
+    // --safe-bottom (env(safe-area-inset-bottom)) 만큼 추가 padding.
+    // 뒤 콘텐츠와 분리되도록 상단 border + 살짝 흰색 backdrop.
     .page-actions {
       order: 1;
       position: sticky;
       bottom: 0;
       z-index: 20;
-      margin: $sp-3 (-$sp-4) 0;
-      padding: 12px $sp-4 calc(12px + env(safe-area-inset-bottom, 0px));
+      margin: var(--space-3) calc(-1 * var(--space-4)) 0;
+      padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
       background: rgba(255, 255, 255, 0.96);
       backdrop-filter: blur(10px);
       border-top: 1px solid $border;
       box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.06);
       flex-direction: column; // 보조(다시 업로드) 위 / primary(이대로 분석하기) 아래 — 엄지 접근성
       align-items: stretch;
+      gap: var(--space-2);
 
       .btn {
         width: 100%;
-        min-height: 44px;
+        min-height: var(--touch-target-md);
       }
     }
   }
