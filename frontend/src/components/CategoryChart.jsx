@@ -1,12 +1,22 @@
 import ReactECharts from 'echarts-for-react';
 
 // 카테고리별 문제 분포. type: 'bar' | 'pie'
-export default function CategoryChart({ distribution = [], type = 'bar' }) {
+// onCategoryClick(categoryName) 이 주어지면 막대/원형 클릭 시 호출 — 관련 리뷰 모달 열기 등.
+export default function CategoryChart({ distribution = [], type = 'bar', onCategoryClick }) {
   if (!distribution.length) {
     return <div className="muted">표시할 카테고리 데이터가 없습니다.</div>;
   }
 
   const sorted = [...distribution].sort((a, b) => b.count - a.count);
+  const clickable = typeof onCategoryClick === 'function';
+  const onEvents = clickable
+    ? {
+        click: (params) => {
+          const name = params?.name || params?.data?.name;
+          if (name) onCategoryClick(name);
+        },
+      }
+    : undefined;
 
   const option =
     type === 'pie'
@@ -47,5 +57,19 @@ export default function CategoryChart({ distribution = [], type = 'bar' }) {
           ],
         };
 
-  return <ReactECharts option={option} style={{ height: 320 }} notMerge />;
+  return (
+    <>
+      {clickable && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+          막대나 조각을 클릭하면 관련 이슈를 모아 볼 수 있어요.
+        </div>
+      )}
+      <ReactECharts
+        option={option}
+        style={{ height: 320, cursor: clickable ? 'pointer' : 'default' }}
+        notMerge
+        onEvents={onEvents}
+      />
+    </>
+  );
 }

@@ -10,7 +10,10 @@ import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
+import SectionNavigator from '../components/SectionNavigator.jsx';
+import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
+import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
 
 export default function DashboardPage() {
@@ -22,6 +25,9 @@ export default function DashboardPage() {
   const [accessKind, setAccessKind] = useState(null); // 'AUTH_REQUIRED' | 'FORBIDDEN' | 'NOT_FOUND' | null
   const [error, setError] = useState('');
   const [chartType, setChartType] = useState('bar');
+  // 차트에서 카테고리를 클릭하면 AllIssuesModal 을 그 카테고리로 사전 필터해서 연다.
+  const [issuesModalOpen, setIssuesModalOpen] = useState(false);
+  const [issuesModalCategory, setIssuesModalCategory] = useState('전체');
 
   useEffect(() => {
     (async () => {
@@ -46,6 +52,14 @@ export default function DashboardPage() {
     navigate(`/products/${analysisId}/${encodeURIComponent(productKey)}`);
   }
 
+  // 차트(막대/원형) 클릭 → 해당 카테고리의 이슈 모달 열기.
+  // 모든 상품의 allIssues 를 평탄화한 뒤 AllIssuesModal 의 카테고리 필터를 미리 적용.
+  function handleCategoryClick(categoryName) {
+    const normalized = normalizeIssueCategory(categoryName);
+    setIssuesModalCategory(normalized);
+    setIssuesModalOpen(true);
+  }
+
   if (loading) return <LoadingState title="리포트를 준비하고 있어요" />;
   if (accessKind) return <AccessError kind={accessKind} />;
   if (error)
@@ -66,6 +80,18 @@ export default function DashboardPage() {
         actionTo="/upload"
       />
     );
+
+  // 섹션 네비게이션 항목 — 페이지에 실제 렌더링되는 섹션만.
+  const navSections = [
+    { id: 'sec-summary', label: '전체 요약' },
+    products?.length > 0 ? { id: 'sec-top-products', label: '먼저 고칠 상품 TOP 3' } : null,
+    summary.reviewHighlights ? { id: 'sec-review-reaction', label: '전체 리뷰 반응' } : null,
+    { id: 'sec-issue-breakdown', label: '반복 이슈' },
+    { id: 'sec-product-table', label: '상품별 정리' },
+  ].filter(Boolean);
+
+  // 모든 상품의 allIssues 를 합쳐 AllIssuesModal 에 넘긴다 (카테고리 사전 필터용).
+  const aggregatedIssues = (products || []).flatMap((p) => p.allIssues || p.topIssues || []);
 
   return (
     <div>
@@ -95,19 +121,22 @@ export default function DashboardPage() {
         }
       />
 
-      {summary.aiComment && (
-        <div className="ai-comment">
-          <span className="ai-comment__ico">📌</span>
-          <div className="ai-comment__text">{summary.aiComment}</div>
-        </div>
-      )}
+      <SectionNavigator sections={navSections} />
 
-      {/* 요약 지표 */}
-      <SummaryCards summary={summary} />
+      {/* 전체 요약 */}
+      <section id="sec-summary" className="report-section">
+        {summary.aiComment && (
+          <div className="ai-comment">
+            <span className="ai-comment__ico">📌</span>
+            <div className="ai-comment__text">{summary.aiComment}</div>
+          </div>
+        )}
+        <SummaryCards summary={summary} />
+      </section>
 
-      {/* 이번에 먼저 고칠 상품 (TOP 3) — products 전체에서 우선 점검 기준으로 정렬해 top 3 선정 */}
+      {/* 이번에 먼저 고칠 상품 TOP 3 */}
       {products?.length > 0 && (
-        <>
+        <section id="sec-top-products" className="report-section">
           <div className="page-head" style={{ marginBottom: 12 }}>
             <div>
               <div className="page-head__title" style={{ fontSize: 17 }}>
@@ -119,28 +148,28 @@ export default function DashboardPage() {
             </div>
           </div>
           <TopFixTargets items={sortFixTargets(products).slice(0, 3)} onSelect={goProduct} />
-        </>
+        </section>
       )}
 
-      {/* 리뷰 내용 요약 — 긍정/부정/중립 카드 + 전체 보기 모달 */}
+      {/* 전체 리뷰 반응 — 감성 분포 / 리뷰 내용 요약 묶기 */}
       {summary.reviewHighlights && (
-        <>
-          <div className="page-head" style={{ marginBottom: 12, marginTop: 24 }}>
+        <section id="sec-review-reaction" className="report-section">
+          <div className="page-head" style={{ marginBottom: 12 }}>
             <div>
               <div className="page-head__title" style={{ fontSize: 17 }}>
-                리뷰 내용 요약
+                전체 리뷰 반응 요약
               </div>
               <div className="page-head__sub">
-                고객 리뷰에서 자주 보이는 긍정 의견과 부정 의견을 함께 정리했습니다. 부정 리뷰와 개선 이슈는 별도 개념이며, 긍정 리뷰 안에도 개선 포인트가 포함될 수 있습니다.
+                전체 리뷰의 긍정·중립·부정 비율과 대표 리뷰 내용을 함께 확인할 수 있습니다. 개선 이슈는 긍정 리뷰 안에서도 발견될 수 있어 부정 리뷰 수와 다를 수 있습니다.
               </div>
             </div>
           </div>
           <ReviewHighlightsSection highlights={summary.reviewHighlights} analysisId={analysisId} />
-        </>
+        </section>
       )}
 
-      {/* 카테고리 차트 + 부정 리뷰 순위 */}
-      <div className="dash-grid">
+      {/* 반복 이슈 + 부정 리뷰 순위 */}
+      <div id="sec-issue-breakdown" className="dash-grid report-section">
         <SectionCard
           title="어떤 문제가 가장 많이 반복되었나요?"
           subtitle={
@@ -166,7 +195,11 @@ export default function DashboardPage() {
           }
         >
           <Suspense fallback={<div className="muted" style={{ padding: 40, textAlign: 'center' }}>차트 로딩 중…</div>}>
-            <CategoryChart distribution={summary.categoryDistribution} type={chartType} />
+            <CategoryChart
+              distribution={summary.categoryDistribution}
+              type={chartType}
+              onCategoryClick={handleCategoryClick}
+            />
           </Suspense>
         </SectionCard>
 
@@ -205,11 +238,20 @@ export default function DashboardPage() {
 
       {/* 상품별 문제 (전체 테이블) */}
       <SectionCard
+        id="sec-product-table"
         title="상품별 문제 정리"
         subtitle="상품명을 클릭하면 근거 리뷰와 상세페이지 수정안을 볼 수 있습니다."
       >
         <ProductsTable products={products} onSelect={goProduct} />
       </SectionCard>
+
+      {/* 차트 클릭 시 열리는 카테고리 사전 필터 모달 */}
+      <AllIssuesModal
+        open={issuesModalOpen}
+        onClose={() => setIssuesModalOpen(false)}
+        allIssues={aggregatedIssues}
+        initialCategory={issuesModalCategory}
+      />
     </div>
   );
 }

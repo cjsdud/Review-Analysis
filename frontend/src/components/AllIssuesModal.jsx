@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal.jsx';
 import EvidenceReviewList from './EvidenceReviewList.jsx';
 import { buildIssueFilters, filterIssuesByCategory, sortIssues } from '../utils/issueFilters.js';
@@ -11,10 +11,19 @@ function SeverityBadge({ severity }) {
 }
 
 // 전체 발견 이슈 모달.
-// 입력: open, onClose, allIssues, onViewRelatedReviews(issue) — issue.id 또는 issueLabel 로 리뷰 모달 필터
-export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRelatedReviews }) {
-  const [categoryFilter, setCategoryFilter] = useState('전체');
-  const [sortBy, setSortBy] = useState('count'); // 'count'(기본=많이 나온 순) | 'severity' | 'category' | 'recent'
+// 입력:
+//   open, onClose
+//   allIssues
+//   onViewRelatedReviews(issue) — issue.id 또는 issueLabel 로 리뷰 모달 필터
+//   initialCategory — 차트에서 카테고리 클릭으로 진입한 경우 사전 적용할 카테고리
+export default function AllIssuesModal({ open, onClose, allIssues = [], onViewRelatedReviews, initialCategory }) {
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory || '전체');
+  const [sortBy, setSortBy] = useState('count');
+
+  // 모달 진입 시 또는 initialCategory 변경 시 적용
+  useEffect(() => {
+    if (open) setCategoryFilter(initialCategory || '전체');
+  }, [open, initialCategory]);
 
   const filters = useMemo(() => buildIssueFilters(allIssues), [allIssues]);
   // createdAt 메타가 이슈에 하나라도 있으면 "최신 리뷰 포함 순" 옵션 노출

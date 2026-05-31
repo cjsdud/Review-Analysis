@@ -9,6 +9,7 @@ import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
 import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import ReviewsModal from '../components/ReviewsModal.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
+import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 
@@ -126,8 +127,18 @@ export default function ProductDetailPage() {
         ← 대시보드로 돌아가기
       </span>
 
+      <SectionNavigator
+        sections={[
+          { id: 'sec-product-summary', label: '상품 요약' },
+          product.reviewHighlights ? { id: 'sec-product-review-reaction', label: '리뷰 반응' } : null,
+          { id: 'sec-product-core-issues', label: '핵심 문제' },
+          { id: 'sec-product-detail-actions', label: '수정 체크리스트' },
+          (product.replyTemplates || []).length > 0 ? { id: 'sec-product-replies', label: 'CS 답글 초안' } : null,
+        ].filter(Boolean)}
+      />
+
       {/* 상단 헤더 */}
-      <div className="product-header">
+      <div id="sec-product-summary" className="product-header report-section">
         <div className="product-header__title">
           {product.productName}
           {product.productStatus && (
@@ -158,6 +169,7 @@ export default function ProductDetailPage() {
       {/* 섹션: 이 상품의 리뷰 반응 (긍정/중립/부정) */}
       {product.reviewHighlights && (
         <SectionCard
+          id="sec-product-review-reaction"
           title="이 상품의 리뷰 반응"
           subtitle="해당 상품 리뷰에서 많이 보이는 긍정·중립·부정 의견을 정리했습니다. 각 카드의 ‘전체 보기’로 이 상품의 마스킹된 리뷰 데이터를 감성별로 확인할 수 있어요."
           className="mb-5"
@@ -172,6 +184,7 @@ export default function ProductDetailPage() {
 
       {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard
+        id="sec-product-core-issues"
         title="이 상품의 핵심 문제"
         subtitle="실제 불편/개선 신호가 있는 리뷰만 모아 정리했어요. 긍정 리뷰나 ‘문제 없음’ 표현은 핵심 문제에서 제외됩니다. 각 카드의 ‘분류 수정’으로 직접 다듬을 수도 있습니다."
         action={
@@ -198,6 +211,7 @@ export default function ProductDetailPage() {
       <div className="dash-grid">
         {/* 섹션 2: 상세페이지 수정 체크리스트 */}
         <SectionCard
+          id="sec-product-detail-actions"
           title="상세페이지 수정 체크리스트"
           subtitle="고치기 좋은 순서로 정리했어요. 체크하며 진행하세요. (체크 상태는 이 브라우저에 저장됩니다)"
           action={
@@ -229,7 +243,11 @@ export default function ProductDetailPage() {
         </SectionCard>
 
         {/* 섹션 3: CS 답글 초안 */}
-        <SectionCard title="CS 답글 초안" subtitle="복사해서 바로 사용할 수 있어요. 말투(기본/정중/친근)는 카드별로 고를 수 있습니다.">
+        <SectionCard
+          id="sec-product-replies"
+          title="CS 답글 초안"
+          subtitle="복사해서 바로 사용할 수 있어요. 말투(기본/정중/친근)는 카드별로 고를 수 있습니다."
+        >
           {product.replyTemplates.length === 0 ? (
             <div className="muted">답글 초안이 없어요.</div>
           ) : (

@@ -1,7 +1,9 @@
 // 헤더(제목/설명/액션) + 본문을 가진 카드. 차트·표·리스트를 감싸 일관된 SaaS 카드 레이아웃 제공.
-export default function SectionCard({ title, subtitle, action, flush = false, children, className = '' }) {
+// id 가 주어지면 SectionNavigator 의 스크롤 대상이 된다 (scroll-margin-top 은 .report-section 에서 적용).
+export default function SectionCard({ id, title, subtitle, action, flush = false, children, className = '' }) {
+  const cls = `section-card${flush ? ' section-card--flush' : ''}${id ? ' report-section' : ''} ${className}`.trim();
   return (
-    <div className={`section-card${flush ? ' section-card--flush' : ''} ${className}`.trim()}>
+    <section id={id} className={cls}>
       {(title || action) && (
         <div className="section-card__head">
           <div>
@@ -12,6 +14,6 @@ export default function SectionCard({ title, subtitle, action, flush = false, ch
         </div>
       )}
       <div className="section-card__body">{children}</div>
-    </div>
+    </section>
   );
 }

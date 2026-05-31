@@ -2,6 +2,83 @@
 @use 'variables' as *;
 @use 'mixins' as *;
 
+// ===== 리포트 섹션 (대시보드/상품 상세 공통) =====
+// SectionNavigator 가 스크롤할 대상. sticky 헤더 + nav 가 겹치지 않도록 여유 padding.
+.report-section {
+  scroll-margin-top: calc(var(--mobile-header-height, 60px) + 64px);
+}
+.report-section + .report-section,
+.report-section + .dash-grid,
+.dash-grid + .report-section,
+.dash-grid + .dash-grid {
+  margin-top: var(--space-6, 24px);
+}
+@media (max-width: $bp-tablet) {
+  .report-section + .report-section,
+  .report-section + .dash-grid,
+  .dash-grid + .report-section,
+  .dash-grid + .dash-grid {
+    margin-top: var(--space-5, 20px);
+  }
+}
+
+// ===== 섹션 네비게이션 (sticky 가로 chip nav) =====
+.section-navigator {
+  position: sticky;
+  top: var(--mobile-header-height, 60px);
+  z-index: 9;
+  margin: 0 calc(-1 * var(--space-4, 16px)) var(--space-5, 20px);
+  padding: 8px var(--space-4, 16px);
+  background: rgba(248, 251, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid $border;
+
+  &__list {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+  &__item {
+    flex-shrink: 0;
+  }
+  &__chip {
+    appearance: none;
+    border: 1px solid $border;
+    background: #fff;
+    color: $ink-700;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    word-break: keep-all;
+    min-height: 36px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    &:hover { background: $brand-50; border-color: $brand-200; }
+    &:focus-visible { @include focus-ring; }
+    &.is-active {
+      background: $brand;
+      color: #fff;
+      border-color: $brand;
+    }
+  }
+
+  @media (max-width: $bp-tablet) {
+    margin-left: calc(-1 * var(--app-page-padding-mobile, 16px));
+    margin-right: calc(-1 * var(--app-page-padding-mobile, 16px));
+    padding-left: var(--app-page-padding-mobile, 16px);
+    padding-right: var(--app-page-padding-mobile, 16px);
+  }
+}
+
 // ===== 카드 / 섹션 카드 (공통 사용) =====
 .card {
   @include surface;
