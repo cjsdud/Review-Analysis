@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import AnnouncementBanner from './AnnouncementBanner.jsx';
 import BrandTitle from './BrandTitle.jsx';
@@ -45,20 +45,29 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, subscription, usage, logout } = useAuth();
+  const params = useParams();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const drawerRef = useRef(null);
   const hamburgerRef = useRef(null);
 
-  const title = (() => {
-    if (location.pathname.startsWith('/upload')) return '리뷰 파일 업로드';
-    if (location.pathname.startsWith('/mapping')) return '컬럼 매핑 확인';
-    if (location.pathname.startsWith('/dashboard')) return '분석 대시보드';
-    if (location.pathname.startsWith('/products')) return '상품 상세 리포트';
-    if (location.pathname.startsWith('/history')) return '분석 히스토리';
-    if (location.pathname.startsWith('/settings')) return '매핑 템플릿';
-    if (location.pathname.startsWith('/admin')) return '관리자 콘솔';
-    return 'ReviewFit';
+  // 현재 경로 기준 breadcrumb 경로. 마지막 원소는 현재 페이지(링크 없음).
+  // 상품 상세에선 "분석 대시보드" 가 클릭 가능한 링크가 되어 해당 분석으로 돌아간다.
+  const crumbs = (() => {
+    const path = location.pathname;
+    if (path.startsWith('/products') && params.analysisId) {
+      return [
+        { label: '분석 대시보드', to: `/dashboard/${params.analysisId}` },
+        { label: '상품 상세 리포트' },
+      ];
+    }
+    if (path.startsWith('/dashboard')) return [{ label: '분석 대시보드' }];
+    if (path.startsWith('/upload')) return [{ label: '리뷰 파일 업로드' }];
+    if (path.startsWith('/mapping')) return [{ label: '컬럼 매핑 확인' }];
+    if (path.startsWith('/history')) return [{ label: '분석 히스토리' }];
+    if (path.startsWith('/settings')) return [{ label: '매핑 템플릿' }];
+    if (path.startsWith('/admin')) return [{ label: '관리자 콘솔' }];
+    return [{ label: 'ReviewFit' }];
   })();
 
   // 사이드바 하단 흐름 표시용 단계
@@ -226,11 +235,22 @@ export default function Layout() {
             <span aria-hidden="true">☰</span>
           </button>
 
-          <div className="topbar__crumbs">
-            <span className="topbar__crumbs-root">ReviewFit</span>
-            <span className="sep">/</span>
-            <span className="here">{title}</span>
-          </div>
+          <nav className="topbar__crumbs" aria-label="페이지 경로">
+            <Link to="/history" className="topbar__crumbs-root">ReviewFit</Link>
+            {crumbs.map((c, i) => {
+              const isLast = i === crumbs.length - 1;
+              return (
+                <span key={`${c.label}-${i}`} className="topbar__crumb-step">
+                  <span className="sep" aria-hidden="true">/</span>
+                  {c.to && !isLast ? (
+                    <Link to={c.to} className="topbar__crumb-link">{c.label}</Link>
+                  ) : (
+                    <span className="here" aria-current={isLast ? 'page' : undefined}>{c.label}</span>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
 
           <div className="topbar__right">
             {user ? (

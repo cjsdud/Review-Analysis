@@ -13,7 +13,6 @@ import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
-import ReportBreadcrumb from '../components/ReportBreadcrumb.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
@@ -103,7 +102,6 @@ export default function DashboardPage() {
           </span>
         </div>
       )}
-      <ReportBreadcrumb items={[{ label: '분석대시보드' }]} />
       <PageHeader
         title="리뷰 분석 리포트"
         subtitle="상품별 반복 불만과 개선 우선순위를 확인하세요."

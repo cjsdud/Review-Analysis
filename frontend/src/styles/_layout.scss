@@ -144,11 +144,12 @@
   &__crumbs {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-size: 13px;
     color: $ink-400;
     min-width: 0;
     flex: 1;
+    word-break: keep-all;
 
     .here {
       font-weight: 700;
@@ -158,10 +159,38 @@
       text-overflow: ellipsis;
       min-width: 0;
     }
-    .sep, &-root {
+    .sep {
       color: $ink-400;
       flex-shrink: 0;
     }
+  }
+  // 브랜드 (홈 링크)
+  &__crumbs-root {
+    color: $ink-700;
+    font-weight: 700;
+    text-decoration: none;
+    flex-shrink: 0;
+    &:hover { color: $brand; }
+    &:focus-visible { outline: 2px solid $primary; outline-offset: 2px; border-radius: 4px; }
+  }
+  // 중간 단계 링크 (예: 상품 상세에서 "분석 대시보드" 클릭 → /dashboard/:id)
+  &__crumb-link {
+    color: $brand;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    &:hover { text-decoration: underline; }
+    &:focus-visible { outline: 2px solid $primary; outline-offset: 2px; border-radius: 4px; }
+  }
+  // step wrapper — sep + 라벨 한 묶음
+  &__crumb-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
   &__right {
     display: flex;
@@ -328,9 +357,12 @@
     &__hamburger {
       display: inline-flex;
     }
-    // 모바일 헤더는 한 줄로 안정화 — breadcrumb 의 root("ReviewFit /") 는 숨기고
-    // 현재 페이지명만 표시. 한글이 세로로 깨지지 않도록 ellipsis + min-width:0.
-    &__crumbs-root, .sep {
+    // 모바일 헤더는 한 줄로 안정화 — 브랜드 root("ReviewFit") 와 첫 번째 sep
+    // 만 숨기고, 중간 단계 링크와 현재 페이지명은 유지(상품 상세에서 "분석
+    // 대시보드"로 한 번 돌아가는 동선 보존). 한글이 세로로 깨지지 않도록
+    // ellipsis + min-width:0.
+    &__crumbs-root,
+    &__crumb-step:first-of-type > .sep {
       display: none;
     }
     &__crumbs {
