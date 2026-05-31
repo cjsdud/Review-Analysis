@@ -180,10 +180,44 @@ await step('issueDetection + productAnalysis (end-to-end)', async () => {
   assert(products[0].topIssues[0].recommendedAction, 'recommendedAction 누락');
 });
 
-await step('export', async () => {
+await step('export — section/productName 헤더 + product_summary row 포함', async () => {
   const m = await import('../src/services/export.service.js');
-  const csv = m.buildAnalysisCsv([{ productName: 'P', totalReviews: 1, negativeReviews: 1, averageRating: 2, topIssues: [] }]);
-  assert(csv.includes('상품명'), 'CSV 헤더 누락');
+  const csv = m.buildAnalysisCsv([{
+    productName: 'P', totalReviews: 1, negativeReviews: 1, averageRating: 2,
+    topIssues: [], allIssues: [], reviews: [], replyTemplates: [],
+  }]);
+  assert(csv.includes('section,productName'), `CSV 헤더 누락 — got: ${csv.split('\n')[0]}`);
+  assert(csv.includes('product_summary'), 'product_summary section row 누락');
+});
+
+await step('export — 모든 이슈 + 리뷰 + CS 답글 flatten', async () => {
+  const m = await import('../src/services/export.service.js');
+  const csv = m.buildAnalysisCsv([{
+    productName: '린넨 와이드 팬츠',
+    totalReviews: 100,
+    averageRating: 4.1,
+    sentimentCounts: { positive: 60, neutral: 25, negative: 15 },
+    allIssues: [
+      { category: '사이즈', issueLabel: '허리 작음', count: 12, ratio: 0.12, severity: 'high', recommendedAction: '실측 안내' },
+      { category: '색상/화면 차이', issueLabel: '어두움', count: 8, ratio: 0.08, severity: 'medium' },
+    ],
+    reviews: [
+      { id: 'r1', rating: 2, sentiment: 'negative', content: '허리가 작아요',
+        detectedIssues: [{ category: '사이즈', issue: '허리 작음' }] },
+    ],
+    replyTemplates: [
+      { issueLabel: '허리 작음', variants: [{ tone: '기본', template: '안녕하세요...' }] },
+    ],
+    detailPageActions: ['상세페이지에 실측 사이즈 추가'],
+  }]);
+  // 모든 section type 이 한 CSV 안에 들어가야 함
+  for (const sec of ['product_summary', 'issue', 'review', 'cs_reply', 'detail_action']) {
+    assert(csv.includes(`\n${sec},`) || csv.includes(`,${sec},`),
+      `section "${sec}" row 누락`);
+  }
+  // 모든 이슈가 들어가야 함 (이전엔 topIssues 5개 제한)
+  assert(csv.includes('허리 작음'), 'issue label 누락');
+  assert(csv.includes('어두움'), '두 번째 issue 누락');
 });
 
 await step('user_corrections 룰 적용 (review-level)', async () => {

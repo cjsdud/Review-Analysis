@@ -5,11 +5,17 @@
   body {
     background: #fff;
   }
+  // 화면 전용 UI — 인쇄에서 숨김.
   .sidebar,
   .topbar,
+  .mobile-drawer,
+  .mobile-backdrop,
   .page-head__actions,
   .back-link,
   .segmented,
+  .section-navigator,
+  .modal-backdrop,
+  .modal,
   .issue-card__meta .btn,
   .reply-box__copy,
   .ops-note,
@@ -17,8 +23,25 @@
   .platform-picker,
   .uploader,
   .sample-cta,
-  .stepper {
+  .stepper,
+  .beta-notice,
+  .product-summary-card__action,
+  .re-active-filter {
     display: none !important;
+  }
+  // 카드/이슈/리뷰가 페이지 경계에서 잘리지 않도록.
+  .all-issue-card,
+  .rh-card,
+  .history-card,
+  .product-summary-card,
+  .checklist li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  // 화면에선 collapse 되어 있던 evidence 도 인쇄에는 펼침.
+  .evidence-review-list,
+  .all-issue-card__evi-label {
+    display: block !important;
   }
 
   .app-shell {
@@ -60,4 +83,18 @@
   @page {
     margin: 16mm 14mm;
   }
+
+  // 인쇄 전용 영역 — 화면에선 숨기고 인쇄에만 노출.
+  // 모달 안에만 있던 상세 내용을 인쇄용으로 펼쳐서 보여주는 데 사용.
+  .print-only {
+    display: block !important;
+  }
+}
+
+// 화면에서는 인쇄 전용 영역 숨김 (기본).
+.print-only {
+  display: none;
+}
+.screen-only {
+  // 명시적 screen-only 마크업 — 인쇄에선 위 셀렉터에서 숨김.
 }

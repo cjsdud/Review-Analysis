@@ -1,7 +1,10 @@
 import SentimentBar from './SentimentBar.jsx';
 
-// 전체 요약 지표 카드.
-// 긍정/중립/부정 분포 + '개선 이슈'를 분리해 혼동을 줄인다.
+// 전체 요약 지표 카드 (수치 6장).
+// 감성 분포 막대는 아래 "전체 리뷰 반응 요약" 섹션에서 별도로 보여주므로
+// 여기서는 중복으로 표시하지 않는다 (이전엔 '전체 리뷰 감성 분포' 라는 같은
+// 제목의 SentimentBar 가 두 곳에서 노출되어 사용자에게 중복 정보처럼 보였다).
+// SentimentBar import 는 다른 페이지(상품 상세)에서도 동일 컴포넌트를 쓰므로 유지.
 export default function SummaryCards({ summary }) {
   const pct = (r) => `${Math.round((r || 0) * 100)}%`;
   const counts = summary.sentimentCounts || {
@@ -77,14 +80,6 @@ export default function SummaryCards({ summary }) {
             {c.desc && <div className="stat-card__desc">{c.desc}</div>}
           </div>
         ))}
-      </div>
-      <div className="summary-sentiment">
-        <div className="summary-sentiment__title">전체 리뷰 감성 분포</div>
-        <SentimentBar counts={counts} ratios={ratios} />
-        <div className="summary-sentiment__note muted">
-          부정 리뷰는 별점과 문장 감성 기준으로 계산합니다. 개선 이슈는 긍정 리뷰 안에 포함된
-          사이즈·색상·소재 같은 개선 포인트도 포함하므로, 부정 리뷰 수와 개선 이슈 리뷰 수는 다를 수 있습니다.
-        </div>
       </div>
     </div>
   );

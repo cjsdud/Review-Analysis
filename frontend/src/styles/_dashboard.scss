@@ -2,6 +2,59 @@
 @use 'variables' as *;
 @use 'mixins' as *;
 
+// ===== 리포트 breadcrumb =====
+.report-breadcrumb {
+  margin-bottom: var(--space-3, 12px);
+  font-size: 13px;
+  color: $ink-500;
+
+  &__list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    min-width: 0;
+    word-break: keep-all;
+  }
+  &__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  &__brand {
+    font-weight: 800;
+    color: $ink-900;
+    text-decoration: none;
+    &:hover { color: $brand; }
+  }
+  &__separator {
+    color: $ink-400;
+  }
+  &__link {
+    color: $brand;
+    font-weight: 700;
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
+  &__current {
+    color: $ink-700;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(60vw, 320px);
+  }
+
+  @media (max-width: $bp-tablet) {
+    font-size: 12px;
+    &__current { max-width: 70vw; }
+  }
+}
+
 // ===== 리포트 섹션 (대시보드/상품 상세 공통) =====
 // SectionNavigator 가 스크롤할 대상. sticky 헤더 + nav 가 겹치지 않도록 여유 padding.
 .report-section {

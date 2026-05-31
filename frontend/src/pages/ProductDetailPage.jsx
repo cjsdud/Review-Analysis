@@ -10,6 +10,7 @@ import AllIssuesModal from '../components/AllIssuesModal.jsx';
 import ReviewsModal from '../components/ReviewsModal.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
+import ReportBreadcrumb from '../components/ReportBreadcrumb.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail } from '../api/analysisApi.js';
 import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
@@ -132,13 +133,13 @@ export default function ProductDetailPage() {
 
   return (
     <div>
-      <span
-        className="back-link"
-        onClick={() => navigate(`/dashboard/${analysisId}`)}
-        style={{ cursor: 'pointer' }}
-      >
-        ← 대시보드로 돌아가기
-      </span>
+      <ReportBreadcrumb
+        items={[
+          { label: '분석대시보드', to: `/dashboard/${analysisId}` },
+          { label: '상품 상세 리포트' },
+          product?.productName ? { label: product.productName } : null,
+        ].filter(Boolean)}
+      />
 
       <SectionNavigator
         sections={[

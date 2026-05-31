@@ -26,13 +26,26 @@ export default function SectionNavigator({
   const listRef = useRef(null);
   // rAF throttle 용
   const rafRef = useRef(0);
+  // 클릭으로 시작된 smooth scroll 중에는 scroll handler 가 active 를
+  // 다른 섹션으로 덮어쓰지 못하게 잠금. (클릭한 C 가 도착 전까지 잠시 B 가
+  // 화면에 보여 active 가 B 로 흔들리던 버그 차단.)
+  const programmaticRef = useRef(false);
+  const programmaticTargetRef = useRef(null);
+  const programmaticTimerRef = useRef(0);
 
   const ids = sections.map((s) => s.id).join('|');
 
   // scroll/resize 기반 active 계산
   const recompute = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const baseY = window.scrollY + offset;
+    // 프로그래매틱 스크롤 중에는 클릭한 섹션을 active 로 고정
+    if (programmaticRef.current && programmaticTargetRef.current) {
+      setActiveId((prev) =>
+        prev === programmaticTargetRef.current ? prev : programmaticTargetRef.current,
+      );
+      return;
+    }
+    const baseY = window.scrollY + offset + 1;
     let next = sections[0]?.id || '';
     for (const s of sections) {
       const el = document.getElementById(s.id);
@@ -59,6 +72,7 @@ export default function SectionNavigator({
     window.addEventListener('resize', onScroll);
     return () => {
       if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+      if (programmaticTimerRef.current) window.clearTimeout(programmaticTimerRef.current);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
@@ -108,10 +122,27 @@ export default function SectionNavigator({
 
   function scrollTo(id) {
     const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // smooth scroll 중간에 recompute 가 늦으면 active 가 잠시 어긋날 수 있어 명시적으로 미리 설정
+    if (!el || typeof window === 'undefined') return;
+
+    // 클릭 즉시 active 잠금 — smooth scroll 진행 중 일반 scroll 이벤트가
+    // 이전 섹션을 active 로 덮어쓰지 못하도록 한다.
+    programmaticRef.current = true;
+    programmaticTargetRef.current = id;
     setActiveId(id);
+
+    // scroll-margin-top 만으로는 sticky 가 누적된 모바일에서 가려질 수 있어
+    // offset 만큼 직접 빼서 window.scrollTo 로 정확히 정렬.
+    const targetTop = el.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+
+    // smooth scroll 종료 추정 시간 후 잠금 해제. 사용자가 그동안 직접
+    // 스크롤하면 다음 scroll 이벤트에서 자연스럽게 재계산된다.
+    window.clearTimeout(programmaticTimerRef.current);
+    programmaticTimerRef.current = window.setTimeout(() => {
+      programmaticRef.current = false;
+      programmaticTargetRef.current = null;
+      recompute();
+    }, 700);
   }
 
   const visibleSections = sections.filter((s) =>

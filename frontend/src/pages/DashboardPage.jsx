@@ -13,6 +13,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
+import ReportBreadcrumb from '../components/ReportBreadcrumb.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
@@ -102,6 +103,7 @@ export default function DashboardPage() {
           </span>
         </div>
       )}
+      <ReportBreadcrumb items={[{ label: '분석대시보드' }]} />
       <PageHeader
         title="리뷰 분석 리포트"
         subtitle="상품별 반복 불만과 개선 우선순위를 확인하세요."
@@ -274,6 +276,72 @@ export default function DashboardPage() {
         analysisId={analysisId}
         initialCategory={reviewsModalCategory}
       />
+
+      {/* 인쇄 전용 — 모달/접힘 안의 데이터까지 전체 출력.
+          화면에선 display:none, @media print 에서만 보임. */}
+      <PrintOnlyReport summary={summary} products={products} />
     </div>
+  );
+}
+
+// 인쇄 전용 전체 리포트 — 화면에선 숨겨지고 @media print 에서만 노출.
+// AllIssuesModal / ReviewsModal / ReviewExplorerModal 안에만 보이던 데이터를
+// 펼쳐서 단순 마크업으로 보여준다. CS 답글 초안, 상품별 모든 이슈, 마스킹
+// 리뷰까지 포함해 "현재 화면 일부" 가 아닌 "리포트 전체" 가 인쇄되도록.
+function PrintOnlyReport({ summary, products }) {
+  if (!summary) return null;
+  return (
+    <section className="print-only print-report">
+      <h2>리뷰핏 분석 리포트 (전체)</h2>
+      <p style={{ fontSize: 12, color: '#555' }}>
+        리뷰 {summary.totalReviews}건 · 상품 {summary.productCount}개 ·
+        긍정 {summary.sentimentCounts?.positive ?? 0} · 중립 {summary.sentimentCounts?.neutral ?? 0} · 부정 {summary.sentimentCounts?.negative ?? 0}
+      </p>
+
+      {(products || []).map((p) => (
+        <article key={p.productKey} style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>
+          <h3>{p.productName}</h3>
+          <p style={{ fontSize: 12, color: '#555', margin: '4px 0 8px' }}>
+            전체 {p.totalReviews}건 · 평균 ★ {p.averageRating?.toFixed?.(2) ?? '–'} ·
+            부정 {p.negativeReviews} ({Math.round((p.negativeRatio || 0) * 100)}%) ·
+            개선 이슈 리뷰 {p.issueReviewCount ?? 0}건
+          </p>
+
+          {(p.allIssues || p.topIssues || []).length > 0 && (
+            <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>발견 이슈</h4>
+              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                {(p.allIssues || p.topIssues).map((iss, i) => (
+                  <li key={i} style={{ marginBottom: 4 }}>
+                    <b>[{iss.category}]</b> {iss.issueLabel} — {iss.count}건
+                    {iss.recommendedAction ? ` · 조치: ${iss.recommendedAction}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {(p.replyTemplates || []).length > 0 && (
+            <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>CS 답글 초안</h4>
+              {p.replyTemplates.map((rt, i) => (
+                <div key={i} style={{ fontSize: 12, margin: '0 0 6px' }}>
+                  <b>{rt.issueLabel}</b>
+                  {(rt.variants || []).slice(0, 1).map((v, j) => (
+                    <div key={j} style={{ color: '#333', marginTop: 2 }}>
+                      {v.tone ? `[${v.tone}] ` : ''}{v.template || v.text}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
+        </article>
+      ))}
+
+      <p style={{ fontSize: 11, color: '#777', marginTop: 16 }}>
+        ※ 모든 리뷰 본문은 마스킹된 데이터입니다. 전체 리뷰 데이터는 CSV 내보내기로 받을 수 있습니다.
+      </p>
+    </section>
   );
 }
