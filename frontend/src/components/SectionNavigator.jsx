@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // 리포트 내부 섹션 네비게이션. sticky 가로 chip nav.
 //
@@ -9,20 +10,36 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 //   대신 "기준선(viewport top + offset)을 막 지나간 마지막 섹션" 을
 //   active 로 잡으면 단순하고 안정적이다.
 //
+// URL hash 동기화 (updateHash 옵션):
+//   - 사용자가 chip 을 클릭하면 navigate({hash}) 로 #section-id 추가.
+//   - 뒤로 가기 시 location.hash 가 바뀌면서 자동으로 그 섹션으로 이동.
+//   - 스크롤만으로 active 가 바뀔 때는 hash 를 건드리지 않음 (history 폭주 방지).
+//
 // props
 //   sections: [{ id, label }]
 //   offset?: number      — 기준선 (헤더 + nav 높이). 기본 140.
 //   stickyMode?: 'always' | 'desktop' | 'none'  — 기본 'always'.
 //   enableKeyboard?: boolean  — j/k/화살표로 섹션 이동 (입력 focus / 모달 열림에선 무시).
+//   updateHash?: 'push' | 'replace' | 'none'  — chip 클릭 시 URL #hash 동기화 방식. 기본 'push'.
 //   className?: string
 export default function SectionNavigator({
   sections = [],
   offset = 140,
   stickyMode = 'always',
   enableKeyboard = false,
+  updateHash = 'push',
   className = '',
 }) {
-  const [activeId, setActiveId] = useState(sections[0]?.id || '');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeId, setActiveId] = useState(() => {
+    // 초기 진입 시 URL hash 가 있으면 그 섹션을 active 후보로 잡음.
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const id = window.location.hash.slice(1);
+      if (sections.some((s) => s.id === id)) return id;
+    }
+    return sections[0]?.id || '';
+  });
   const listRef = useRef(null);
   // rAF throttle 용
   const rafRef = useRef(0);
@@ -120,12 +137,13 @@ export default function SectionNavigator({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enableKeyboard, ids, activeId]);
 
-  function scrollTo(id) {
+  // 내부: 실제 스크롤만 수행 (URL hash 는 건드리지 않음). hash 변경 useEffect 에서도 재사용.
+  function scrollToInternal(id) {
     const el = document.getElementById(id);
     if (!el || typeof window === 'undefined') return;
 
-    // 클릭 즉시 active 잠금 — smooth scroll 진행 중 일반 scroll 이벤트가
-    // 이전 섹션을 active 로 덮어쓰지 못하도록 한다.
+    // 클릭/hash 변경 즉시 active 잠금 — smooth scroll 진행 중 일반 scroll
+    // 이벤트가 이전 섹션을 active 로 덮어쓰지 못하도록 한다.
     programmaticRef.current = true;
     programmaticTargetRef.current = id;
     setActiveId(id);
@@ -135,8 +153,7 @@ export default function SectionNavigator({
     const targetTop = el.getBoundingClientRect().top + window.scrollY - offset;
     window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
 
-    // smooth scroll 종료 추정 시간 후 잠금 해제. 사용자가 그동안 직접
-    // 스크롤하면 다음 scroll 이벤트에서 자연스럽게 재계산된다.
+    // smooth scroll 종료 추정 시간 후 잠금 해제.
     window.clearTimeout(programmaticTimerRef.current);
     programmaticTimerRef.current = window.setTimeout(() => {
       programmaticRef.current = false;
@@ -144,6 +161,31 @@ export default function SectionNavigator({
       recompute();
     }, 700);
   }
+
+  // chip 클릭 — URL hash 동기화 + 스크롤.
+  // navigate 는 pathname 을 바꾸지 않으므로 React Router 가 리렌더 후에도
+  // 컴포넌트 instance 는 그대로 유지(추가 fetch 없음). 브라우저도 hash-only
+  // pushState 에서는 anchor auto-scroll 을 일으키지 않는다.
+  function scrollTo(id) {
+    if (updateHash !== 'none') {
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: `#${id}` },
+        { replace: updateHash === 'replace' },
+      );
+    }
+    scrollToInternal(id);
+  }
+
+  // 외부에서 hash 가 바뀐 경우 (뒤로/앞으로, 직접 #섹션 진입) → 해당 섹션으로 이동.
+  // chip 클릭으로 인한 hash 변경도 같이 트리거되지만, 이미 activeId 가 같아 noop.
+  useEffect(() => {
+    const id = (location.hash || '').replace(/^#/, '');
+    if (!id) return;
+    if (!sections.some((s) => s.id === id)) return;
+    if (id === activeId) return;
+    scrollToInternal(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.hash]);
 
   const visibleSections = sections.filter((s) =>
     typeof document !== 'undefined' && document.getElementById(s.id),
