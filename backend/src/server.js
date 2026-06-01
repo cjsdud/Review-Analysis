@@ -18,6 +18,7 @@ import announcementsRoutes from './routes/announcements.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
 import { maintenanceGate } from './middleware/maintenance.middleware.js';
+import analyticsRoutes from './routes/analytics.routes.js';
 import { seedConfiguredAccounts } from './services/seedAccounts.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +39,8 @@ app.use(cookieParser());
 
 // ===== API =====
 app.get('/api/health', (_req, res) => res.json({ ok: true, aiMode }));
+// 공개 analytics — 점검 모드와 무관하게 동작해야 하므로 gate 이전에 등록.
+app.use('/api/analytics', analyticsRoutes);
 // 점검 모드 게이트 — health/auth/admin/announcements/active 를 제외한 일반 API 차단
 app.use(maintenanceGate);
 app.use('/api/auth', authRoutes); // POST /register /login /logout, GET /me

@@ -15,15 +15,21 @@ function StatCard({ label, value, sub }) {
 export default function AdminDashboardPage() {
   const [data, setData] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [demo, setDemo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const [s, l] = await Promise.all([adminApi.summary(), adminApi.actionLogs({ limit: 10 })]);
+        const [s, l, d] = await Promise.all([
+          adminApi.summary(),
+          adminApi.actionLogs({ limit: 10 }),
+          adminApi.demoViews().catch(() => null), // 실패해도 나머지 표시
+        ]);
         setData(s);
         setLogs(l);
+        setDemo(d);
       } catch (e) {
         setErr(e.message);
       } finally {
@@ -50,6 +56,17 @@ export default function AdminDashboardPage() {
         <StatCard label="이번 달 활성 사용자" value={data.usage.activeUsersThisMonth} />
         <StatCard label="실패 분석" value={data.analyses.failedCount} />
       </div>
+
+      {demo && (
+        <>
+          <h3 style={{ marginTop: 24 }}>샘플 리포트 조회 (가입 전 체험)</h3>
+          <div className="admin-stat-grid admin-stat-grid--3">
+            <StatCard label="전체 조회 수" value={demo.totalDemoViews?.toLocaleString('ko-KR')} />
+            <StatCard label="오늘 조회 수" value={demo.todayDemoViews?.toLocaleString('ko-KR')} />
+            <StatCard label="최근 7일 조회 수" value={demo.last7DaysDemoViews?.toLocaleString('ko-KR')} />
+          </div>
+        </>
+      )}
 
       <h3 style={{ marginTop: 24 }}>플랜별 사용자</h3>
       <div className="admin-stat-grid admin-stat-grid--3">

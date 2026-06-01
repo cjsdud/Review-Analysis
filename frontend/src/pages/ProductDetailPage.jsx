@@ -364,6 +364,9 @@ function ProductPrintReport({ product, counts }) {
       <p style={{ fontSize: 11, color: '#777', marginTop: 12 }}>
         ※ 모든 리뷰 내용은 개인정보가 가려진 데이터입니다.
       </p>
+      <div className="print-report-footer">
+        ReviewFit · 상품 상세 리포트 · 개인정보가 가려진 데이터 기준
+      </div>
     </section>
   );
 }

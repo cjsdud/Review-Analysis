@@ -239,7 +239,20 @@ CREATE TABLE IF NOT EXISTS user_discounts (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- 가벼운 페이지뷰/이벤트 추적. 개인정보(IP/UA/이름 등)는 저장하지 않는다.
+-- event_name 은 서버 allowlist 로 고정, path 도 allowlist 로 제한.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_name TEXT NOT NULL,
+  path TEXT,
+  referrer TEXT,
+  user_id TEXT,
+  metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_admin_logs_admin ON admin_action_logs(admin_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_admin_logs_target ON admin_action_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
 CREATE INDEX IF NOT EXISTS idx_user_discounts_user ON user_discounts(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_name ON analytics_events(event_name, created_at);

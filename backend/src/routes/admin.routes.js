@@ -7,6 +7,7 @@ import db from '../db/database.js';
 import { requireAdmin } from '../middleware/auth.middleware.js';
 import { listSettings, setSetting } from '../services/settings.service.js';
 import { logAdminAction, isLastAdmin, listAdminLogs } from '../services/adminAudit.service.js';
+import { getDemoViewStats } from '../services/analytics.service.js';
 
 const router = Router();
 
@@ -234,6 +235,11 @@ router.patch('/discounts/:id', (req, res) => {
   db.prepare(`UPDATE user_discounts SET ${updates.join(', ')} WHERE id = ?`).run(...params, target.id);
   logAdminAction({ adminUserId: req.user.id, actionType: 'USER_DISCOUNT_UPDATED', targetType: 'user_discount', targetId: target.id, before: target, after: body, reason: body.reason });
   res.json({ ok: true });
+});
+
+// ===== /analytics/demo — 공개 샘플 리포트 조회 수 =====
+router.get('/analytics/demo', (_req, res) => {
+  res.json(getDemoViewStats());
 });
 
 // ===== 4) /analytics/reports — 리포트 실행 추이 =====

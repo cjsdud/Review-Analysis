@@ -79,9 +79,26 @@
     text-transform: uppercase;
   }
 
-  // 페이지 마진
+  // 페이지 마진 + 하단 footer 영역 확보.
+  // CSS @page 의 margin box(@bottom-center)에 counter(page) 를 넣는 방식은
+  // Chrome 미지원이라, 브라우저 인쇄 대화상자의 "머리글/바닥글" 옵션이
+  // 페이지 번호를 담당한다. 여기서는 리포트 자체 footer(브랜드/주의문구)만 둔다.
   @page {
-    margin: 16mm 14mm;
+    margin: 16mm 14mm 18mm;
+  }
+
+  // 인쇄 리포트 하단 고정 footer — 매 페이지 하단에 브랜드/안내 노출.
+  .print-report-footer {
+    display: block !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: 10px;
+    color: #94a3b8;
+    text-align: center;
+    padding-top: 4px;
+    border-top: 1px solid #e5e7eb;
   }
 
   // 인쇄 전용 영역 — 화면에선 숨기고 인쇄에만 노출.
@@ -92,7 +109,8 @@
 }
 
 // 화면에서는 인쇄 전용 영역 숨김 (기본).
-.print-only {
+.print-only,
+.print-report-footer {
   display: none;
 }
 .screen-only {

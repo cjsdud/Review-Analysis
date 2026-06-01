@@ -364,8 +364,11 @@ function PrintOnlyReport({ summary, products }) {
       ))}
 
       <p style={{ fontSize: 11, color: '#777', marginTop: 16 }}>
-        ※ 모든 리뷰 본문은 마스킹된 데이터입니다. 전체 리뷰 데이터는 CSV 내보내기로 받을 수 있습니다.
+        ※ 모든 리뷰 본문은 마스킹된 데이터입니다. 전체 리뷰 데이터는 엑셀 리포트 내보내기로 받을 수 있습니다.
       </p>
+      <div className="print-report-footer">
+        ReviewFit · 리뷰 분석 리포트 · 개인정보가 가려진 데이터 기준
+      </div>
     </section>
   );
 }

@@ -10,6 +10,7 @@ export const adminApi = {
   addDiscount:    (userId, body) => client.post(`/admin/users/${userId}/discounts`, body).then((r) => r.data),
   patchDiscount:  (id, body) => client.patch(`/admin/discounts/${id}`, body).then((r) => r.data),
   reports:        (params = {}) => client.get('/admin/analytics/reports', { params }).then((r) => r.data),
+  demoViews:      () => client.get('/admin/analytics/demo').then((r) => r.data),
   listSettings:   (params = {}) => client.get('/admin/settings', { params }).then((r) => r.data),
   patchSetting:   (key, body) => client.patch(`/admin/settings/${key}`, body).then((r) => r.data),
   listAnnouncements: () => client.get('/admin/announcements').then((r) => r.data),

@@ -10,6 +10,7 @@ import Modal from '../components/Modal.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { SAMPLE_SUMMARY, SAMPLE_PRODUCTS, SAMPLE_REVIEWS } from '../data/sampleReportData.js';
 import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
+import { trackDemoView } from '../api/analyticsApi.js';
 
 // 공개 샘플 리포트 — 비로그인 사용자가 회원가입 없이 ReviewFit 결과 형태를
 // 미리 볼 수 있는 페이지. 실제 분석 API 호출 없이 정적 데이터만 사용한다.
@@ -25,10 +26,18 @@ export default function SampleReportPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const ctaRef = useRef(null);
+  const trackedRef = useRef(false);
   // 샘플 이슈 클릭 → 정적 sample 리뷰 모달
   const [issueModalOpen, setIssueModalOpen] = useState(false);
   const [issueModalTitle, setIssueModalTitle] = useState('');
   const [issueModalReviews, setIssueModalReviews] = useState([]);
+
+  // 페이지뷰 추적 — 1회만 (StrictMode 이중 호출 방지). 실패해도 무시.
+  useEffect(() => {
+    if (trackedRef.current) return;
+    trackedRef.current = true;
+    trackDemoView();
+  }, []);
 
   function openSampleIssueReviews(issue) {
     const related = getReviewsForIssue(SAMPLE_REVIEWS, issue);

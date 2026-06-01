@@ -2838,6 +2838,26 @@ await step('summary — productRankingByNegative: 5건 미만 상품은 비율 �
   assert(big.negativeRatio > 0.4, `negativeRatio 계산 오류: ${big.negativeRatio}`);
 });
 
+await step('analytics — demo-view 기록 + allowlist + 집계', async () => {
+  const m = await import('../src/services/analytics.service.js');
+  const { default: db } = await import('../src/db/database.js');
+  // 기존 카운트
+  const before = m.getDemoViewStats().totalDemoViews;
+  // 정상 기록
+  const r1 = m.recordEvent({ eventName: m.DEMO_VIEW, path: '/demo/sample-report', referrer: 'https://google.com/search?q=x' });
+  assert.equal(r1.ok, true);
+  // 허용되지 않은 event 이름은 거부
+  const r2 = m.recordEvent({ eventName: 'evil-event', path: '/demo/sample-report' });
+  assert.equal(r2.ok, false);
+  const after = m.getDemoViewStats();
+  assert.equal(after.totalDemoViews, before + 1, 'demo-view 1건만 증가해야 함');
+  assert(after.todayDemoViews >= 1, '오늘 카운트 반영');
+  // referrer 는 host 만 저장 (쿼리스트링/경로 제거)
+  const row = db.prepare("SELECT referrer, path FROM analytics_events WHERE event_name = ? ORDER BY id DESC LIMIT 1").get(m.DEMO_VIEW);
+  assert.equal(row.referrer, 'google.com', `referrer host 만 저장: ${row.referrer}`);
+  assert.equal(row.path, '/demo/sample-report');
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
