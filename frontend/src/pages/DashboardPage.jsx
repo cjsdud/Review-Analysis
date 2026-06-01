@@ -83,11 +83,13 @@ export default function DashboardPage() {
     );
 
   // 섹션 네비게이션 항목 — 페이지에 실제 렌더링되는 섹션만.
+  const negativeRanking = summary.productRankingByNegative || [];
   const navSections = [
     { id: 'sec-summary', label: '전체 요약' },
     products?.length > 0 ? { id: 'sec-top-products', label: '먼저 고칠 상품 TOP 3' } : null,
     summary.reviewHighlights ? { id: 'sec-review-reaction', label: '전체 리뷰 반응' } : null,
     { id: 'sec-issue-breakdown', label: '반복 이슈' },
+    negativeRanking.length > 0 ? { id: 'sec-negative-products', label: '부정 많은 상품' } : null,
     { id: 'sec-product-table', label: '상품별 정리' },
   ].filter(Boolean);
 
@@ -190,73 +192,97 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* 반복 이슈 + 부정 리뷰 순위 */}
-      <div id="sec-issue-breakdown" className="dash-grid report-section">
-        <SectionCard
-          title="어떤 문제가 가장 많이 반복되었나요?"
-          subtitle={
-            summary.otherCount > 0
-              ? `포괄 분류 '기타' ${summary.otherCount}건은 보조 항목으로 차트에서 제외했습니다.`
-              : '리뷰에서 발견된 불만을 카테고리별로 모았습니다.'
-          }
-          action={
-            <div className="segmented">
-              <button
-                className={`segmented__btn${chartType === 'bar' ? ' is-active' : ''}`}
-                onClick={() => setChartType('bar')}
-              >
-                막대
-              </button>
-              <button
-                className={`segmented__btn${chartType === 'pie' ? ' is-active' : ''}`}
-                onClick={() => setChartType('pie')}
-              >
-                원형
-              </button>
-            </div>
-          }
-        >
-          <Suspense fallback={<div className="muted" style={{ padding: 40, textAlign: 'center' }}>차트 로딩 중…</div>}>
-            <CategoryChart
-              distribution={summary.categoryDistribution}
-              type={chartType}
-              onCategoryClick={handleCategoryClick}
-            />
-          </Suspense>
-        </SectionCard>
-
-        <SectionCard title="부정 리뷰가 많은 상품" subtitle="별점·감성 기준으로 부정 리뷰가 많은 상품입니다.">
-          <div className="scroll-x">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 30 }}>#</th>
-                  <th>상품명</th>
-                  <th style={{ width: 130 }}>부정 리뷰</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(summary.productRankingByNegative || []).map((p, i) => (
-                  <tr key={p.productKey} onClick={() => goProduct(p.productKey)}>
-                    <td>
-                      <span className="rank">{i + 1}</span>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>
-                      {p.productName}
-                      <span className="muted" style={{ fontWeight: 400, marginLeft: 6, fontSize: 12 }}>
-                        / 전체 {p.totalReviews}건
-                      </span>
-                    </td>
-                    <td>
-                      <strong>{p.negativeReviews}</strong>건
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* 반복 이슈 — 별도 섹션. (기존엔 dash-grid 우측에 "부정 리뷰가 많은 상품"
+          이 같이 있었는데, 정보 성격이 다르므로 아래에 별도 SectionCard 로 분리) */}
+      <SectionCard
+        id="sec-issue-breakdown"
+        title="어떤 문제가 가장 많이 반복되었나요?"
+        subtitle={
+          summary.otherCount > 0
+            ? `포괄 분류 '기타' ${summary.otherCount}건은 보조 항목으로 차트에서 제외했습니다.`
+            : '리뷰에서 발견된 불만을 카테고리별로 모았습니다.'
+        }
+        action={
+          <div className="segmented">
+            <button
+              className={`segmented__btn${chartType === 'bar' ? ' is-active' : ''}`}
+              onClick={() => setChartType('bar')}
+            >
+              막대
+            </button>
+            <button
+              className={`segmented__btn${chartType === 'pie' ? ' is-active' : ''}`}
+              onClick={() => setChartType('pie')}
+            >
+              원형
+            </button>
           </div>
+        }
+      >
+        <Suspense fallback={<div className="muted" style={{ padding: 40, textAlign: 'center' }}>차트 로딩 중…</div>}>
+          <CategoryChart
+            distribution={summary.categoryDistribution}
+            type={chartType}
+            onCategoryClick={handleCategoryClick}
+          />
+        </Suspense>
+      </SectionCard>
+
+      {/* 부정 리뷰가 많은 상품 — 별도 섹션.
+          "먼저 고칠 상품 TOP 3" 는 부정 비율/이슈/리뷰 수를 합친 종합 우선순위.
+          이 섹션은 "감성 기준 부정 반응이 두드러진 상품" — 고객 만족도가 낮은
+          상품을 빠르게 확인하는 용도. 두 기준은 의도적으로 다르다. */}
+      {negativeRanking.length > 0 && (
+        <SectionCard
+          id="sec-negative-products"
+          title="부정 리뷰가 많은 상품"
+          subtitle="전체 만족도가 낮게 나타난 상품입니다. 리뷰가 5건 이상인 상품 중 부정 리뷰가 많은 순으로 정렬됩니다."
+        >
+          <ul className="negative-product-list">
+            {negativeRanking.map((p, i) => (
+              <li key={p.productKey} className="negative-product-row">
+                <div className="negative-product-row__main">
+                  <span className="negative-product-row__rank">{i + 1}</span>
+                  <div className="negative-product-row__text">
+                    <div
+                      className="negative-product-row__name"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => goProduct(p.productKey)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') goProduct(p.productKey); }}
+                      title={p.productName}
+                    >
+                      {p.productName}
+                    </div>
+                    <div className="negative-product-row__meta muted">
+                      전체 {p.totalReviews}건
+                      {p.topNegativeCategory && (
+                        <>
+                          {' · 주요 카테고리: '}
+                          <span className="tag tag--neutral">{p.topNegativeCategory}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="negative-product-row__metrics">
+                  <span className="negative-product-row__neg">
+                    <strong>{p.negativeReviews}</strong>건
+                    <span className="muted"> · {Math.round((p.negativeRatio || 0) * 100)}%</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => goProduct(p.productKey)}
+                  >
+                    상세 보기 →
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </SectionCard>
-      </div>
+      )}
 
       {/* 상품별 문제 (전체 테이블) */}
       <SectionCard

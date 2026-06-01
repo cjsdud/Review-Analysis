@@ -117,6 +117,96 @@
   }
 }
 
+// ===== 부정 리뷰가 많은 상품 (별도 섹션) =====
+.negative-product-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.negative-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: 12px 14px;
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover { background: $primary-soft; border-color: $primary-200; }
+
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  &__rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: $surface-2;
+    color: $ink-700;
+    font-weight: 800;
+    font-size: 12px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  &__text {
+    min-width: 0;
+    flex: 1;
+  }
+  &__name {
+    font-weight: 700;
+    color: $text-main;
+    cursor: pointer;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    &:hover { color: $brand; }
+  }
+  &__meta {
+    margin-top: 2px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  &__metrics {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  &__neg {
+    font-size: 14px;
+    color: $danger;
+    white-space: nowrap;
+    strong { font-weight: 800; }
+  }
+
+  @media (max-width: $bp-tablet) {
+    flex-direction: column;
+    align-items: stretch;
+
+    &__metrics {
+      justify-content: space-between;
+      .btn { min-height: 40px; }
+    }
+  }
+}
+
 // ===== 전체 리뷰 반응 요약: 감성 분포 + 리뷰 내용 요약 grid =====
 .review-reaction-summary {
   display: grid;

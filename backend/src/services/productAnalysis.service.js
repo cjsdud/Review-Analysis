@@ -279,7 +279,18 @@ export async function runAnalysis(reviews, corrections = []) {
     (c) => c.count > 0 && c.name !== '기타',
   );
 
-  const byNegative = [...products].sort((a, b) => b.negativeReviews - a.negativeReviews).slice(0, 10);
+  // "부정 리뷰가 많은 상품" 랭킹 — 리뷰가 너무 적은 상품이 비율만 높다고 1위가 되지
+  // 않도록 최소 리뷰 수(MIN_REVIEWS) 가드. 동률은 부정 비율 > 전체 리뷰 수 순으로 tie-break.
+  const MIN_REVIEWS_FOR_NEG_RANK = 5;
+  const byNegative = [...products]
+    .filter((p) => (p.totalReviews || 0) >= MIN_REVIEWS_FOR_NEG_RANK)
+    .sort(
+      (a, b) =>
+        b.negativeReviews - a.negativeReviews ||
+        (b.negativeRatio || 0) - (a.negativeRatio || 0) ||
+        b.totalReviews - a.totalReviews,
+    )
+    .slice(0, 10);
   const byIssues = [...products]
     .sort((a, b) => b.issueReviewCount - a.issueReviewCount || b.totalIssueCount - a.totalIssueCount)
     .slice(0, 10);
@@ -325,7 +336,16 @@ export async function runAnalysis(reviews, corrections = []) {
       productKey: p.productKey,
       productName: p.productName,
       negativeReviews: p.negativeReviews,
+      negativeRatio: p.negativeRatio,
       totalReviews: p.totalReviews,
+      // 부정 리뷰의 주요 카테고리(상위 1개) 만 미리 추출 — 카드 우측에 chip 1개로 노출.
+      topNegativeCategory: (() => {
+        const negCats = (p.topIssues || [])
+          .filter((iss) => iss.polarity !== 'positive')
+          .slice(0, 1)
+          .map((iss) => iss.category);
+        return negCats[0] || null;
+      })(),
     })),
     productRankingByIssues: byIssues.map((p) => ({
       productKey: p.productKey,

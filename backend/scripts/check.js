@@ -2780,6 +2780,32 @@ await step('getReviewsForIssue — 매칭 없음 / null 입력 → []', async ()
   assert.deepEqual(getReviewsForIssue([{ id: 'r1', detectedIssues: [] }], {}), []);
 });
 
+await step('summary — productRankingByNegative: 5건 미만 상품은 비율 높아도 제외 + negativeRatio 포함', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    // P_low: 리뷰 3건, 전부 부정 (100% 부정이지만 5건 미만 → 제외되어야)
+    { id: 'lo1', productName: 'P_low', rating: 1, content: '환불 원합니다 너무 실망' },
+    { id: 'lo2', productName: 'P_low', rating: 1, content: '못 입겠어요 후회' },
+    { id: 'lo3', productName: 'P_low', rating: 2, content: '실망스러워요' },
+    // P_big: 리뷰 6건, 부정 3건 (50%)
+    { id: 'bi1', productName: 'P_big', rating: 5, content: '핏 예뻐요 만족' },
+    { id: 'bi2', productName: 'P_big', rating: 5, content: '좋아요 추천합니다' },
+    { id: 'bi3', productName: 'P_big', rating: 5, content: '재구매 의사 있어요' },
+    { id: 'bi4', productName: 'P_big', rating: 1, content: '환불 원합니다 너무 실망' },
+    { id: 'bi5', productName: 'P_big', rating: 1, content: '못 입겠어요 후회' },
+    { id: 'bi6', productName: 'P_big', rating: 2, content: '실망스러워요' },
+  ];
+  const { summary } = await runAnalysis(reviews);
+  const ranking = summary.productRankingByNegative || [];
+  // 리뷰 3건짜리 P_low 는 제외되어야 한다 (5건 가드)
+  assert(!ranking.some((p) => p.productName === 'P_low'),
+    `리뷰 5건 미만 상품이 노출됨: ${ranking.map((p) => p.productName).join(',')}`);
+  const big = ranking.find((p) => p.productName === 'P_big');
+  assert(big, 'P_big 이 ranking 에 포함되어야 함');
+  assert.equal(typeof big.negativeRatio, 'number', 'negativeRatio 필드 누락');
+  assert(big.negativeRatio > 0.4, `negativeRatio 계산 오류: ${big.negativeRatio}`);
+});
+
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
