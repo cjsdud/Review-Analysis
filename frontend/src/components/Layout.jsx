@@ -51,15 +51,31 @@ export default function Layout() {
   const drawerRef = useRef(null);
   const hamburgerRef = useRef(null);
 
+  // 중간 breadcrumb step 클릭 — 기본은 navigate(-1) (이전 페이지로 자연스럽게).
+  // history 가 비어 있거나 직접 진입한 경우 fallback route 로 이동.
+  // route 가 명시되지 않거나 /dashboard/undefined 같은 잘못된 경로는 무시.
+  function handleCrumbClick(to) {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    if (!to || /\/undefined(\/|$)/.test(to)) return;
+    navigate(to);
+  }
+
   // 현재 경로 기준 breadcrumb 경로. 마지막 원소는 현재 페이지(링크 없음).
   // 상품 상세에선 "분석 대시보드" 가 클릭 가능한 링크가 되어 해당 분석으로 돌아간다.
   const crumbs = (() => {
     const path = location.pathname;
-    if (path.startsWith('/products') && params.analysisId) {
-      return [
-        { label: '분석 대시보드', to: `/dashboard/${params.analysisId}` },
-        { label: '상품 상세 리포트' },
-      ];
+    if (path.startsWith('/products')) {
+      // analysisId 가 없으면 중간 단계를 그리지 않음 (잘못된 /dashboard/undefined 방어)
+      const aid = params.analysisId;
+      return aid
+        ? [
+            { label: '분석 대시보드', to: `/dashboard/${aid}` },
+            { label: '상품 상세 리포트' },
+          ]
+        : [{ label: '상품 상세 리포트' }];
     }
     if (path.startsWith('/dashboard')) return [{ label: '분석 대시보드' }];
     if (path.startsWith('/upload')) return [{ label: '리뷰 파일 업로드' }];
@@ -243,7 +259,15 @@ export default function Layout() {
                 <span key={`${c.label}-${i}`} className="topbar__crumb-step">
                   <span className="sep" aria-hidden="true">/</span>
                   {c.to && !isLast ? (
-                    <Link to={c.to} className="topbar__crumb-link">{c.label}</Link>
+                    // button — breadcrumb 텍스트 톤은 그대로, hover/포커스에서만 변화.
+                    // 클릭 시 navigate(-1) 우선 (대시보드 재요청 회피).
+                    <button
+                      type="button"
+                      className="topbar__crumb-btn"
+                      onClick={() => handleCrumbClick(c.to)}
+                    >
+                      {c.label}
+                    </button>
                   ) : (
                     <span className="here" aria-current={isLast ? 'page' : undefined}>{c.label}</span>
                   )}

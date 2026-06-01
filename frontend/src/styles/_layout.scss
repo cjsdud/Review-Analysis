@@ -173,17 +173,30 @@
     &:hover { color: $brand; }
     &:focus-visible { outline: 2px solid $primary; outline-offset: 2px; border-radius: 4px; }
   }
-  // 중간 단계 링크 (예: 상품 상세에서 "분석 대시보드" 클릭 → /dashboard/:id)
-  &__crumb-link {
-    color: $brand;
+  // 중간 단계 클릭 가능 텍스트 (예: 상품 상세에서 "분석 대시보드" → 이전 페이지).
+  // 일반 a 링크 톤(파랑/밑줄) 대신 breadcrumb 일반 텍스트처럼 보이게 — hover 에서만
+  // pointer 와 살짝 진한 색.
+  &__crumb-btn {
+    appearance: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    color: $ink-500;
+    font: inherit;
     font-weight: 700;
     text-decoration: none;
+    cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-    &:hover { text-decoration: underline; }
-    &:focus-visible { outline: 2px solid $primary; outline-offset: 2px; border-radius: 4px; }
+    &:hover { color: $ink-900; }
+    &:focus-visible {
+      outline: 2px solid rgba(15, 127, 217, 0.35);
+      outline-offset: 3px;
+      border-radius: 4px;
+    }
   }
   // step wrapper — sep + 라벨 한 묶음
   &__crumb-step {
