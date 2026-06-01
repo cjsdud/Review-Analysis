@@ -11,7 +11,7 @@ import ReviewsModal from '../components/ReviewsModal.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError from '../components/AccessError.jsx';
-import { getProductDetail } from '../api/analysisApi.js';
+import { getProductDetail, exportXlsxUrl } from '../api/analysisApi.js';
 import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
 
 export default function ProductDetailPage() {
@@ -172,6 +172,14 @@ export default function ProductDetailPage() {
         {product.productInsight && (
           <div className="product-header__insight">{product.productInsight}</div>
         )}
+        <div className="page-actions" style={{ marginTop: 12, gap: 8 }}>
+          <a className="btn btn--ghost btn--sm" href={exportXlsxUrl(analysisId, productKey)}>
+            ⬇️ 엑셀 리포트 내보내기
+          </a>
+          <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
+            🖨️ 인쇄 / PDF
+          </button>
+        </div>
       </div>
 
       {/* 섹션: 이 상품의 리뷰 반응 (긍정/중립/부정) */}
@@ -290,6 +298,72 @@ export default function ProductDetailPage() {
         reviews={modalReviews}
         productName={product.productName}
       />
+
+      {/* 인쇄 전용 — 모달/접힘 안 데이터까지 펼쳐 전체 출력. 화면에선 숨김. */}
+      <ProductPrintReport product={product} counts={counts} />
     </div>
+  );
+}
+
+// 상품 상세 인쇄 전용 리포트. @media print 에서만 노출.
+function ProductPrintReport({ product, counts }) {
+  const issues = product.allIssues || product.topIssues || [];
+  return (
+    <section className="print-only print-report">
+      <h2>리뷰핏 · 상품 상세 리포트</h2>
+      <h3>{product.productName}</h3>
+      <p style={{ fontSize: 12, color: '#555' }}>
+        전체 {product.totalReviews}건 · 긍정 {counts.positive} · 중립 {counts.neutral} · 부정 {counts.negative}
+        {product.averageRating != null ? ` · 평균 ★ ${product.averageRating.toFixed(2)}` : ''}
+      </p>
+
+      {issues.length > 0 && (
+        <>
+          <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>발견 이슈</h4>
+          <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+            {issues.map((iss, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                <b>[{iss.category}]</b> {iss.issueLabel} — {iss.count}건
+                {iss.recommendedAction ? ` · 조치: ${iss.recommendedAction}` : ''}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {(product.reviews || []).length > 0 && (
+        <>
+          <h4 style={{ fontSize: 13, margin: '10px 0 4px' }}>리뷰 데이터 ({product.reviews.length}건)</h4>
+          <ul style={{ fontSize: 11, margin: 0, paddingLeft: 18 }}>
+            {product.reviews.map((r, i) => (
+              <li key={r.id || i} style={{ marginBottom: 3 }}>
+                {r.rating != null ? `★${r.rating} ` : ''}
+                {r.optionName ? `[${r.optionName}] ` : ''}{r.content}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {(product.replyTemplates || []).length > 0 && (
+        <>
+          <h4 style={{ fontSize: 13, margin: '10px 0 4px' }}>CS 답글 초안</h4>
+          {product.replyTemplates.map((rt, i) => (
+            <div key={i} style={{ fontSize: 12, marginBottom: 6 }}>
+              <b>{rt.issueLabel}</b>
+              {(rt.variants || []).slice(0, 1).map((v, j) => (
+                <div key={j} style={{ color: '#333', marginTop: 2 }}>
+                  {v.tone ? `[${v.tone}] ` : ''}{v.template || v.text}
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+
+      <p style={{ fontSize: 11, color: '#777', marginTop: 12 }}>
+        ※ 모든 리뷰 내용은 개인정보가 가려진 데이터입니다.
+      </p>
+    </section>
   );
 }

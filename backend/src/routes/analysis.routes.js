@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import db from '../db/database.js';
 import { runAnalysis } from '../services/productAnalysis.service.js';
-import { buildAnalysisCsv } from '../services/export.service.js';
+import { buildAnalysisCsv, buildAnalysisWorkbook } from '../services/export.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { checkCanCreateAnalysis, recordUsage } from '../services/billing.service.js';
 import { serializeReviewForList, sentimentOf } from '../services/reviewHighlights.service.js';
@@ -341,7 +341,7 @@ router.get('/:id/reviews', requireAuth, (req, res) => {
   res.json({ items, total, limit, offset });
 });
 
-// GET /api/analysis/:id/export.csv — CSV 다운로드
+// GET /api/analysis/:id/export.csv — CSV 다운로드 (fallback / 단순 통합본)
 router.get('/:id/export.csv', requireAuth, (req, res) => {
   if (!assertAnalysisOwnership(req, res)) return;
   const rows = db.prepare('SELECT data FROM product_analyses WHERE analysis_id = ?').all(req.params.id);
@@ -351,6 +351,44 @@ router.get('/:id/export.csv', requireAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="review-analysis-${req.params.id}.csv"`);
   res.send(csv);
+});
+
+// GET /api/analysis/:id/export.xlsx — 사용자용 다중 시트 엑셀 리포트.
+// query: productKey (있으면 해당 상품만 — 상품 상세 리포트용)
+router.get('/:id/export.xlsx', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
+  const job = db.prepare('SELECT summary FROM analysis_jobs WHERE id = ?').get(req.params.id);
+  let summary = {};
+  try { summary = job?.summary ? JSON.parse(job.summary) : {}; } catch { summary = {}; }
+
+  const productKey = (req.query.productKey || '').trim();
+  let rows;
+  if (productKey) {
+    rows = db
+      .prepare('SELECT data FROM product_analyses WHERE analysis_id = ? AND product_key = ?')
+      .all(req.params.id, productKey);
+  } else {
+    rows = db.prepare('SELECT data FROM product_analyses WHERE analysis_id = ?').all(req.params.id);
+  }
+  if (!rows.length) return res.status(404).json({ error: '분석 결과가 없습니다.' });
+  const products = rows.map((r) => JSON.parse(r.data));
+
+  const date = new Date().toISOString().slice(0, 10);
+  // 한글 파일명은 RFC 5987 filename* 로 인코딩 (브라우저 호환).
+  const baseName = productKey
+    ? `ReviewFit_상품상세리포트_${products[0]?.productName || productKey}_${date}.xlsx`
+    : `ReviewFit_전체리포트_${date}.xlsx`;
+  const buf = buildAnalysisWorkbook(products, summary, {
+    analysisDate: date,
+    productName: productKey ? products[0]?.productName : undefined,
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="review-report-${req.params.id}.xlsx"; filename*=UTF-8''${encodeURIComponent(baseName)}`,
+  );
+  res.send(buf);
 });
 
 const correctionSchema = z.object({

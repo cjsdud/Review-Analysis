@@ -30,6 +30,12 @@ export function exportCsvUrl(analysisId) {
   return `/api/analysis/${analysisId}/export.csv`;
 }
 
+// 사용자용 다중 시트 엑셀 리포트. productKey 가 있으면 해당 상품만.
+export function exportXlsxUrl(analysisId, productKey) {
+  const base = `/api/analysis/${analysisId}/export.xlsx`;
+  return productKey ? `${base}?productKey=${encodeURIComponent(productKey)}` : base;
+}
+
 export async function generateReplyTemplates(issueLabel, category) {
   const { data } = await client.post('/ai/reply-templates', { issueLabel, category });
   return data.templates;

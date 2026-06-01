@@ -2780,6 +2780,38 @@ await step('getReviewsForIssue — 매칭 없음 / null 입력 → []', async ()
   assert.deepEqual(getReviewsForIssue([{ id: 'r1', detectedIssues: [] }], {}), []);
 });
 
+await step('export xlsx — 5개 시트 + 한글 컬럼명 워크북 생성', async () => {
+  const m = await import('../src/services/export.service.js');
+  const xlsx = (await import('xlsx')).default;
+  const buf = m.buildAnalysisWorkbook(
+    [{
+      productName: '린넨 와이드 팬츠',
+      totalReviews: 100,
+      averageRating: 4.1,
+      negativeRatio: 0.15,
+      productStatus: '개선 우선',
+      sentimentCounts: { positive: 60, neutral: 25, negative: 15 },
+      topIssues: [{ category: '사이즈', issueLabel: '허리 작음' }],
+      allIssues: [{ category: '사이즈', issueLabel: '허리 작음', count: 12, ratio: 0.12, severity: 'high', evidenceReviews: ['허리가 작아요'] }],
+      reviews: [{ id: 'r1', rating: 2, sentiment: 'negative', content: '허리가 작아요', optionName: '베이지/M', detectedIssues: [{ category: '사이즈', issue: '허리 작음' }] }],
+      replyTemplates: [{ issueLabel: '허리 작음', variants: [{ tone: '기본', template: '안녕하세요 고객님...' }] }],
+    }],
+    { totalReviews: 100, productCount: 1, sentimentCounts: { positive: 60, neutral: 25, negative: 15 }, aiComment: '사이즈 보강 권장' },
+    { analysisDate: '2026-06-01' },
+  );
+  assert(Buffer.isBuffer(buf), 'workbook 이 buffer 가 아님');
+  const wb = xlsx.read(buf, { type: 'buffer' });
+  assert.deepEqual(wb.SheetNames, ['리포트 요약', '상품별 요약', '반복 이슈', '리뷰 데이터', 'CS 답글 초안'],
+    `시트 구성 불일치: ${wb.SheetNames.join(',')}`);
+  // 리뷰 데이터 시트에 한글 헤더 + 마스킹 리뷰 내용 포함
+  const reviewSheet = xlsx.utils.sheet_to_json(wb.Sheets['리뷰 데이터'], { header: 1 });
+  assert(reviewSheet[0].includes('리뷰 내용'), '리뷰 데이터 한글 헤더 누락');
+  assert(reviewSheet.some((row) => row.includes('허리가 작아요')), '리뷰 내용 누락');
+  // 내부 필드명(영문) 이 헤더에 노출되지 않아야 함
+  assert(!reviewSheet[0].some((h) => /reviewId|issueCategory|content/.test(String(h))),
+    `내부 필드명 노출: ${reviewSheet[0].join(',')}`);
+});
+
 await step('summary — productRankingByNegative: 5건 미만 상품은 비율 높아도 제외 + negativeRatio 포함', async () => {
   const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
   const reviews = [

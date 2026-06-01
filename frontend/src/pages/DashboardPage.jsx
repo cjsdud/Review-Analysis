@@ -15,7 +15,7 @@ import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
-import { getAnalysis, getProducts, exportCsvUrl } from '../api/analysisApi.js';
+import { getAnalysis, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
 
 export default function DashboardPage() {
   const { analysisId } = useParams();
@@ -109,8 +109,8 @@ export default function DashboardPage() {
         subtitle="상품별 반복 불만과 개선 우선순위를 확인하세요."
         actions={
           <>
-            <a className="btn btn--ghost btn--sm" href={exportCsvUrl(analysisId)}>
-              ⬇️ CSV 내보내기
+            <a className="btn btn--ghost btn--sm" href={exportXlsxUrl(analysisId)}>
+              ⬇️ 엑셀 리포트 내보내기
             </a>
             <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
               🖨️ 인쇄 / PDF
