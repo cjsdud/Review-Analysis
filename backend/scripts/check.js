@@ -309,6 +309,56 @@ await step('reviewClassification (멀티라벨/부정어)', async () => {
   assert.equal(b.categories.length, 0, '부정어/긍정 게이팅 실패');
 });
 
+await step('reportRoutes — buildProductDetailPath / resolveReviewProductKey', async () => {
+  const m = await import('../../frontend/src/utils/reportRoutes.js');
+  // 1) analysisId + productKey 둘 다 있어야 URL 생성
+  assert.equal(
+    m.buildProductDetailPath({ analysisId: 'a1', productKey: '셔츠' }),
+    `/products/a1/${encodeURIComponent('셔츠')}`,
+  );
+  // 2) 누락된 경우 null — 호출부가 링크를 비활성화하라는 신호
+  assert.equal(m.buildProductDetailPath({ analysisId: '', productKey: 'p' }), null);
+  assert.equal(m.buildProductDetailPath({ analysisId: 'a', productKey: null }), null);
+  assert.equal(m.buildProductDetailPath({}), null);
+
+  // 3) review.productKey 우선
+  assert.equal(
+    m.resolveReviewProductKey({ productKey: 'KEY-1', productName: '셔츠' }),
+    'KEY-1',
+  );
+  // 4) productKey 없으면 productName 으로 fallback
+  assert.equal(m.resolveReviewProductKey({ productName: '셔츠' }), '셔츠');
+  // 5) products 배열에서 productName 으로 유일하게 찾으면 그 productKey
+  assert.equal(
+    m.resolveReviewProductKey(
+      { productName: '셔츠' },
+      [{ productKey: 'PK-1', productName: '셔츠' }, { productKey: 'PK-2', productName: '바지' }],
+    ),
+    'PK-1',
+  );
+  // 6) productName 이 중복되면 모호 → null
+  assert.equal(
+    m.resolveReviewProductKey(
+      { productName: '셔츠' },
+      [{ productKey: 'PK-1', productName: '셔츠' }, { productKey: 'PK-2', productName: '셔츠' }],
+    ),
+    null,
+  );
+  // 7) 아무 식별값도 없으면 null
+  assert.equal(m.resolveReviewProductKey({}), null);
+  assert.equal(m.resolveReviewProductKey(null), null);
+
+  // 8) buildReviewProductPath: review.analysisId 가 우선, 없으면 컨텍스트 analysisId
+  assert.equal(
+    m.buildReviewProductPath({ productName: '셔츠' }, { analysisId: 'a1' }),
+    `/products/a1/${encodeURIComponent('셔츠')}`,
+  );
+  // 9) analysisId 가 어디에도 없으면 null (잘못된 라우팅 방지)
+  assert.equal(m.buildReviewProductPath({ productName: '셔츠' }), null);
+  // 10) 샘플 리포트처럼 식별값 없는 review 는 null → 링크 비활성
+  assert.equal(m.buildReviewProductPath({}, { analysisId: 'a1' }), null);
+});
+
 await step('issueDetection + productAnalysis (end-to-end)', async () => {
   const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
   const reviews = [
@@ -322,6 +372,18 @@ await step('issueDetection + productAnalysis (end-to-end)', async () => {
   assert(typeof summary.totalIssueCount === 'number', 'totalIssueCount 누락');
   assert(products[0].topIssues.length > 0, 'topIssues 비어있음');
   assert(products[0].topIssues[0].recommendedAction, 'recommendedAction 누락');
+  // 리뷰 모달이 review.productKey 로 안정적으로 상품 상세 URL 을 만들 수 있어야 한다.
+  // (productName 만 들고 있는 회귀를 막기 위한 가드)
+  for (const r of products[0].reviews) {
+    assert.equal(r.productKey, products[0].productKey,
+      `리뷰 ${r.id} 에 productKey 누락 또는 불일치: ${r.productKey}`);
+  }
+  // summary 의 reviewHighlights topReviews 도 동일하게 productKey 를 가져야 한다.
+  const allTopReviews = ['positive', 'neutral', 'negative']
+    .flatMap((s) => summary.reviewHighlights?.[s]?.topReviews || []);
+  for (const r of allTopReviews) {
+    assert(r.productKey, `summary topReview (id=${r.id}) 에 productKey 누락`);
+  }
 });
 
 await step('export — section/productName 헤더 + product_summary row 포함', async () => {

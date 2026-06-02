@@ -140,6 +140,9 @@ function pickTopReviews(reviewsOfSentiment, classifications, sentimentLabel, max
     }));
     return {
       id: r.id,
+      // productKey 는 현재 productName 과 같지만, 프론트의 리뷰 모달이 안정적인
+      // 라우팅 키를 쓰도록 명시적으로 함께 내려준다.
+      productKey: r.productName,
       productName: r.productName,
       optionName: r.optionName || null,
       rating: r.rating ?? null,
@@ -210,6 +213,7 @@ export function serializeReviewForList(review, classification) {
   }));
   return {
     id: review.id,
+    productKey: review.productName,
     productName: review.productName,
     optionName: review.optionName || null,
     rating: review.rating ?? null,

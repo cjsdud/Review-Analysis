@@ -20,6 +20,9 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accessKind, setAccessKind] = useState(null);
+  // 404 의 의미를 분석 자체가 없는 경우와 분석 안 상품을 못 찾는 경우로 분리해
+  // 사용자에게 "분석 리포트를 찾을 수 없습니다." 하나로 뭉뚱그리지 않도록 한다.
+  const [accessDetail, setAccessDetail] = useState('');
   const [error, setError] = useState('');
 
   // 모달 상태
@@ -41,6 +44,23 @@ export default function ProductDetailPage() {
   });
 
   useEffect(() => {
+    // URL 파라미터가 비어 있으면 fetch 시도 자체를 막고 명확한 안내.
+    if (!analysisId || !productKey) {
+      setLoading(false);
+      setAccessKind('BAD_URL');
+      setAccessDetail(
+        !analysisId
+          ? '분석 리포트 주소가 올바르지 않습니다.'
+          : '상품 정보가 주소에 포함되어 있지 않습니다.',
+      );
+      return;
+    }
+    // 동일 컴포넌트에서 productKey 가 바뀌어 재요청할 때, 이전 product 가 잠깐
+    // 비치는 것을 막기 위해 명시적으로 loading 상태로 되돌린다.
+    setLoading(true);
+    setAccessKind(null);
+    setAccessDetail('');
+    setError('');
     (async () => {
       try {
         const data = await getProductDetail(analysisId, productKey);
@@ -49,8 +69,18 @@ export default function ProductDetailPage() {
         const status = e.status;
         if (status === 401) setAccessKind('AUTH_REQUIRED');
         else if (status === 403) setAccessKind('FORBIDDEN');
-        else if (status === 404) setAccessKind('NOT_FOUND');
-        else setError(e.message);
+        else if (status === 404) {
+          setAccessKind('NOT_FOUND');
+          // 백엔드는 분석 자체가 없을 때 "분석 결과를 찾을 수 없습니다.",
+          // 상품만 못 찾을 때 "상품을 찾을 수 없습니다." 를 보낸다.
+          // 메시지에 '상품' 이 들어 있으면 상품 단위 404 로 구분.
+          const msg = String(e.message || '');
+          setAccessDetail(
+            msg.includes('상품')
+              ? '이 분석 리포트에서 해당 상품을 찾을 수 없습니다. 다른 상품을 선택해 주세요.'
+              : '',
+          );
+        } else setError(e.message);
       } finally {
         setLoading(false);
       }
@@ -104,8 +134,15 @@ export default function ProductDetailPage() {
     return getReviewsForIssue(all, selectedIssueFilter);
   }, [product, selectedIssueFilter]);
 
-  if (loading) return <LoadingState title="상품 리포트를 준비하고 있어요" />;
-  if (accessKind) return <AccessError kind={accessKind} />;
+  if (loading) return <LoadingState title="상품 상세 리포트를 불러오는 중입니다." />;
+  if (accessKind === 'BAD_URL') {
+    return (
+      <div>
+        <AccessError kind="NOT_FOUND" detail={accessDetail} />
+      </div>
+    );
+  }
+  if (accessKind) return <AccessError kind={accessKind} detail={accessDetail} />;
   if (error)
     return (
       <div>

@@ -72,7 +72,11 @@ function aggregateSentiment(classifications) {
 
 // 리뷰 객체를 셀러에게 보여줄 마스킹된 형태로 변환 (분석 결과 안에 저장).
 // classifications 의 categories 를 detectedIssues 로 함께 첨부한다.
-function maskedReviewForProduct(review, classification) {
+// 마스킹 + 분류 정보 부착. productKey 를 명시적으로 함께 받아 review 객체에
+// 넣어줘서, 프론트의 리뷰 모달이 상품명만으로 추측하지 않고 안정적으로 상품
+// 상세 리포트 URL 을 만들 수 있게 한다. (productKey 는 현재 productName 과 같지만
+// 향후 표기 통일/정규화 로 분리되어도 review → product 링크가 깨지지 않도록.)
+function maskedReviewForProduct(review, classification, productKey) {
   const cats = (classification?.categories || []).map((cat) => ({
     category: cat.name,
     issue: cat.issue || null,
@@ -83,6 +87,7 @@ function maskedReviewForProduct(review, classification) {
   }));
   return {
     id: review.id,
+    productKey: productKey ?? review.productName,
     productName: review.productName,
     optionName: review.optionName || null,
     rating: review.rating ?? null,
@@ -209,7 +214,7 @@ export async function runAnalysis(reviews, corrections = []) {
 
     // 6) 마스킹된 리뷰 목록 (상세에서 사용)
     const clsById = new Map(productCls.map((c) => [c.reviewId, c]));
-    const productReviewList = productReviews.map((r) => maskedReviewForProduct(r, clsById.get(r.id)));
+    const productReviewList = productReviews.map((r) => maskedReviewForProduct(r, clsById.get(r.id), productName));
 
     // 7) 키워드 + 추이 (신규)
     const positiveKeywords = extractPositiveKeywords(productReviews, productCls);

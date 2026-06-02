@@ -13,6 +13,7 @@ import EmptyState from '../components/EmptyState.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
+import { buildProductDetailPath } from '../utils/reportRoutes.js';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
@@ -50,7 +51,8 @@ export default function DashboardPage() {
   }, [analysisId]);
 
   function goProduct(productKey) {
-    navigate(`/products/${analysisId}/${encodeURIComponent(productKey)}`);
+    const path = buildProductDetailPath({ analysisId, productKey });
+    if (path) navigate(path);
   }
 
   // 차트(막대/원형) 클릭 → 해당 카테고리의 관련 리뷰 모달 직접 열기.

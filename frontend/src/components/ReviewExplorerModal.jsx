@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Modal from './Modal.jsx';
 import LoadingState from './LoadingState.jsx';
 import { getAnalysisReviews } from '../api/reviewsApi.js';
+import { buildReviewProductPath } from '../utils/reportRoutes.js';
 
 // 분석 전체 보기용 리뷰 탐색 모달.
 // sentiment 별로 필터된 마스킹 리뷰를 페이지네이션해서 보여 준다.
@@ -27,9 +28,12 @@ function titleFor(sentiment) {
   }
 }
 
-function ReviewCard({ r, onSelectProduct }) {
+function ReviewCard({ r, onSelectProduct, productPath }) {
   const [open, setOpen] = useState(false);
   const issues = (r.detectedIssues || []).filter((i) => i.isActionableIssue !== false && i.category !== '기타');
+  // productPath 가 만들어진 경우에만 클릭 가능한 링크로 표시.
+  // (analysisId 또는 productKey 가 없어 이동할 수 없으면 plain text 로 — "분석 리포트를 찾을 수 없습니다." 같은 오안내 방지)
+  const canNavigate = Boolean(productPath && onSelectProduct);
   return (
     <li className={`re-card${open ? ' is-open' : ''}`}>
       <div className="re-card__head">
@@ -41,12 +45,14 @@ function ReviewCard({ r, onSelectProduct }) {
           {r.createdAt && <span className="re-card__date muted">{String(r.createdAt).slice(0, 10)}</span>}
         </div>
         <div className="re-card__product">
-          {onSelectProduct ? (
-            <button type="button" className="linklike" onClick={() => onSelectProduct(r.productName)} title={`${r.productName} 상세 리포트`}>
+          {canNavigate ? (
+            <button type="button" className="linklike" onClick={() => onSelectProduct(productPath)} title={`${r.productName} 상세 리포트`}>
               {r.productName}
             </button>
           ) : (
-            <span>{r.productName}</span>
+            <span title={r.productName ? '이 리뷰는 상품 상세 리포트로 이동할 수 없습니다.' : undefined}>
+              {r.productName || '상품명 없음'}
+            </span>
           )}
           {r.optionName && <span className="muted re-card__option"> · {r.optionName}</span>}
         </div>
@@ -146,9 +152,12 @@ export default function ReviewExplorerModal({
     loadPage(clamped);
   }
 
-  function goProduct(productKey) {
+  // ReviewCard 에서 이미 만들어 놓은 productPath 를 그대로 받아 이동.
+  // path 가 null 이면 ReviewCard 가 링크 자체를 렌더하지 않으므로 여기엔 도달하지 않음.
+  function goProduct(productPath) {
+    if (!productPath) return;
     onClose?.();
-    navigate(`/products/${analysisId}/${encodeURIComponent(productKey)}`);
+    navigate(productPath);
   }
 
   const summaryLine = useMemo(() => {
@@ -246,7 +255,12 @@ export default function ReviewExplorerModal({
       ) : (
         <ul className="re-list">
           {items.map((r) => (
-            <ReviewCard key={r.id} r={r} onSelectProduct={goProduct} />
+            <ReviewCard
+              key={r.id}
+              r={r}
+              onSelectProduct={goProduct}
+              productPath={buildReviewProductPath(r, { analysisId })}
+            />
           ))}
         </ul>
       )}
