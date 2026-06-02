@@ -6,6 +6,7 @@ export const adminApi = {
   listUsers:      (params = {}) => client.get('/admin/users', { params }).then((r) => r.data),
   getUser:        (id) => client.get(`/admin/users/${id}`).then((r) => r.data),
   patchUser:      (id, body) => client.patch(`/admin/users/${id}`, body).then((r) => r.data),
+  resetUsage:     (id, reason) => client.post(`/admin/users/${id}/usage/reset`, { reason }).then((r) => r.data),
   listDiscounts:  (userId) => client.get(`/admin/users/${userId}/discounts`).then((r) => r.data),
   addDiscount:    (userId, body) => client.post(`/admin/users/${userId}/discounts`, body).then((r) => r.data),
   patchDiscount:  (id, body) => client.patch(`/admin/discounts/${id}`, body).then((r) => r.data),

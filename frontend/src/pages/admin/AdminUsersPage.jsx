@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { adminApi } from '../../api/adminApi.js';
 import LoadingState from '../../components/LoadingState.jsx';
 
-const PLAN_OPTIONS = ['free', 'starter', 'pro'];
+const PLAN_OPTIONS = ['free', 'starter', 'pro', 'business'];
 const STATUS_OPTIONS = ['active', 'trialing', 'past_due', 'canceled', 'expired'];
 
 export default function AdminUsersPage() {
@@ -192,6 +192,25 @@ function UserDetail({ userId, onClose, onUpdated }) {
         <div className="page-actions">
           <button className="btn btn--primary" onClick={save} disabled={busy}>저장</button>
           <button className="btn btn--ghost" onClick={addDiscount}>할인 추가</button>
+          <button
+            className="btn btn--ghost"
+            onClick={async () => {
+              if (!confirm('이번 달 사용량을 모두 초기화할까요? (테스트용)')) return;
+              setBusy(true); setErr(''); setMsg('');
+              try {
+                await adminApi.resetUsage(userId, reason);
+                setMsg('이번 달 사용량 초기화 완료');
+                await load();
+              } catch (e) {
+                setErr(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+          >
+            사용량 초기화
+          </button>
         </div>
       </div>
 

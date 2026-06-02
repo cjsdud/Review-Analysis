@@ -6,6 +6,7 @@
 import { nanoid } from 'nanoid';
 import db from '../db/database.js';
 import { getBooleanSetting, getNumberSetting } from './settings.service.js';
+import { getPlanFeatures, USAGE_EVENT_TYPES } from '../constants/plans.js';
 
 // app_settings 의 billing_enforce_limits 가 환경변수보다 우선. 없으면 env fallback.
 const ENV_ENFORCE = String(process.env.BILLING_ENFORCE_LIMITS || 'false').toLowerCase() === 'true';
@@ -17,9 +18,10 @@ export const ENFORCE_LIMITS = ENV_ENFORCE;
 
 // 코드/이름 fallback 용 기본값 (DB seed 가 비어 있을 때 안전망).
 const DEFAULT_PLANS = {
-  free:    { code: 'free',    name: 'Free',    price_krw: 0, monthly_analysis_limit: 1,  max_reviews_per_analysis: 100 },
-  starter: { code: 'starter', name: 'Starter', price_krw: 0, monthly_analysis_limit: 10, max_reviews_per_analysis: 1000 },
-  pro:     { code: 'pro',     name: 'Pro',     price_krw: 0, monthly_analysis_limit: 50, max_reviews_per_analysis: 5000 },
+  free:     { code: 'free',     name: 'Free',     price_krw: 0, monthly_analysis_limit: 1,   max_reviews_per_analysis: 100 },
+  starter:  { code: 'starter',  name: 'Starter',  price_krw: 0, monthly_analysis_limit: 10,  max_reviews_per_analysis: 1000 },
+  pro:      { code: 'pro',      name: 'Pro',      price_krw: 0, monthly_analysis_limit: 50,  max_reviews_per_analysis: 5000 },
+  business: { code: 'business', name: 'Business', price_krw: 0, monthly_analysis_limit: 200, max_reviews_per_analysis: 50000 },
 };
 
 // plans 테이블 + app_settings override 를 합쳐 최종 플랜 객체 반환.
@@ -131,18 +133,23 @@ export function checkCanCreateAnalysis(userId, reviewCount) {
   return { ok: true };
 }
 
-// /api/me 응답용 — user + subscription + 이번 달 사용량.
+// /api/me 응답용 — user + subscription + 이번 달 사용량 + 플랜 기능 플래그.
 export function buildMeContext(user) {
   if (!user) return null;
   const sub = getUserSubscription(user.id);
   const plan = getPlanByCode(sub?.plan_code || 'free');
-  const monthlyAnalysisUsed = getMonthlyUsage(user.id, 'analysis_created');
+  const features = getPlanFeatures(plan.code);
+  const monthlyAnalysisUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.ANALYSIS_CREATED);
+  const monthlyFileUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.FILE_UPLOADED);
+  const monthlyCsReplyUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.CS_REPLY_GENERATED);
   return {
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
     subscription: sub
       ? {
           planCode: sub.plan_code,
           planName: plan.name,
+          planLabel: features.label,
+          planTagline: features.tagline,
           status: sub.status,
           currentPeriodEnd: sub.current_period_end,
         }
@@ -151,7 +158,81 @@ export function buildMeContext(user) {
       monthlyAnalysisUsed,
       monthlyAnalysisLimit: plan.monthly_analysis_limit,
       maxReviewsPerAnalysis: plan.max_reviews_per_analysis,
+      monthlyFileUsed,
+      monthlyFileLimit: features.monthlyFileLimit,
+      monthlyCsReplyUsed,
+      monthlyCsReplyLimit: features.monthlyCsReplyLimit,
+      monthlyReviewLimit: features.monthlyReviewLimit,
+      maxProductsPerFile: features.maxProductsPerFile,
+      dataRetentionDays: features.dataRetentionDays,
+    },
+    // 프론트가 disable/show 결정에 쓰는 기능 플래그. UI 에는 "Free 플랜이라
+    // 안 됩니다" 같은 안내 + 상위 플랜 CTA 를 띄우면 된다.
+    features: {
+      canExportFullExcel: features.canExportFullExcel,
+      canPrintFullReport: features.canPrintFullReport,
+      printWatermark: features.printWatermark,
+      canViewAllRelatedReviews: features.canViewAllRelatedReviews,
+      canUsePrecisionAnalysis: features.canUsePrecisionAnalysis,
+      llmMode: features.llmMode,
     },
     billingEnforced: isLimitsEnforced(),
   };
+}
+
+// CS 답글 생성 가능 여부 — 플랜의 월 CS 답글 한도 검사.
+export function checkCanGenerateCsReply(userId, count = 1) {
+  if (!isLimitsEnforced()) return { ok: true };
+  if (!userId) return { ok: true };
+  const sub = getUserSubscription(userId);
+  const features = getPlanFeatures(sub?.plan_code || 'free');
+  const used = getMonthlyUsage(userId, USAGE_EVENT_TYPES.CS_REPLY_GENERATED);
+  if (used + count > features.monthlyCsReplyLimit) {
+    return {
+      ok: false,
+      status: 402,
+      body: {
+        error: 'CS_REPLY_LIMIT_EXCEEDED',
+        message: `현재 플랜의 월 CS 답글 초안 한도(${features.monthlyCsReplyLimit}건)를 초과했습니다.`,
+        planCode: sub?.plan_code || 'free',
+        limit: features.monthlyCsReplyLimit,
+        used,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+// 파일 업로드 가능 여부 — 플랜의 월 파일 한도 검사.
+export function checkCanUploadFile(userId) {
+  if (!isLimitsEnforced()) return { ok: true };
+  if (!userId) return { ok: true };
+  const sub = getUserSubscription(userId);
+  const features = getPlanFeatures(sub?.plan_code || 'free');
+  const used = getMonthlyUsage(userId, USAGE_EVENT_TYPES.FILE_UPLOADED);
+  if (used >= features.monthlyFileLimit) {
+    return {
+      ok: false,
+      status: 402,
+      body: {
+        error: 'FILE_LIMIT_EXCEEDED',
+        message: `현재 플랜의 월 파일 업로드 한도(${features.monthlyFileLimit}건)를 초과했습니다.`,
+        planCode: sub?.plan_code || 'free',
+        limit: features.monthlyFileLimit,
+        used,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+// 관리자 콘솔 — 특정 사용자의 이번 달 사용량 모두 초기화.
+// (테스트/디버그 용 — 운영에서는 신중히 사용)
+export function resetMonthlyUsage(userId) {
+  if (!userId) return 0;
+  const r = db.prepare(
+    `DELETE FROM usage_events WHERE user_id = ?
+     AND created_at >= datetime('now', 'start of month')`,
+  ).run(userId);
+  return r.changes || 0;
 }

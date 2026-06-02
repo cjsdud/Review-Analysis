@@ -300,6 +300,66 @@ await step('fileParser — 빈 헤더 셀은 "컬럼 N" 으로, 중복 헤더는
   assert.equal(r.rows[0]['컬럼 2'], 'x');
 });
 
+await step('plans — Business 플랜 + feature flags', async () => {
+  const { PLAN_CODES, PLAN_FEATURES, getPlanFeatures } = await import('../src/constants/plans.js');
+  assert.deepEqual(PLAN_CODES, ['free', 'starter', 'pro', 'business'], 'Business 플랜 누락');
+  assert.equal(PLAN_FEATURES.free.canExportFullExcel, false);
+  assert.equal(PLAN_FEATURES.starter.canExportFullExcel, true);
+  assert.equal(PLAN_FEATURES.pro.canUsePrecisionAnalysis, true);
+  assert.equal(PLAN_FEATURES.business.llmMode, 'advanced');
+  assert.equal(PLAN_FEATURES.free.printWatermark, true);
+  assert.equal(PLAN_FEATURES.starter.printWatermark, false);
+  // getPlanFeatures fallback — 알 수 없는 코드는 free
+  assert.equal(getPlanFeatures('unknown').label, 'Free');
+});
+
+await step('ai/index — selectLlmMode / shouldReanalyze / reviewHash', async () => {
+  const ai = await import('../src/services/ai/index.js');
+  // mode 매핑
+  assert.equal(ai.selectLlmMode({ llmMode: 'basic' }).allowMiniReanalysis, false);
+  assert.equal(ai.selectLlmMode({ llmMode: 'precision' }).allowMiniReanalysis, true);
+  assert.equal(ai.selectLlmMode({ llmMode: 'advanced' }).allowBrandToneReply, true);
+  // shouldReanalyze 케이스
+  assert.equal(ai.shouldReanalyze({ sentiment: 'mixed', categories: [{ confidence: 0.9 }] }), true,
+    'mixed sentiment 는 mini 재분석 대상');
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'positive', improvementIssues: [{ severity: 'low' }], categories: [{ confidence: 0.9 }] }),
+    true,
+    'positive + issue 도 mini 재분석 대상',
+  );
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'positive', improvementIssues: [], categories: [{ confidence: 0.95 }] }, '핏이 좋아요'),
+    false,
+    '깔끔한 positive 는 재분석 OFF',
+  );
+  // ratingReliable + 충돌
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'negative', rating: 5, ratingReliable: true, categories: [{ confidence: 0.9 }] }),
+    true,
+    '별점 5 + negative 는 충돌 → 재분석',
+  );
+  // 반전 표현
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'neutral', categories: [{ confidence: 0.9 }] }, '핏은 예쁜데 좀 아쉽긴 합니다'),
+    true,
+    '대조/아쉬움 어휘 포함 → 재분석',
+  );
+  // reviewHash 안정성
+  const h1 = ai.reviewHash('핏이 좋아요');
+  const h2 = ai.reviewHash('핏이 좋아요');
+  const h3 = ai.reviewHash('핏이 별로');
+  assert.equal(h1, h2, '같은 텍스트 → 같은 해시');
+  assert.notEqual(h1, h3, '다른 텍스트 → 다른 해시');
+  assert.equal(h1.length, 40, 'sha1 hex 40자');
+});
+
+await step('billing — checkCanGenerateCsReply / checkCanUploadFile / resetMonthlyUsage', async () => {
+  // 익명/billing 미적용 → 항상 ok
+  const m = await import('../src/services/billing.service.js');
+  assert.equal(m.checkCanGenerateCsReply(null).ok, true, '익명은 통과');
+  assert.equal(m.checkCanUploadFile(null).ok, true, '익명은 통과');
+});
+
 await step('reviewClassification — 실제 의류 리뷰 10케이스 (mentionedAspect vs improvementIssue)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const cases = [

@@ -98,9 +98,11 @@ db.exec(`
 // 기본 요금제 seed (free/starter/pro). 가격은 미확정이므로 0 으로 두고 README/docs 에서 TODO.
 // 인덱스 기반 monthly_analysis_limit / max_reviews_per_analysis 도 함께 정의.
 const SEED_PLANS = [
-  { code: 'free',    name: 'Free',    price_krw: 0, monthly_analysis_limit: 1,  max_reviews_per_analysis: 100,  features: 'basic' },
-  { code: 'starter', name: 'Starter', price_krw: 0, monthly_analysis_limit: 10, max_reviews_per_analysis: 1000, features: 'standard' },
-  { code: 'pro',     name: 'Pro',     price_krw: 0, monthly_analysis_limit: 50, max_reviews_per_analysis: 5000, features: 'pro' },
+  { code: 'free',     name: 'Free',     price_krw: 0, monthly_analysis_limit: 1,   max_reviews_per_analysis: 100,   features: 'basic' },
+  { code: 'starter',  name: 'Starter',  price_krw: 0, monthly_analysis_limit: 10,  max_reviews_per_analysis: 1000,  features: 'standard' },
+  { code: 'pro',      name: 'Pro',      price_krw: 0, monthly_analysis_limit: 50,  max_reviews_per_analysis: 5000,  features: 'pro' },
+  // Business: 결제 미연동 — 관리자 수동 설정 / 별도 문의 용도.
+  { code: 'business', name: 'Business', price_krw: 0, monthly_analysis_limit: 200, max_reviews_per_analysis: 50000, features: 'business' },
 ];
 const upsertPlan = db.prepare(
   `INSERT INTO plans (id, code, name, price_krw, monthly_analysis_limit, max_reviews_per_analysis, features)
@@ -129,6 +131,8 @@ const SEED_SETTINGS = [
   { key: 'starter_max_reviews_per_analysis', value: '1000', type: 'number', category: 'limits', label: 'Starter: 파일당 리뷰 수' },
   { key: 'pro_monthly_analysis_limit',     value: '50',  type: 'number', category: 'limits', label: 'Pro: 월 분석 횟수' },
   { key: 'pro_max_reviews_per_analysis',   value: '5000', type: 'number', category: 'limits', label: 'Pro: 파일당 리뷰 수' },
+  { key: 'business_monthly_analysis_limit',  value: '200',  type: 'number', category: 'limits', label: 'Business: 월 분석 횟수' },
+  { key: 'business_max_reviews_per_analysis', value: '50000', type: 'number', category: 'limits', label: 'Business: 파일당 리뷰 수' },
   // ui / notice
   { key: 'notice_banner_enabled', value: 'false', type: 'boolean', category: 'notice', label: '공지 배너 표시', desc: 'announcements 와 별개로 단일 텍스트 배너 토글' },
   { key: 'notice_banner_text',    value: '',      type: 'string',  category: 'notice', label: '공지 배너 텍스트' },

@@ -8,6 +8,7 @@ import { requireAdmin } from '../middleware/auth.middleware.js';
 import { listSettings, setSetting } from '../services/settings.service.js';
 import { logAdminAction, isLastAdmin, listAdminLogs } from '../services/adminAudit.service.js';
 import { getDemoViewStats } from '../services/analytics.service.js';
+import { resetMonthlyUsage } from '../services/billing.service.js';
 
 const router = Router();
 
@@ -122,7 +123,7 @@ router.get('/users/:id', (req, res) => {
 const userPatchSchema = z.object({
   name: z.string().max(100).optional(),
   role: z.enum(['user', 'admin']).optional(),
-  planCode: z.enum(['free', 'starter', 'pro']).optional(),
+  planCode: z.enum(['free', 'starter', 'pro', 'business']).optional(),
   subscriptionStatus: z.enum(['active', 'trialing', 'past_due', 'canceled', 'expired']).optional(),
   reason: z.string().max(500).optional(),
 });
@@ -181,6 +182,22 @@ router.patch('/users/:id', (req, res) => {
 
   const fresh = db.prepare('SELECT id, email, name, role FROM users WHERE id = ?').get(target.id);
   res.json({ user: fresh });
+});
+
+// ===== 2-1) /users/:id/usage/reset — 이번 달 사용량 초기화 (테스트용) =====
+router.post('/users/:id/usage/reset', (req, res) => {
+  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'NOT_FOUND', message: '사용자를 찾을 수 없습니다.' });
+  const deleted = resetMonthlyUsage(target.id);
+  logAdminAction({
+    adminUserId: req.user.id,
+    actionType: 'USER_USAGE_RESET',
+    targetType: 'user',
+    targetId: target.id,
+    after: { deleted },
+    reason: (req.body?.reason || '').slice(0, 500),
+  });
+  res.json({ ok: true, deleted });
 });
 
 // ===== 3) /users/:id/discounts — 할인 관리 =====
