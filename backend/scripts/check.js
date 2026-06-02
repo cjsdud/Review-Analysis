@@ -313,12 +313,68 @@ await step('plans — Business 플랜 + feature flags', async () => {
   assert.equal(getPlanFeatures('unknown').label, 'Free');
 });
 
+await step('plans — resolveLlmPolicy + env override + advancedReportModel 가드', async () => {
+  const { resolveLlmPolicy, PLAN_LLM_POLICY } = await import('../src/constants/plans.js');
+  // Free 정책: basic 모드, mini 재분석 / advanced 모두 null
+  const free = resolveLlmPolicy('free');
+  assert.equal(free.llmMode, 'basic');
+  assert.equal(free.precisionModel, null, 'Free 는 precision 모델 없음');
+  assert.equal(free.advancedReportModel, null);
+  assert.equal(free.allowMiniReanalysis, false);
+  // Starter: standard 모드, 여전히 mini 재분석 OFF
+  const starter = resolveLlmPolicy('starter');
+  assert.equal(starter.llmMode, 'standard');
+  assert.equal(starter.summaryModel, 'gpt-5.4-mini');
+  assert.equal(starter.allowMiniReanalysis, false);
+  // Pro: mini 재분석 ON, advanced 는 여전히 차단
+  const pro = resolveLlmPolicy('pro');
+  assert.equal(pro.precisionModel, 'gpt-5.4-mini');
+  assert.equal(pro.advancedReportModel, null, 'Pro 는 advanced 차단');
+  assert.equal(pro.allowMiniReanalysis, true);
+  assert.equal(pro.maxMiniReanalysisRatio, 0.2);
+  // Business: advanced 모델 사용 가능
+  const business = resolveLlmPolicy('business');
+  assert.equal(business.advancedReportModel, 'gpt-5.4');
+  assert.equal(business.maxMiniReanalysisRatio, 0.3);
+  // env override — 환경변수가 있으면 우선
+  process.env.OPENAI_REVIEW_MODEL = 'gpt-x-custom';
+  process.env.OPENAI_ADVANCED_MODEL = 'gpt-x-advanced';
+  const proWithEnv = resolveLlmPolicy('pro');
+  assert.equal(proWithEnv.reviewModel, 'gpt-x-custom', 'env 가 있으면 우선');
+  assert.equal(proWithEnv.advancedReportModel, null,
+    'Business 가 아니면 OPENAI_ADVANCED_MODEL 이 있어도 advanced 차단');
+  const businessWithEnv = resolveLlmPolicy('business');
+  assert.equal(businessWithEnv.advancedReportModel, 'gpt-x-advanced');
+  delete process.env.OPENAI_REVIEW_MODEL;
+  delete process.env.OPENAI_ADVANCED_MODEL;
+  // 알 수 없는 코드 → free
+  assert.equal(resolveLlmPolicy('unknown').llmMode, PLAN_LLM_POLICY.free.llmMode);
+});
+
 await step('ai/index — selectLlmMode / shouldReanalyze / reviewHash', async () => {
   const ai = await import('../src/services/ai/index.js');
-  // mode 매핑
+  // mode 매핑 — planCode 직접 입력
+  assert.equal(ai.selectLlmMode('free').allowMiniReanalysis, false);
+  assert.equal(ai.selectLlmMode('starter').allowMiniReanalysis, false, 'Starter 도 mini OFF');
+  assert.equal(ai.selectLlmMode('pro').allowMiniReanalysis, true);
+  assert.equal(ai.selectLlmMode('business').allowBrandToneReply, true);
+  // 하위 호환: features 객체로 호출
   assert.equal(ai.selectLlmMode({ llmMode: 'basic' }).allowMiniReanalysis, false);
   assert.equal(ai.selectLlmMode({ llmMode: 'precision' }).allowMiniReanalysis, true);
   assert.equal(ai.selectLlmMode({ llmMode: 'advanced' }).allowBrandToneReply, true);
+  // 플랜 정책이 막으면 shouldReanalyze 도 즉시 false (비용 가드)
+  const freePolicy = ai.selectLlmMode('free');
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'mixed', categories: [{ confidence: 0.4 }] }, '핏은 좋은데 좀 아쉽긴', freePolicy),
+    false,
+    'Free 정책이면 mixed/낮은 신뢰도여도 재분석 OFF',
+  );
+  const proPolicy = ai.selectLlmMode('pro');
+  assert.equal(
+    ai.shouldReanalyze({ sentiment: 'mixed', categories: [{ confidence: 0.4 }] }, '핏은 좋은데 좀 아쉽긴', proPolicy),
+    true,
+    'Pro 정책이면 같은 입력도 재분석 ON',
+  );
   // shouldReanalyze 케이스
   assert.equal(ai.shouldReanalyze({ sentiment: 'mixed', categories: [{ confidence: 0.9 }] }), true,
     'mixed sentiment 는 mini 재분석 대상');

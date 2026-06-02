@@ -6,7 +6,7 @@
 import { nanoid } from 'nanoid';
 import db from '../db/database.js';
 import { getBooleanSetting, getNumberSetting } from './settings.service.js';
-import { getPlanFeatures, USAGE_EVENT_TYPES } from '../constants/plans.js';
+import { getPlanFeatures, resolveLlmPolicy, USAGE_EVENT_TYPES } from '../constants/plans.js';
 
 // app_settings 의 billing_enforce_limits 가 환경변수보다 우선. 없으면 env fallback.
 const ENV_ENFORCE = String(process.env.BILLING_ENFORCE_LIMITS || 'false').toLowerCase() === 'true';
@@ -176,6 +176,21 @@ export function buildMeContext(user) {
       canUsePrecisionAnalysis: features.canUsePrecisionAnalysis,
       llmMode: features.llmMode,
     },
+    // 플랜의 LLM 정책 — 관리자가 플랜을 바꾸면 다음 /api/me 호출부터 곧장 새 값으로
+    // 갱신된다 (영구 캐시 없음). 모델명 자체는 운영 ENV override 가 우선.
+    llmPolicy: (() => {
+      const p = resolveLlmPolicy(plan.code);
+      return {
+        mode: p.llmMode,
+        reviewModel: p.reviewModel,
+        summaryModel: p.summaryModel,
+        csReplyModel: p.csReplyModel,
+        precisionModel: p.precisionModel,
+        advancedReportModel: p.advancedReportModel,
+        allowMiniReanalysis: p.allowMiniReanalysis && Boolean(p.precisionModel),
+        maxMiniReanalysisRatio: p.maxMiniReanalysisRatio,
+      };
+    })(),
     billingEnforced: isLimitsEnforced(),
   };
 }

@@ -74,6 +74,91 @@ export function getPlanFeatures(code) {
   return PLAN_FEATURES[code] || PLAN_FEATURES.free;
 }
 
+// 플랜별 LLM 사용 정책 — 모델 / mini 재분석 허용 / CS 답글 한도 / 모드.
+// 비용 통제 + 기능 가시성을 한곳에 모음. 실제 모델명은 env 가 있으면 env 우선.
+//   reviewModel        : 리뷰 1건 분류용 (가장 호출 빈도 높음 → nano 위주)
+//   summaryModel       : 전체/상품별 요약
+//   csReplyModel       : CS 답글 초안
+//   precisionModel     : 애매한 리뷰 mini 재분석 (null 이면 재분석 자체 OFF)
+//   advancedReportModel: 고급 리포트 (Business 전용)
+//   allowMiniReanalysis: spec PART 6 의 9 조건이 맞아도 false 면 호출 자체를 막음
+//   maxMiniReanalysisRatio: 한 번의 분석에서 mini 재분석을 허용하는 리뷰 비율 상한
+//   maxCsRepliesPerMonth: 월 CS 답글 한도 (PLAN_FEATURES.monthlyCsReplyLimit 와 동일 값)
+//   llmMode            : 'basic' | 'standard' | 'precision' | 'advanced'
+export const PLAN_LLM_POLICY = {
+  free: {
+    reviewModel: 'gpt-5.4-nano',
+    summaryModel: 'gpt-5.4-nano',
+    csReplyModel: 'gpt-5.4-nano',
+    precisionModel: null,
+    advancedReportModel: null,
+    allowMiniReanalysis: false,
+    maxMiniReanalysisRatio: 0,
+    maxCsRepliesPerMonth: 10,
+    llmMode: 'basic',
+  },
+  starter: {
+    reviewModel: 'gpt-5.4-nano',
+    summaryModel: 'gpt-5.4-mini',
+    csReplyModel: 'gpt-5.4-mini',
+    precisionModel: null,
+    advancedReportModel: null,
+    allowMiniReanalysis: false,
+    maxMiniReanalysisRatio: 0,
+    maxCsRepliesPerMonth: 100,
+    llmMode: 'standard',
+  },
+  pro: {
+    reviewModel: 'gpt-5.4-nano',
+    summaryModel: 'gpt-5.4-mini',
+    csReplyModel: 'gpt-5.4-mini',
+    precisionModel: 'gpt-5.4-mini',
+    advancedReportModel: null,
+    allowMiniReanalysis: true,
+    maxMiniReanalysisRatio: 0.2,
+    maxCsRepliesPerMonth: 500,
+    llmMode: 'precision',
+  },
+  business: {
+    reviewModel: 'gpt-5.4-nano',
+    summaryModel: 'gpt-5.4-mini',
+    csReplyModel: 'gpt-5.4-mini',
+    precisionModel: 'gpt-5.4-mini',
+    advancedReportModel: 'gpt-5.4',
+    allowMiniReanalysis: true,
+    maxMiniReanalysisRatio: 0.3,
+    maxCsRepliesPerMonth: 3000,
+    llmMode: 'advanced',
+  },
+};
+
+// 운영 환경변수로 모델명 override — env 가 있으면 우선, 없으면 정책 기본값.
+// 키 이름은 OpenAI 표기와 1:1.
+function envModel(name) {
+  const v = process.env[name];
+  return v && String(v).trim() ? String(v).trim() : null;
+}
+
+// planCode → 최종 LLM 정책. env override + advancedReportModel 가드 적용.
+// advancedReportModel 은 Business 가 아니면 항상 null (env 가 있어도 차단).
+export function resolveLlmPolicy(code) {
+  const base = PLAN_LLM_POLICY[code] || PLAN_LLM_POLICY.free;
+  const advanced = code === 'business'
+    ? (envModel('OPENAI_ADVANCED_MODEL') || base.advancedReportModel)
+    : null;
+  const precision = base.precisionModel
+    ? (envModel('OPENAI_PRECISION_MODEL') || base.precisionModel)
+    : null;
+  return {
+    ...base,
+    reviewModel: envModel('OPENAI_REVIEW_MODEL') || base.reviewModel,
+    summaryModel: envModel('OPENAI_SUMMARY_MODEL') || base.summaryModel,
+    csReplyModel: envModel('OPENAI_CS_REPLY_MODEL') || base.csReplyModel,
+    precisionModel: precision,
+    advancedReportModel: advanced,
+  };
+}
+
 // usage_events.event_type 의 표준 이름. CS 답글 사용량까지 통일된 이름으로 추적.
 export const USAGE_EVENT_TYPES = {
   ANALYSIS_CREATED: 'analysis_created',

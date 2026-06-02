@@ -12,6 +12,7 @@
 // 이 파일은 호출자(productAnalysis 등) 가 한 곳에서 정책을 보도록 모은다.
 import crypto from 'node:crypto';
 import aiClient from '../aiClient.service.js';
+import { resolveLlmPolicy, getPlanFeatures } from '../../constants/plans.js';
 
 // 프롬프트가 바뀌면 올려서 캐시 무효화. 모든 새 reviewHash 가 이 값을 포함한다.
 export const PROMPT_VERSION = 'v1.2026.06';
@@ -28,17 +29,38 @@ export function reviewHash(content = '', promptVersion = PROMPT_VERSION) {
   return h.digest('hex');
 }
 
-// 플랜 features.llmMode → 실제 호출 정책으로 변환.
-//   basic     → 룰 기반 (mini 재분석 OFF)
-//   precision → mini 재분석 허용 (Pro)
-//   advanced  → mini 재분석 + 브랜드 톤 CS 답글 (Business)
-export function selectLlmMode(features = {}) {
-  const mode = features.llmMode || 'basic';
+// planCode → 실제 호출 정책. PLAN_LLM_POLICY + env override 를 합쳐 반환한다.
+// 호출 측은 이 결과로만 "어떤 모델을 / mini 재분석을 켤지" 를 결정해야 한다.
+// 관리자 콘솔에서 플랜을 바꾸면 다음 호출부터 즉시 새 정책이 적용됨.
+//
+// 입력은 planCode (권장) 또는 features 객체(하위 호환). features 만 들어오면
+// llmMode 만 보고 비슷한 기본값을 채워 반환.
+export function selectLlmMode(planOrFeatures = 'free') {
+  // 하위 호환: features 객체가 들어오면 그 안 llmMode 로 plan 추정.
+  let planCode = planOrFeatures;
+  if (planOrFeatures && typeof planOrFeatures === 'object') {
+    const mode = planOrFeatures.llmMode;
+    planCode = mode === 'advanced' ? 'business'
+      : mode === 'precision' ? 'pro'
+      : mode === 'standard' ? 'starter'
+      : 'free';
+  }
+  const policy = resolveLlmPolicy(planCode);
+  const features = getPlanFeatures(planCode);
   return {
-    mode,
-    allowMiniReanalysis: mode === 'precision' || mode === 'advanced',
-    allowBrandToneReply: mode === 'advanced',
-    // mock 환경에서는 어떤 모드든 mock 응답으로 fallback 됨 (aiClient.aiMode 가 'mock' 일 때).
+    planCode,
+    mode: policy.llmMode,
+    reviewModel: policy.reviewModel,
+    summaryModel: policy.summaryModel,
+    csReplyModel: policy.csReplyModel,
+    precisionModel: policy.precisionModel,
+    advancedReportModel: policy.advancedReportModel,
+    allowMiniReanalysis: policy.allowMiniReanalysis && Boolean(policy.precisionModel),
+    maxMiniReanalysisRatio: policy.maxMiniReanalysisRatio,
+    maxCsRepliesPerMonth: policy.maxCsRepliesPerMonth,
+    allowBrandToneReply: policy.llmMode === 'advanced' && Boolean(policy.advancedReportModel),
+    canUsePrecisionAnalysis: features.canUsePrecisionAnalysis,
+    // mock 환경에서는 어떤 모드든 mock 응답으로 fallback (aiClient.aiMode === 'mock').
     realLlm: aiClient.aiMode !== 'mock',
   };
 }
@@ -56,8 +78,11 @@ export function selectLlmMode(features = {}) {
 //   9) 리뷰가 너무 짧음 (< 6 chars)
 // classification: classifyReview() 결과 그대로.
 // content: 원본(마스킹 된) 텍스트.
-export function shouldReanalyze(classification, content = '') {
+// policy: selectLlmMode(planCode) 결과 — allowMiniReanalysis=false 면 어떤 조건이든 false 반환.
+export function shouldReanalyze(classification, content = '', policy = null) {
   if (!classification) return false;
+  // 플랜 정책이 mini 재분석을 금지하면 즉시 false — Free/Starter 비용 가드.
+  if (policy && policy.allowMiniReanalysis === false) return false;
   const issues = classification.improvementIssues || [];
   const maxConfidence = (classification.categories || [])
     .reduce((m, c) => Math.max(m, c.confidence || 0), 0);
