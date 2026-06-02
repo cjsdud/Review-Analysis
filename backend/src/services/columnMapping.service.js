@@ -2,16 +2,79 @@ import { normalizeKey, isLongText } from '../utils/textUtils.js';
 import { looksLikeDate } from '../utils/dateUtils.js';
 
 // 공통(플랫폼 무관) 컬럼명 후보. SOURCE_FIELD_CANDIDATES 와 함께 사용한다.
+// 한국어 + 영어(snake_case / camelCase / "Title Case" 모두) 후보를 같이 둔다.
+// 비교는 textUtils.normalizeKey 로 소문자/공백/언더스코어/하이픈/괄호를 제거한 뒤 이뤄지므로
+// 같은 정규화 결과를 가진 표기는 한 번만 적어도 된다(`product_name` 과 `productName` 은 동일).
+// 그래도 가독성을 위해 대표적인 표기는 명시한다.
 export const FIELD_CANDIDATES = {
-  productName: ['상품명', '제품명', 'product_name', 'product', 'item_name', '상품', '상품명/옵션'],
-  optionName: ['옵션', '옵션명', '옵션정보', 'option', 'variant', '선택옵션', '구매옵션'],
-  rating: ['평점', '별점', 'rating', 'score', '리뷰평점', '만족도'],
-  title: ['제목', 'title', '리뷰제목', '후기제목'],
-  content: ['리뷰내용', '리뷰', '후기', '내용', 'comment', 'review', 'body', '상품평', '구매후기'],
-  createdAt: ['작성일', '등록일', '리뷰작성일', 'created_at', 'date', '작성일자'],
-  replyText: ['답글', '댓글', '판매자답글', 'reply', 'response', '답변', '관리자답변'],
-  reviewId: ['리뷰번호', '후기번호', 'review_id', 'id', '게시글번호', 'article_no'],
-  writer: ['작성자', '아이디', '닉네임', 'writer', 'user', '구매자'],
+  productName: [
+    // ko
+    '상품명', '제품명', '상품', '제품', '아이템명', '상품명/옵션', '상품명(옵션)',
+    // en
+    'product', 'product name', 'productname', 'product_name', 'productTitle', 'product title',
+    'item', 'item name', 'itemname', 'item_name',
+    'goods', 'goods name', 'goodsname', 'goods_name',
+    // 'name' 단독은 의미가 너무 모호해(고객명·옵션명 등과 충돌) 일부러 제외.
+    // 셀러는 ColumnMappingTable 에서 직접 선택 가능.
+  ],
+  optionName: [
+    // ko
+    '옵션', '옵션명', '옵션정보', '선택옵션', '구매옵션', '상품옵션',
+    // en
+    'option', 'option name', 'optionname', 'option_name',
+    'variant', 'variant name', 'variantname', 'variant_name',
+    'sku', 'sku option', 'skuoption', 'sku_option',
+  ],
+  rating: [
+    // ko
+    '평점', '별점', '점수', '리뷰평점', '상품평점', '만족도',
+    // en
+    'rating', 'score', 'stars', 'star', 'star rating', 'starrating', 'star_rating',
+    'review rating', 'reviewrating', 'review_rating',
+  ],
+  title: [
+    // ko
+    '제목', '리뷰제목', '후기제목',
+    // en
+    'title', 'review title', 'reviewtitle',
+  ],
+  content: [
+    // ko
+    '리뷰내용', '리뷰', '후기', '내용', '구매후기', '상품평', '본문',
+    // en
+    'review', 'review text', 'reviewtext', 'review_text',
+    'review content', 'reviewcontent', 'review_content',
+    'comment', 'comments', 'content', 'body', 'message', 'feedback',
+    // 'text' 단독은 의미가 너무 모호해 일부러 제외 — 'review text' 는 위 항목으로 커버됨.
+  ],
+  createdAt: [
+    // ko
+    '작성일', '등록일', '리뷰작성일', '작성일자', '등록일자', '날짜', '일자',
+    // en
+    'date', 'review date', 'reviewdate', 'review_date',
+    'created at', 'createdat', 'created_at',
+    'created date', 'createddate', 'created_date',
+    'written date', 'writtendate', 'written_date',
+    'registered at', 'registeredat', 'registered_at',
+  ],
+  replyText: [
+    // ko
+    '답글', '댓글', '판매자답글', '답변', '관리자답변',
+    // en
+    'reply', 'response', 'seller reply', 'sellerreply',
+  ],
+  reviewId: [
+    // ko
+    '리뷰번호', '후기번호', '게시글번호', '리뷰id', '리뷰 ID',
+    // en — 'id' 는 너무 짧아 충돌 위험이 있어 우선순위에서 후순위로 둠 (아래 priority 참조)
+    'review id', 'reviewid', 'review_id', 'id', 'article_no',
+  ],
+  writer: [
+    // ko
+    '작성자', '아이디', '닉네임', '구매자',
+    // en
+    'writer', 'user', 'username', 'author', 'reviewer', 'nickname',
+  ],
 };
 
 export const FIELDS = Object.keys(FIELD_CANDIDATES);
@@ -144,7 +207,9 @@ export function autoMapColumns(headers, rows, source = 'custom') {
   }
 
   // 2) 우선순위에 따라 1:1 배정 (충돌 방지)
-  const priority = ['content', 'productName', 'rating', 'createdAt', 'optionName', 'title', 'replyText', 'reviewId', 'writer'];
+  //    content(리뷰 내용) > rating(별점) > productName > createdAt > optionName 순.
+  //    'product rating' 처럼 두 후보에 겹치는 헤더가 있을 때 rating 이 먼저 가져가도록.
+  const priority = ['content', 'rating', 'productName', 'createdAt', 'optionName', 'title', 'replyText', 'reviewId', 'writer'];
   const result = {};
   const usedHeaders = new Set();
   for (const field of priority) {
@@ -189,9 +254,20 @@ function platformLabel(key) {
   }
 }
 
-// 매핑 객체 검증: content 는 필수
+// 매핑 객체 검증: content(리뷰 내용) + rating(별점) 은 필수.
+// rating 이 없으면 긍정/부정 감성 신호의 큰 축이 사라져 분석 품질이 급격히 떨어지므로 차단한다.
 export function isMappingValid(mapping) {
-  return Boolean(mapping && mapping.content);
+  return Boolean(mapping && mapping.content && mapping.rating);
+}
+
+// 필수 필드 누락 검사 — UI 가 동일한 한글 라벨을 쓰도록 라벨도 같이 반환.
+export const REQUIRED_FIELD_LABELS = { content: '리뷰 내용', rating: '별점' };
+export function missingRequiredFieldLabels(mapping) {
+  const missing = [];
+  for (const [field, label] of Object.entries(REQUIRED_FIELD_LABELS)) {
+    if (!mapping?.[field]) missing.push(label);
+  }
+  return missing;
 }
 
 // 외부에서도 확인할 수 있도록 노출 (REPL/디버깅 용)

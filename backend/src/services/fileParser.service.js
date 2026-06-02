@@ -198,29 +198,43 @@ function readMatrix(sheet) {
 }
 
 // matrix + headerRowIndex 로 headers, rows(object[]) 를 만든다.
-// 헤더 행은 길이 기준으로 모두 인덱스 정렬(중간 빈 헤더는 키 누락 처리).
+// - 빈 헤더 셀은 `컬럼 1`, `컬럼 2` 형태의 자동 라벨로 채운다.
+// - 중복 헤더는 `상품명`, `상품명 (2)`, `상품명 (3)` 형태로 구분.
+//   (이전에는 첫 번째 헤더만 유지하고 나머지 컬럼 데이터를 버려서
+//    셀러가 매핑 화면에서 컬럼을 못 고르는 일이 있었다.)
 export function rowsFromMatrix(matrix, headerRowIndex) {
   if (!Array.isArray(matrix) || matrix.length === 0) return { headers: [], rows: [] };
   const idx = Math.max(0, Math.min(headerRowIndex || 0, matrix.length - 1));
   const headerRow = matrix[idx] || [];
-  const headerArr = headerRow.map((c) => (c != null ? String(c).trim() : ''));
-  const cleanHeaders = headerArr.filter((h) => h !== '');
+  const rawHeaders = headerRow.map((c) => (c != null ? String(c).trim() : ''));
+
+  // 1) 빈 헤더 셀 → '컬럼 N' fallback (N 은 1-based 열 인덱스)
+  // 2) 중복 헤더 → 같은 이름이 두 번째 이상 나오면 ' (2)', ' (3)' suffix
+  const seen = new Map(); // 원본 라벨 → 등장 횟수
+  const uniqueHeaders = rawHeaders.map((h, i) => {
+    let label = h;
+    if (!label) label = `컬럼 ${i + 1}`;
+    const count = (seen.get(label) || 0) + 1;
+    seen.set(label, count);
+    return count === 1 ? label : `${label} (${count})`;
+  });
+
+  // headers (UI 노출용) = 모든 컬럼 (빈 열도 라벨 채워짐 — 사용자가 직접 선택할 수 있게).
+  // 매핑 후보용 행 데이터도 uniqueHeaders 키로 만든다.
   const rows = [];
   for (let i = idx + 1; i < matrix.length; i++) {
     const row = matrix[i] || [];
     const obj = {};
     let hasVal = false;
-    for (let j = 0; j < headerArr.length; j++) {
-      const h = headerArr[j];
-      if (!h) continue;
+    for (let j = 0; j < uniqueHeaders.length; j++) {
+      const h = uniqueHeaders[j];
       const v = row[j] != null ? String(row[j]) : '';
-      // 중복 헤더(같은 컬럼명)는 첫 번째 값만 유지
-      if (!(h in obj)) obj[h] = v;
+      obj[h] = v;
       if (v !== '') hasVal = true;
     }
     if (hasVal) rows.push(obj);
   }
-  return { headers: cleanHeaders, rows };
+  return { headers: uniqueHeaders, rows };
 }
 
 // 단일 시트 파싱 → 메타 + matrix + headers + rows

@@ -1,10 +1,12 @@
+// 필수: 분석이 의미를 가지려면 반드시 있어야 하는 컬럼.
+// 권장: 있으면 좋고 없어도 분석은 진행되는 컬럼.
 const FIELD_INFO = {
-  productName: { label: '상품명', req: true, desc: '어떤 상품의 리뷰인지 구분합니다.' },
+  content: { label: '리뷰 내용', req: true, desc: '고객이 작성한 실제 리뷰 본문입니다.' },
+  rating: { label: '별점', req: true, desc: '긍정/부정 리뷰 구분에 사용합니다. 보통 1~5점.' },
+  productName: { label: '상품명', req: false, desc: '어떤 상품의 리뷰인지 구분합니다.' },
   optionName: { label: '옵션', req: false, desc: '사이즈·색상 옵션별 이슈 분석에 사용합니다.' },
-  rating: { label: '별점', req: false, desc: '부정/긍정 리뷰를 구분하는 데 사용합니다.' },
-  title: { label: '리뷰 제목', req: false, desc: '제목이 있는 경우 분석 정확도가 약간 올라갑니다.' },
-  content: { label: '리뷰 내용', req: true, desc: '고객이 작성한 실제 리뷰 본문입니다. (필수)' },
   createdAt: { label: '작성일', req: false, desc: '월간 트렌드/리포트 기간 분석에 사용합니다.' },
+  title: { label: '리뷰 제목', req: false, desc: '제목이 있는 경우 분석 정확도가 약간 올라갑니다.' },
   replyText: { label: '판매자 답글', req: false, desc: '기존 답글이 있으면 함께 보관합니다.' },
   reviewId: { label: '리뷰 번호', req: false, desc: '플랫폼에서 부여한 리뷰 ID (있으면 추적용으로 사용).' },
   writer: { label: '작성자', req: false, desc: '분석에는 사용하지 않으며 자동 마스킹됩니다.' },
@@ -23,9 +25,18 @@ function scoreLabel(score) {
   return '낮음';
 }
 
+// 필수 → 권장 → 그 외 순으로 정렬해 렌더 (셀러가 가장 먼저 확인해야 할 줄을 위에 둠).
+const DISPLAY_ORDER = ['content', 'rating', 'productName', 'optionName', 'createdAt', 'title', 'replyText', 'reviewId', 'writer'];
+function sortFields(fields) {
+  const known = DISPLAY_ORDER.filter((f) => fields.includes(f));
+  const extra = fields.filter((f) => !DISPLAY_ORDER.includes(f));
+  return [...known, ...extra];
+}
+
 // 모바일에서는 동일한 DOM 이 CSS 로 카드로 전환된다.
 // 각 <td> 의 data-label 이 모바일 카드의 작은 라벨로 표시된다.
 export default function ColumnMappingTable({ fields, headers, mapping, suggestion, sampleRows, onChange }) {
+  const orderedFields = sortFields(fields || []);
   function sampleFor(column) {
     if (!column) return '';
     const vals = sampleRows
@@ -47,7 +58,7 @@ export default function ColumnMappingTable({ fields, headers, mapping, suggestio
           </tr>
         </thead>
         <tbody>
-          {fields.map((field) => {
+          {orderedFields.map((field) => {
             const info = FIELD_INFO[field] || { label: field };
             const sug = suggestion?.[field];
             const selected = mapping[field] || '';

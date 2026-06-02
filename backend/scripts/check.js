@@ -157,6 +157,149 @@ await step('columnMapping', async () => {
   assert.equal(map.content.column, '리뷰내용', 'content 매핑 실패');
 });
 
+// 한국어/영어/snake_case/camelCase/혼합 컬럼명 자동 인식.
+// 헤더 어휘를 정규화(소문자·공백·언더스코어·하이픈 제거)해서 후보 사전과 비교한다.
+async function expectMapping(label, headers, sampleRow, expected) {
+  const m = await import('../src/services/columnMapping.service.js');
+  const map = m.autoMapColumns(headers, sampleRow ? [sampleRow] : []);
+  for (const [field, expectedCol] of Object.entries(expected)) {
+    assert.equal(
+      map[field]?.column,
+      expectedCol,
+      `${label} — ${field}: 기대 '${expectedCol}', 실제 '${map[field]?.column || ''}'`,
+    );
+  }
+}
+
+await step('columnMapping — 한국어 컬럼명', async () => {
+  await expectMapping(
+    '한국어',
+    ['상품명', '옵션', '별점', '리뷰내용', '작성일'],
+    { 상품명: '티셔츠', 옵션: 'M', 별점: '5', 리뷰내용: '핏이 너무 예뻐요. 만족합니다.', 작성일: '2026-01-01' },
+    { productName: '상품명', optionName: '옵션', rating: '별점', content: '리뷰내용', createdAt: '작성일' },
+  );
+});
+
+await step('columnMapping — 영어 "Title Case" 컬럼명', async () => {
+  await expectMapping(
+    '영어',
+    ['Product Name', 'Option Name', 'Star Rating', 'Review Text', 'Created Date'],
+    {
+      'Product Name': 'T-shirt',
+      'Option Name': 'M',
+      'Star Rating': '5',
+      'Review Text': 'Nice fit and material feels great',
+      'Created Date': '2026-01-01',
+    },
+    {
+      productName: 'Product Name',
+      optionName: 'Option Name',
+      rating: 'Star Rating',
+      content: 'Review Text',
+      createdAt: 'Created Date',
+    },
+  );
+});
+
+await step('columnMapping — snake_case 컬럼명', async () => {
+  await expectMapping(
+    'snake_case',
+    ['product_name', 'option_name', 'star_rating', 'review_text', 'created_at'],
+    {
+      product_name: 'T-shirt',
+      option_name: 'M',
+      star_rating: '5',
+      review_text: 'good quality fabric',
+      created_at: '2026-01-01',
+    },
+    {
+      productName: 'product_name',
+      optionName: 'option_name',
+      rating: 'star_rating',
+      content: 'review_text',
+      createdAt: 'created_at',
+    },
+  );
+});
+
+await step('columnMapping — camelCase 컬럼명', async () => {
+  await expectMapping(
+    'camelCase',
+    ['productName', 'optionName', 'rating', 'reviewText', 'createdAt'],
+    {
+      productName: 'T-shirt',
+      optionName: 'M',
+      rating: '5',
+      reviewText: 'great fit and feel',
+      createdAt: '2026-01-01',
+    },
+    {
+      productName: 'productName',
+      optionName: 'optionName',
+      rating: 'rating',
+      content: 'reviewText',
+      createdAt: 'createdAt',
+    },
+  );
+});
+
+await step('columnMapping — 한·영 혼합 + 플랫폼 변형 (goodsName/skuOption/score/comment/reviewDate)', async () => {
+  await expectMapping(
+    '혼합',
+    ['상품명', 'variant', 'score', 'comment', 'reviewDate'],
+    {
+      상품명: '셔츠',
+      variant: 'L',
+      score: '4',
+      comment: '허리가 살짝 타이트해요. 한 치수 크게.',
+      reviewDate: '2026-01-02',
+    },
+    {
+      productName: '상품명',
+      optionName: 'variant',
+      rating: 'score',
+      content: 'comment',
+      createdAt: 'reviewDate',
+    },
+  );
+});
+
+await step('columnMapping — 영어 헤더에서 reviewText/rating 충돌 안 남 ("product rating" → rating 우선)', async () => {
+  const m = await import('../src/services/columnMapping.service.js');
+  const map = m.autoMapColumns(
+    ['Item Name', 'Product Rating', 'Comment Body'],
+    [{ 'Item Name': 'A', 'Product Rating': '5', 'Comment Body': 'looks great so far so good' }],
+  );
+  // 'Product Rating' 은 product+rating 양쪽 모두 후보지만 rating 이 우선순위에서 앞서 가져가야 한다.
+  assert.equal(map.rating?.column, 'Product Rating', `rating 매핑 실패: ${map.rating?.column}`);
+  assert.notEqual(map.productName?.column, 'Product Rating', 'productName 이 Product Rating 을 가져가면 안 됨');
+});
+
+await step('columnMapping — isMappingValid 가 rating(별점)까지 요구', async () => {
+  const m = await import('../src/services/columnMapping.service.js');
+  assert.equal(m.isMappingValid({ content: 'c' }), false, 'rating 없으면 invalid');
+  assert.equal(m.isMappingValid({ rating: 'r' }), false, 'content 없으면 invalid');
+  assert.equal(m.isMappingValid({ content: 'c', rating: 'r' }), true, '둘 다 있으면 valid');
+  assert.deepEqual(m.missingRequiredFieldLabels({}), ['리뷰 내용', '별점']);
+  assert.deepEqual(m.missingRequiredFieldLabels({ content: 'c' }), ['별점']);
+});
+
+await step('fileParser — 빈 헤더 셀은 "컬럼 N" 으로, 중복 헤더는 " (2)" 로 구분', async () => {
+  const m = await import('../src/services/fileParser.service.js');
+  const matrix = [
+    ['상품명', '', '상품명', '리뷰내용'],
+    ['A', 'x', 'B', 'good'],
+    ['C', 'y', 'D', 'bad'],
+  ];
+  const r = m.rowsFromMatrix(matrix, 0);
+  assert.deepEqual(r.headers, ['상품명', '컬럼 2', '상품명 (2)', '리뷰내용'],
+    `headers: ${JSON.stringify(r.headers)}`);
+  // 중복 컬럼 데이터가 보존되어야 한다 (이전엔 두 번째 '상품명' 컬럼 데이터가 사라졌음).
+  assert.equal(r.rows[0]['상품명'], 'A');
+  assert.equal(r.rows[0]['상품명 (2)'], 'B');
+  assert.equal(r.rows[0]['컬럼 2'], 'x');
+});
+
 await step('reviewClassification (멀티라벨/부정어)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const a = m.classifyReview({ id: '1', productName: 'P', rating: 2, content: '허리가 작고 원단도 얇아서 비침이 있어요' });

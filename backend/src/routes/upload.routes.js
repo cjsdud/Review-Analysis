@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from '../db/database.js';
 import { parseFile, rowsFromMatrix } from '../services/fileParser.service.js';
-import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid } from '../services/columnMapping.service.js';
+import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid, missingRequiredFieldLabels } from '../services/columnMapping.service.js';
 import { normalizeReviews } from '../services/normalizeReview.service.js';
 import { maskRows, maskMatrix } from '../services/privacyMasking.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
@@ -249,7 +249,10 @@ router.post('/:id/mapping', requireAuth, (req, res) => {
   const cleanMapping = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v));
 
   if (!isMappingValid(cleanMapping)) {
-    return res.status(400).json({ error: 'content(리뷰내용) 컬럼 매핑은 필수입니다.' });
+    const missing = missingRequiredFieldLabels(cleanMapping);
+    return res.status(400).json({
+      error: `${missing.join('과 ')} 컬럼은 반드시 선택해야 합니다.`,
+    });
   }
 
   const uploadRow = db.prepare('SELECT * FROM upload_files WHERE id = ?').get(req.params.id);

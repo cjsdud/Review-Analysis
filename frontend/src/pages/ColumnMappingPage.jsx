@@ -84,8 +84,12 @@ export default function ColumnMappingPage() {
 
   async function handleConfirm() {
     setError('');
-    if (!mapping.content) {
-      setError('리뷰 내용(content) 컬럼은 반드시 선택해야 합니다.');
+    // 필수 필드: 리뷰 내용 + 별점. 둘 중 하나라도 빠지면 분석 품질이 떨어지므로 차단.
+    const missing = [];
+    if (!mapping.content) missing.push('리뷰 내용');
+    if (!mapping.rating) missing.push('별점');
+    if (missing.length) {
+      setError(`${missing.join('과 ')} 컬럼은 반드시 선택해야 합니다.`);
       return;
     }
     setAnalyzing(true);
