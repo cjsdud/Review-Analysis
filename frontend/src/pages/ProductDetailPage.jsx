@@ -12,6 +12,7 @@ import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail, exportXlsxUrl } from '../api/analysisApi.js';
+import PlanGatedExport, { PrintWatermark } from '../components/PlanGatedExport.jsx';
 import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
 
 export default function ProductDetailPage() {
@@ -169,6 +170,7 @@ export default function ProductDetailPage() {
 
   return (
     <div>
+      <PrintWatermark />
       <SectionNavigator
         sections={[
           { id: 'sec-product-summary', label: '상품 요약' },
@@ -210,12 +212,7 @@ export default function ProductDetailPage() {
           <div className="product-header__insight">{product.productInsight}</div>
         )}
         <div className="page-actions" style={{ marginTop: 12, gap: 8 }}>
-          <a className="btn btn--ghost btn--sm" href={exportXlsxUrl(analysisId, productKey)}>
-            ⬇️ 엑셀 리포트 내보내기
-          </a>
-          <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
-            🖨️ 인쇄 / PDF
-          </button>
+          <PlanGatedExport xlsxUrl={exportXlsxUrl(analysisId, productKey)} />
         </div>
       </div>
 

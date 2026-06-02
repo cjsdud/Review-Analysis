@@ -65,6 +65,10 @@ export function AuthProvider({ children }) {
     user: me?.user || null,
     subscription: me?.subscription || null,
     usage: me?.usage || null,
+    // 플랜 기능 플래그 + LLM 정책 — 프론트가 export 버튼 disable / 워터마크 표시 등에 사용.
+    // /api/me 가 미인증 등으로 me=null 이면 기본 free 플랜 동작.
+    features: me?.features || null,
+    llmPolicy: me?.llmPolicy || null,
     billingEnforced: !!me?.billingEnforced,
     loading,
     error,

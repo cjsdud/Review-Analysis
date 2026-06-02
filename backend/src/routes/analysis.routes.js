@@ -5,7 +5,7 @@ import db from '../db/database.js';
 import { runAnalysis } from '../services/productAnalysis.service.js';
 import { buildAnalysisCsv, buildAnalysisWorkbook } from '../services/export.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
-import { checkCanCreateAnalysis, recordUsage } from '../services/billing.service.js';
+import { checkCanCreateAnalysis, getUserSubscription, recordUsage } from '../services/billing.service.js';
 import { serializeReviewForList, sentimentOf } from '../services/reviewHighlights.service.js';
 
 const router = Router();
@@ -143,7 +143,14 @@ router.post('/', requireAuth, async (req, res) => {
 
   try {
     const allCorrections = loadAllCorrections();
-    const { analysisId, summary, products, classifications } = await runAnalysis(reviews, allCorrections);
+    // 플랜 정책 — runAnalysis 안의 mini 재분석 / 캐시 / token usage 로깅에 사용.
+    const sub = userId ? getUserSubscription(userId) : null;
+    const planCode = sub?.plan_code || 'free';
+    const { analysisId, summary, products, classifications } = await runAnalysis(
+      reviews,
+      allCorrections,
+      { planCode, userId },
+    );
     applyHistoricalCorrections(products);
 
     // 샘플 판별 표준: source === 'sample' 우선. 과거 데이터 호환을 위해 우리가

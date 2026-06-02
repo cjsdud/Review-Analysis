@@ -5,7 +5,17 @@ import {
   classifyAll,
   FASHION_CATEGORIES,
   isRatingReliable,
+  splitAspectAndIssue,
 } from './reviewClassification.service.js';
+import {
+  PROMPT_VERSION,
+  ANALYSIS_VERSION,
+  reviewHash as makeReviewHash,
+  selectLlmMode,
+  shouldReanalyze,
+} from './ai/index.js';
+import { getCachedReviewAnalysis, saveReviewAnalysisCache } from './ai/cache.service.js';
+import { recordLlmUsage } from './ai/usage.service.js';
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 import {
@@ -114,9 +124,110 @@ function maskedReviewForProduct(review, classification, productKey) {
   };
 }
 
-// 입력: reviews(ReviewNormalized[]), corrections([{productKey,original,corrected}] — 옵션)
+// 플랜 정책 기반 mini 재분석 — Pro/Business 만 활성. 캐시 + token usage 로깅 포함.
+async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId, analysisId }) {
+  const policy = selectLlmMode(planCode);
+  if (!policy.allowMiniReanalysis) return; // Free/Starter 는 단계 자체 OFF
+  // 후보 선별: shouldReanalyze 가 true 인 분류만.
+  const candidates = [];
+  for (const c of classifications) {
+    const review = reviewMap.get(c.reviewId);
+    const content = review?.content || '';
+    if (shouldReanalyze(c, content, policy)) {
+      candidates.push({ classification: c, content });
+    }
+  }
+  if (!candidates.length) return;
+  // 비율 상한 (maxMiniReanalysisRatio) — 비용 폭주 방지. 0.2 면 전체의 20% 까지만.
+  const cap = Math.max(1, Math.ceil(classifications.length * (policy.maxMiniReanalysisRatio || 0)));
+  const targets = candidates.slice(0, cap);
+  const model = policy.precisionModel || 'gpt-5.4-mini';
+
+  const reanalyze = []; // 캐시 miss 라 LLM 으로 보낼 항목만
+  for (const t of targets) {
+    const hash = makeReviewHash(t.content, PROMPT_VERSION);
+    const cached = getCachedReviewAnalysis({
+      reviewHash: hash, promptVersion: PROMPT_VERSION,
+      analysisVersion: ANALYSIS_VERSION, model,
+    });
+    if (cached) {
+      mergeMiniResult(t.classification, cached);
+    } else {
+      t.hash = hash;
+      reanalyze.push(t);
+    }
+  }
+  if (!reanalyze.length) return;
+
+  // LLM 호출 — mock 환경에서는 aiClient 가 mock 응답으로 fallback. 실 호출 시에는
+  // token usage 가 응답에 포함되지 않으면 0 으로 기록 (provider 응답 형식이 모델별
+  // 로 다를 수 있어 방어적).
+  const reqType = 'review_reanalysis';
+  try {
+    const llmResults = await aiClient.classifyAmbiguousReviews(
+      reanalyze.map((t) => ({ id: t.classification.reviewId, content: t.content })),
+      FASHION_CATEGORIES,
+    );
+    const usage = aiClient.lastUsage || {};
+    recordLlmUsage({
+      userId, analysisId, provider: aiClient.aiMode, model,
+      promptVersion: PROMPT_VERSION, requestType: reqType,
+      usage, status: 'ok',
+    });
+    const byId = new Map((llmResults || []).map((r) => [r.reviewId, r]));
+    for (const t of reanalyze) {
+      const r = byId.get(t.classification.reviewId);
+      if (!r || !Array.isArray(r.categories) || r.categories.length === 0) continue;
+      // nano 결과를 mini 결과로 덮어쓰되 schema 정규화.
+      const newCategories = r.categories
+        .filter((cat) => cat && cat.name)
+        .map((cat) => ({
+          name: FASHION_CATEGORIES.includes(cat.name) ? cat.name : '기타',
+          issue: cat.issue || null,
+          confidence: typeof cat.confidence === 'number' ? cat.confidence : 0.7,
+          evidence: t.content.slice(0, 140),
+          source: 'llm-mini',
+          strength: 3,
+          issuePolarity: cat.issuePolarity || 'negative',
+          isActionableIssue: cat.isActionableIssue !== false,
+          severity: cat.severity || 'medium',
+        }));
+      const split = splitAspectAndIssue(newCategories);
+      const merged = {
+        categories: newCategories,
+        mentionedAspects: split.mentionedAspects,
+        improvementIssues: split.improvementIssues,
+      };
+      mergeMiniResult(t.classification, merged);
+      saveReviewAnalysisCache({
+        reviewHash: t.hash, promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
+        provider: aiClient.aiMode, model, result: merged, userId, analysisId,
+      });
+    }
+  } catch (e) {
+    // 재분석 실패는 전체 분석을 깨뜨리면 안 된다 — 기존 nano 결과 유지 + 에러 로깅.
+    recordLlmUsage({
+      userId, analysisId, provider: aiClient.aiMode, model,
+      promptVersion: PROMPT_VERSION, requestType: reqType,
+      status: 'error', error: e.message,
+    });
+    console.warn('[reanalyze] mini 재분석 실패 — nano 결과 유지:', e.message);
+  }
+}
+
+// mini 결과 → 기존 classification 에 덮어쓰기. 빈 결과면 유지.
+function mergeMiniResult(classification, merged) {
+  if (!merged || !Array.isArray(merged.categories) || merged.categories.length === 0) return;
+  classification.categories = merged.categories;
+  classification.mentionedAspects = merged.mentionedAspects || [];
+  classification.improvementIssues = merged.improvementIssues || [];
+  classification.ambiguous = false;
+}
+
+// 입력: reviews(ReviewNormalized[]), corrections([{productKey,original,corrected}] — 옵션),
+//       opts: { planCode?, userId?, analysisId? } — 플랜 정책 + LLM usage 로깅에 사용
 // 출력: { analysisId, summary, products, classifications }
-export async function runAnalysis(reviews, corrections = []) {
+export async function runAnalysis(reviews, corrections = [], opts = {}) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
   // 배치 단위 rating 신뢰도 — 한 점수에 몰리거나 텍스트와 충돌하면 false 가 되어
@@ -127,6 +238,18 @@ export async function runAnalysis(reviews, corrections = []) {
   if (corrections && corrections.length) {
     applyReviewCorrections(reviews, classifications, corrections);
   }
+
+  // 플랜의 LLM 정책에 따라 애매한 리뷰만 mini 모델로 재분석.
+  //   - Free/Starter: policy.allowMiniReanalysis=false → 단계 자체 skip
+  //   - Pro/Business: shouldReanalyze=true 인 항목 + maxMiniReanalysisRatio 이내만 호출
+  // 캐시 hit 이면 LLM 호출 없이 result 사용, miss 면 호출 + 캐시 저장 + token usage 로깅.
+  await maybeMiniReanalyze({
+    classifications,
+    reviewMap,
+    planCode: opts.planCode || 'free',
+    userId: opts.userId || null,
+    analysisId: opts.analysisId || null,
+  });
 
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
 

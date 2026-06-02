@@ -110,9 +110,27 @@
 
 // 화면에서는 인쇄 전용 영역 숨김 (기본).
 .print-only,
-.print-report-footer {
+.print-report-footer,
+.print-watermark {
   display: none;
 }
 .screen-only {
   // 명시적 screen-only 마크업 — 인쇄에선 위 셀렉터에서 숨김.
+}
+
+// Free 플랜 인쇄 워터마크 — 우측 상단에 매 페이지 고정 표시.
+@media print {
+  .print-watermark {
+    display: block !important;
+    position: fixed;
+    top: 6mm;
+    right: 8mm;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    border: 1px solid #cbd5e1;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+  }
 }

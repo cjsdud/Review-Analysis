@@ -256,3 +256,43 @@ CREATE INDEX IF NOT EXISTS idx_admin_logs_target ON admin_action_logs(target_typ
 CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
 CREATE INDEX IF NOT EXISTS idx_user_discounts_user ON user_discounts(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_analytics_events_name ON analytics_events(event_name, created_at);
+
+-- 리뷰 LLM 분석 캐시 — 같은 리뷰 + 같은 prompt/analysis/model 이면 결과 재사용.
+-- resultJson 에는 마스킹된 리뷰 기준 분석 결과만 저장한다 (원본 텍스트 X).
+CREATE TABLE IF NOT EXISTS review_analysis_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_hash TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  analysis_version TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  user_id TEXT,
+  analysis_id TEXT,
+  hit_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (review_hash, prompt_version, analysis_version, model)
+);
+CREATE INDEX IF NOT EXISTS idx_review_cache_hash ON review_analysis_cache(review_hash);
+
+-- LLM 호출 단위 token usage / 비용 로깅.
+-- LLM_PROVIDER=mock 일 때는 0 token 으로 provider=mock 기록.
+CREATE TABLE IF NOT EXISTS llm_usage_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT,
+  analysis_id TEXT,
+  provider TEXT NOT NULL,
+  model TEXT,
+  prompt_version TEXT,
+  request_type TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_usd REAL,
+  status TEXT NOT NULL DEFAULT 'ok',
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_user ON llm_usage_logs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_analysis ON llm_usage_logs(analysis_id);

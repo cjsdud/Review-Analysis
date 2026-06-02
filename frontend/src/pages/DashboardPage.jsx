@@ -14,6 +14,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import { buildProductDetailPath } from '../utils/reportRoutes.js';
+import PlanGatedExport, { PrintWatermark } from '../components/PlanGatedExport.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
@@ -98,6 +99,7 @@ export default function DashboardPage() {
 
   return (
     <div>
+      <PrintWatermark />
       {summary.isSample && (
         <div className="sample-banner">
           <span className="sample-banner__badge">샘플 데이터 분석 결과</span>
@@ -111,12 +113,7 @@ export default function DashboardPage() {
         subtitle="상품별 반복 불만과 개선 우선순위를 확인하세요."
         actions={
           <>
-            <a className="btn btn--ghost btn--sm" href={exportXlsxUrl(analysisId)}>
-              ⬇️ 엑셀 리포트 내보내기
-            </a>
-            <button className="btn btn--ghost btn--sm" onClick={() => window.print()}>
-              🖨️ 인쇄 / PDF
-            </button>
+            <PlanGatedExport xlsxUrl={exportXlsxUrl(analysisId)} />
             <button className="btn btn--primary btn--sm" onClick={() => navigate('/upload')}>
               + 새 분석
             </button>

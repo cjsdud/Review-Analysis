@@ -7,6 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from '../db/database.js';
 import { parseFile, rowsFromMatrix } from '../services/fileParser.service.js';
+import { checkCanUploadFile, recordUsage } from '../services/billing.service.js';
+import { USAGE_EVENT_TYPES } from '../constants/plans.js';
 import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid, missingRequiredFieldLabels } from '../services/columnMapping.service.js';
 import { normalizeReviews } from '../services/normalizeReview.service.js';
 import { maskRows, maskMatrix } from '../services/privacyMasking.service.js';
@@ -102,6 +104,18 @@ function assertOwnership(req, res, row) {
 router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
 
+  // 플랜의 월 파일 업로드 한도 검사 — billing 이 enforce 모드일 때만 실제로 차단.
+  // 사용량은 실제 persist 성공 이후에만 증가시킨다 (실패한 업로드는 카운트 X).
+  const uploadGuard = checkCanUploadFile(req.user?.id || null);
+  if (!uploadGuard.ok) {
+    return res.status(uploadGuard.status).json({
+      ...uploadGuard.body,
+      upgradeRequired: true,
+      message: uploadGuard.body?.message
+        || '현재 플랜에서는 이번 달 파일 업로드 한도를 초과했습니다. 상위 플랜에서 더 많은 파일을 분석할 수 있어요.',
+    });
+  }
+
   const source = (req.body.source || 'custom').toLowerCase();
   let parsed;
   try {
@@ -126,6 +140,10 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
     parsed,
     userId: req.user?.id || null,
   });
+  // 실제 persist 성공 후에만 사용량 증가. 익명 데모 모드(userId=null)는 카운트 X.
+  if (req.user?.id) {
+    recordUsage(req.user.id, USAGE_EVENT_TYPES.FILE_UPLOADED, { uploadId: payload?.uploadId || null });
+  }
   res.json(payload);
 });
 

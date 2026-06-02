@@ -409,6 +409,60 @@ await step('ai/index — selectLlmMode / shouldReanalyze / reviewHash', async ()
   assert.equal(h1.length, 40, 'sha1 hex 40자');
 });
 
+await step('ai/cache — review_analysis_cache hit / miss / promptVersion 변경 시 miss', async () => {
+  const cache = await import('../src/services/ai/cache.service.js');
+  const ai = await import('../src/services/ai/index.js');
+  const hash = ai.reviewHash('test-review-content');
+  // miss
+  assert.equal(
+    cache.getCachedReviewAnalysis({
+      reviewHash: hash, promptVersion: ai.PROMPT_VERSION,
+      analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+    }),
+    null,
+  );
+  // save
+  cache.saveReviewAnalysisCache({
+    reviewHash: hash, promptVersion: ai.PROMPT_VERSION, analysisVersion: ai.ANALYSIS_VERSION,
+    provider: 'openai', model: 'gpt-5.4-mini', result: { sentiment: 'positive' },
+  });
+  // hit
+  const hit = cache.getCachedReviewAnalysis({
+    reviewHash: hash, promptVersion: ai.PROMPT_VERSION,
+    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+  });
+  assert.deepEqual(hit, { sentiment: 'positive' });
+  // promptVersion 다르면 miss
+  const miss = cache.getCachedReviewAnalysis({
+    reviewHash: hash, promptVersion: 'different',
+    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+  });
+  assert.equal(miss, null);
+});
+
+await step('ai/usage — llm_usage_logs 기록 + 토큰/비용 계산', async () => {
+  const usage = await import('../src/services/ai/usage.service.js');
+  const id = usage.recordLlmUsage({
+    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'review_reanalysis',
+    usage: { inputTokens: 100, outputTokens: 50 },
+  });
+  assert(id, 'log row id 반환');
+  const db = (await import('../src/db/database.js')).default;
+  const row = db.prepare('SELECT * FROM llm_usage_logs WHERE id = ?').get(id);
+  assert.equal(row.input_tokens, 100);
+  assert.equal(row.output_tokens, 50);
+  assert.equal(row.total_tokens, 150);
+  assert(row.estimated_cost_usd > 0, '비용 추정 채워짐');
+  // 실패 케이스 — status=error 도 기록 가능
+  const id2 = usage.recordLlmUsage({
+    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'cs_reply',
+    status: 'error', error: 'timeout',
+  });
+  const row2 = db.prepare('SELECT * FROM llm_usage_logs WHERE id = ?').get(id2);
+  assert.equal(row2.status, 'error');
+  assert.equal(row2.error_message, 'timeout');
+});
+
 await step('billing — checkCanGenerateCsReply / checkCanUploadFile / resetMonthlyUsage', async () => {
   // 익명/billing 미적용 → 항상 ok
   const m = await import('../src/services/billing.service.js');
