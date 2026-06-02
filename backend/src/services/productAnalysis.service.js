@@ -1,6 +1,11 @@
 // 분석 오케스트레이션: 분류 → 이슈 클러스터 → 상품별 리포트 → 전체 요약
 import { nanoid } from 'nanoid';
-import { applyReviewCorrections, classifyAll, FASHION_CATEGORIES } from './reviewClassification.service.js';
+import {
+  applyReviewCorrections,
+  classifyAll,
+  FASHION_CATEGORIES,
+  isRatingReliable,
+} from './reviewClassification.service.js';
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 import {
@@ -91,6 +96,9 @@ function maskedReviewForProduct(review, classification, productKey) {
     productName: review.productName,
     optionName: review.optionName || null,
     rating: review.rating ?? null,
+    // ratingReliable=false 면 화면/export 에서 별점을 감성 신호로 신뢰하지 말도록
+    // 함께 전달. 원본 값은 보존한다.
+    ratingReliable: classification?.ratingReliable !== false,
     title: review.title || null,
     content: review.content || '',
     createdAt: review.createdAt || null,
@@ -98,7 +106,11 @@ function maskedReviewForProduct(review, classification, productKey) {
     reviewId: review.reviewId || null,
     source: review.source || null,
     sentiment: classification?.sentiment || 'neutral',
+    // 기존 detectedIssues 는 호환 위해 그대로 유지 — 다운스트림(차트/모달/export)이 사용 중.
     detectedIssues: cats,
+    // 신규: 언급 vs 실제 개선 신호 분리. 반복 이슈/리포트는 improvementIssues 만 집계해야 한다.
+    mentionedAspects: classification?.mentionedAspects || [],
+    improvementIssues: classification?.improvementIssues || [],
   };
 }
 
@@ -107,7 +119,10 @@ function maskedReviewForProduct(review, classification, productKey) {
 export async function runAnalysis(reviews, corrections = []) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
-  const classifications = await classifyAll(reviews, aiClient);
+  // 배치 단위 rating 신뢰도 — 한 점수에 몰리거나 텍스트와 충돌하면 false 가 되어
+  // 이후 감성 판정에서 rating 보조 신호가 꺼진다.
+  const ratingReliable = isRatingReliable(reviews);
+  const classifications = await classifyAll(reviews, aiClient, { ratingReliable });
 
   if (corrections && corrections.length) {
     applyReviewCorrections(reviews, classifications, corrections);
@@ -252,6 +267,7 @@ export async function runAnalysis(reviews, corrections = []) {
       frequentKeywords,
       reviewTrends,
       reviewHighlights,
+      ratingReliable,
     });
   }
 
@@ -334,6 +350,8 @@ export async function runAnalysis(reviews, corrections = []) {
     totalIssueCount,
     issueRatio,
     averageRating,
+    // 배치 단위 rating 신뢰도 — 셀러에게 "별점 그대로 믿지 마세요" 안내를 띄울 수 있는 신호.
+    ratingReliable,
     productCount: productNames.length,
     categoryDistribution,
     otherCount,

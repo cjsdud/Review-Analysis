@@ -300,6 +300,65 @@ await step('fileParser — 빈 헤더 셀은 "컬럼 N" 으로, 중복 헤더는
   assert.equal(r.rows[0]['컬럼 2'], 'x');
 });
 
+await step('reviewClassification — 실제 의류 리뷰 10케이스 (mentionedAspect vs improvementIssue)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const cases = [
+    { id: 'T1', content: '가격이 낮아서 퀄리티를 기대하지 않았는데 핏도 너무 예쁘고 재질도 엄청 좋았습니다', sentiment: 'positive', minIssues: 0, maxIssues: 0 },
+    { id: 'T2', content: '편하고 색감 좋습니다', sentiment: 'positive', minIssues: 0, maxIssues: 0 },
+    { id: 'T3', content: '배송 빠르고 좋아요 가성비 오집니다 구매하세요', sentiment: 'positive', minIssues: 0, maxIssues: 0 },
+    { id: 'T4', content: '100사이즈가 살짝 작긴하지만 이너로 입기에 딱입니다', sentiment: 'positive', minIssues: 1, maxIssues: 2 },
+    { id: 'T5', content: '가격에 맞는 품질이에요 조금 따갑긴 하지만 한철 입을 용으로 적당', sentiment: 'mixed', minIssues: 1, maxIssues: 3 },
+    { id: 'T6', content: '마감이 별로고 실밥이 많아요', sentiment: 'negative', minIssues: 1, maxIssues: 3 },
+    { id: 'T7', content: '비침이 없어서 너무 좋았습니다', sentiment: 'positive', minIssues: 0, maxIssues: 0 },
+    { id: 'T8', content: '배송이 늦고 포장도 별로였어요', sentiment: 'negative', minIssues: 1, maxIssues: 3 },
+    { id: 'T9', content: '색감은 예쁜데 화면보다 조금 어두워요', sentiment: 'mixed', minIssues: 1, maxIssues: 2 },
+    { id: 'T10', content: '사이즈도 잘 맞고 핏이 예뻐요', sentiment: 'positive', minIssues: 0, maxIssues: 0 },
+  ];
+  for (const c of cases) {
+    const r = m.classifyReview({ id: c.id, productName: 'P', content: c.content });
+    const issues = r.improvementIssues || [];
+    const aspects = r.mentionedAspects || [];
+    assert.equal(r.sentiment, c.sentiment,
+      `${c.id} sentiment: 기대 ${c.sentiment}, 실제 ${r.sentiment}`);
+    assert(issues.length >= c.minIssues,
+      `${c.id} improvementIssues 부족: ${issues.length} < ${c.minIssues} (cats: ${r.categories.map((x)=>x.name).join(',')})`);
+    assert(issues.length <= c.maxIssues,
+      `${c.id} improvementIssues 과다: ${issues.length} > ${c.maxIssues} (labels: ${issues.map((x)=>x.issueLabel).join(' | ')})`);
+    // mentionedAspects 와 improvementIssues 는 disjoint 여야 한다 (같은 카테고리가 양쪽에 동시에 들어가지 않음)
+    const aspectCats = new Set(aspects.map((a) => a.category));
+    const issueCats = new Set(issues.map((i) => i.category));
+    for (const cat of issueCats) {
+      assert(!aspectCats.has(cat),
+        `${c.id} 같은 카테고리(${cat})가 mentionedAspects 와 improvementIssues 양쪽에 들어감`);
+    }
+  }
+});
+
+await step('reviewClassification — isRatingReliable 분포 검사', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  // 1) 모든 리뷰가 별점 2점에 몰림 → unreliable
+  const mostly2 = Array.from({ length: 20 }, (_, i) => ({ id: `m${i}`, rating: 2, content: '리뷰' }));
+  assert.equal(m.isRatingReliable(mostly2), false, '한 점수 70% 이상 몰리면 false');
+  // 2) 골고루 분포 → reliable
+  const balanced = Array.from({ length: 20 }, (_, i) => ({ id: `b${i}`, rating: (i % 5) + 1, content: '리뷰' }));
+  assert.equal(m.isRatingReliable(balanced), true, '균등 분포면 true');
+  // 3) 빈 입력 → false
+  assert.equal(m.isRatingReliable([]), false);
+  // 4) 표본 작으면 reliable 기본값 — 단일 리뷰 테스트 호환
+  assert.equal(m.isRatingReliable([{ rating: 4, content: 'x' }]), true);
+});
+
+await step('reviewClassification — ratingReliable=false 면 rating 보조 신호 OFF', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  // 별점 1점인데 텍스트는 명백한 긍정 — reliable=true 면 별점 가드로 neutral/negative,
+  //   reliable=false 면 텍스트만으로 positive 가 나와야 한다.
+  const review = { id: 'rx', productName: 'P', rating: 1, content: '핏이 너무 예쁘고 재질도 좋아요 만족합니다' };
+  const reliable = m.classifyReview(review, { ratingReliable: true });
+  const unreliable = m.classifyReview(review, { ratingReliable: false });
+  assert.notEqual(reliable.sentiment, 'positive', 'rating=1 reliable 일 때는 positive 보호 안 됨');
+  assert.equal(unreliable.sentiment, 'positive', 'rating=1 unreliable 일 때는 텍스트만 사용');
+});
+
 await step('reviewClassification (멀티라벨/부정어)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const a = m.classifyReview({ id: '1', productName: 'P', rating: 2, content: '허리가 작고 원단도 얇아서 비침이 있어요' });
