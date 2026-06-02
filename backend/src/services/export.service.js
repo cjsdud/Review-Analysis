@@ -2,7 +2,7 @@
 // 화면 일부가 아니라 product 데이터 전체(요약 + 모든 이슈 + 마스킹 리뷰 + CS 답글)를 flatten 한다.
 // 모든 row 는 section 컬럼으로 종류를 구분해 같은 CSV 안에서 함께 다운로드.
 
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // ── 사용자 친화 라벨 변환 ──
 const SENTIMENT_LABEL = { positive: '긍정', neutral: '중립', negative: '부정', mixed: '복합 반응' };
@@ -123,18 +123,35 @@ export function buildAnalysisCsv(products) {
 //   products: ProductAnalysis[]
 //   summary:  전체 요약 (analysis_jobs.summary). 없으면 products 로부터 일부 계산.
 //   meta:     { analysisDate?, productName? } — productName 이 있으면 단일 상품 리포트.
-function aoaSheet(rows) {
-  return xlsx.utils.aoa_to_sheet(rows);
-}
-function setColWidths(ws, widths) {
-  ws['!cols'] = widths.map((w) => ({ wch: w }));
-}
-function freezeHeader(ws) {
-  ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
-  // xlsx 0.18 은 표준 freeze 미지원이라 무시될 수 있음 — 있으면 활용.
+// exceljs 헬퍼: 시트에 2차원 배열을 채우고 컬럼 너비/헤더 스타일/고정 행 적용.
+// rows[0] 가 헤더 행이라고 가정 — 굵게 + 옅은 배경을 입혀 셀러가 한눈에 표를 인지하게.
+const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+const HEADER_FONT = { bold: true, color: { argb: 'FF1F2937' } };
+const HEADER_BORDER = { bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
+const HEADER_ALIGN = { vertical: 'middle' };
+
+function fillSheet(ws, rows, widths) {
+  for (const row of rows) ws.addRow(row);
+  if (widths) {
+    ws.columns = widths.map((w) => ({ width: w }));
+  }
+  // 헤더 스타일 (rows[0])
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+    cell.font = HEADER_FONT;
+    cell.fill = HEADER_FILL;
+    cell.border = HEADER_BORDER;
+    cell.alignment = HEADER_ALIGN;
+  });
+  // 첫 행 고정 (헤더가 항상 보이도록)
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  // 데이터 행은 줄바꿈 허용 (긴 리뷰 본문 가독성)
+  for (let r = 2; r <= ws.rowCount; r++) {
+    ws.getRow(r).alignment = { vertical: 'top', wrapText: true };
+  }
 }
 
-function buildSummarySheet(products, summary, meta) {
+function buildSummarySheet(wb, products, summary, meta) {
   const s = summary || {};
   const sc = s.sentimentCounts || {};
   const topCat = (s.categoryDistribution || []).slice().sort((a, b) => b.count - a.count)[0];
@@ -153,13 +170,12 @@ function buildSummarySheet(products, summary, meta) {
     ['전체 리뷰 요약', s.aiComment || ''],
     ['주의 사항', '개선 이슈는 긍정 리뷰 안에서도 발견될 수 있어, 부정 리뷰 수와 다를 수 있습니다. 모든 리뷰 내용은 개인정보가 가려진 데이터입니다.'],
   ];
-  const ws = aoaSheet(rows);
-  setColWidths(ws, [22, 70]);
-  freezeHeader(ws);
+  const ws = wb.addWorksheet('리포트 요약');
+  fillSheet(ws, rows, [22, 70]);
   return ws;
 }
 
-function buildProductSummarySheet(products) {
+function buildProductSummarySheet(wb, products) {
   const header = ['상품명', '전체 리뷰 수', '긍정', '중립', '부정', '부정 리뷰 비율', '주요 이슈', '우선 확인 필요', '요약'];
   const rows = [header];
   for (const p of products) {
@@ -177,13 +193,12 @@ function buildProductSummarySheet(products) {
       p.summary || p.productInsight || '',
     ]);
   }
-  const ws = aoaSheet(rows);
-  setColWidths(ws, [26, 12, 8, 8, 8, 12, 30, 16, 50]);
-  freezeHeader(ws);
+  const ws = wb.addWorksheet('상품별 요약');
+  fillSheet(ws, rows, [26, 12, 8, 8, 8, 12, 30, 16, 50]);
   return ws;
 }
 
-function buildIssueSheet(products) {
+function buildIssueSheet(wb, products) {
   const header = ['이슈 분류', '세부 이슈', '발생 건수', '전체 대비 비율', '중요도', '관련 상품', '대표 근거 리뷰'];
   const rows = [header];
   for (const p of products) {
@@ -201,13 +216,12 @@ function buildIssueSheet(products) {
     }
   }
   if (rows.length === 1) rows.push(['', '발견된 반복 이슈가 없습니다.', '', '', '', '', '']);
-  const ws = aoaSheet(rows);
-  setColWidths(ws, [16, 26, 10, 14, 8, 24, 60]);
-  freezeHeader(ws);
+  const ws = wb.addWorksheet('반복 이슈');
+  fillSheet(ws, rows, [16, 26, 10, 14, 8, 24, 60]);
   return ws;
 }
 
-function buildReviewSheet(products) {
+function buildReviewSheet(wb, products) {
   const header = ['상품명', '옵션', '별점', '감성', '이슈 분류', '세부 이슈', '리뷰 내용', '작성일'];
   const rows = [header];
   for (const p of products) {
@@ -227,13 +241,12 @@ function buildReviewSheet(products) {
     }
   }
   if (rows.length === 1) rows.push(['', '', '', '', '', '', '표시할 리뷰 데이터가 없습니다.', '']);
-  const ws = aoaSheet(rows);
-  setColWidths(ws, [24, 14, 6, 8, 16, 24, 60, 12]);
-  freezeHeader(ws);
+  const ws = wb.addWorksheet('리뷰 데이터');
+  fillSheet(ws, rows, [24, 14, 6, 8, 16, 24, 60, 12]);
   return ws;
 }
 
-function buildReplySheet(products) {
+function buildReplySheet(wb, products) {
   const header = ['상품명', '이슈 분류', '세부 이슈', '말투', 'CS 답글 초안'];
   const rows = [header];
   for (const p of products) {
@@ -250,19 +263,21 @@ function buildReplySheet(products) {
     }
   }
   if (rows.length === 1) rows.push(['', '', '', '', '생성된 CS 답글 초안이 없습니다.']);
-  const ws = aoaSheet(rows);
-  setColWidths(ws, [24, 16, 24, 10, 70]);
-  freezeHeader(ws);
+  const ws = wb.addWorksheet('CS 답글 초안');
+  fillSheet(ws, rows, [24, 16, 24, 10, 70]);
   return ws;
 }
 
-export function buildAnalysisWorkbook(products, summary, meta = {}) {
-  const wb = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(wb, buildSummarySheet(products, summary, meta), '리포트 요약');
-  xlsx.utils.book_append_sheet(wb, buildProductSummarySheet(products), '상품별 요약');
-  xlsx.utils.book_append_sheet(wb, buildIssueSheet(products), '반복 이슈');
-  xlsx.utils.book_append_sheet(wb, buildReviewSheet(products), '리뷰 데이터');
-  xlsx.utils.book_append_sheet(wb, buildReplySheet(products), 'CS 답글 초안');
+export async function buildAnalysisWorkbook(products, summary, meta = {}) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = '리뷰핏';
+  wb.created = new Date();
+  buildSummarySheet(wb, products, summary, meta);
+  buildProductSummarySheet(wb, products);
+  buildIssueSheet(wb, products);
+  buildReviewSheet(wb, products);
+  buildReplySheet(wb, products);
   // 노드 버퍼로 반환 (라우트에서 그대로 전송)
-  return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const arr = await wb.xlsx.writeBuffer();
+  return Buffer.isBuffer(arr) ? arr : Buffer.from(arr);
 }

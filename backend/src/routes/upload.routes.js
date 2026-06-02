@@ -99,13 +99,13 @@ function assertOwnership(req, res, row) {
 }
 
 // POST /api/uploads — 파일 업로드 + 파싱 + 컬럼 자동 매핑 후보 반환
-router.post('/', requireAuth, upload.single('file'), (req, res) => {
+router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
 
   const source = (req.body.source || 'custom').toLowerCase();
   let parsed;
   try {
-    parsed = parseFile(req.file.buffer, req.file.originalname);
+    parsed = await parseFile(req.file.buffer, req.file.originalname);
   } catch (e) {
     return res.status(400).json({ error: `파일 파싱 실패: ${e.message}` });
   }
@@ -131,11 +131,11 @@ router.post('/', requireAuth, upload.single('file'), (req, res) => {
 
 // POST /api/uploads/sample — 내장 샘플 데이터로 업로드 흐름 시작 (체험하기)
 // requireAuth — 익명 데모 모드(DEMO_ALLOW_ANONYMOUS=true)면 user_id=null 로 저장.
-router.post('/sample', requireAuth, (req, res) => {
+router.post('/sample', requireAuth, async (req, res) => {
   const samplePath = path.join(__dirname, '../../../sample-data/sample_reviews_fashion.csv');
   if (!fs.existsSync(samplePath)) return res.status(404).json({ error: '샘플 파일을 찾을 수 없습니다.' });
   const buf = fs.readFileSync(samplePath);
-  const parsed = parseFile(buf, 'sample_reviews_fashion.csv');
+  const parsed = await parseFile(buf, 'sample_reviews_fashion.csv');
   // source='sample' 로 명시 — 히스토리/응답에서 isSample 판별의 표준 기준.
   // autoMapColumns 는 source='sample' 미정의 시 공통 후보로 자동 fallback 하므로
   // 매핑 정확도에는 영향 없음.

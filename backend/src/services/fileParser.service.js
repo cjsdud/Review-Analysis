@@ -6,7 +6,7 @@
 //   - 모든 시트의 matrix/headers/rows 를 sheetParseResults 에 미리 계산해 응답에 포함
 //     (프론트가 시트/헤더 행을 바꾸면 reparse API 가 저장된 matrix 로 재계산)
 import { parse } from 'csv-parse/sync';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // 헤더 후보 어휘 (시트 점수 + 헤더 행 점수 공용)
 const HEADER_CANDIDATE_NAMES = [
@@ -137,17 +137,64 @@ function scoreSheet(sheetName, headers, rowCount, columnCount) {
   return { score: Math.round(score), reason: reasons.join(', ') || '추정' };
 }
 
+// exceljs 셀의 표시 문자열을 안전하게 추출.
+// - 날짜는 YYYY-MM-DD HH:mm:ss 형태로 포맷 (xlsx 의 raw:false 와 유사한 결과 유지)
+// - 수식 셀은 결과값(result) 우선, 없으면 수식 텍스트
+// - 하이퍼링크 객체는 text 우선
+// - rich text 는 각 조각 텍스트 결합
+function cellToString(cell) {
+  if (cell == null) return '';
+  const v = cell.value;
+  if (v == null) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    return String(v);
+  }
+  if (v instanceof Date) {
+    // 시간이 자정이면 날짜만, 아니면 날짜+시간
+    const hasTime = v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0 || v.getUTCSeconds() !== 0;
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(v.getUTCDate()).padStart(2, '0');
+    if (!hasTime) return `${y}-${m}-${d}`;
+    const hh = String(v.getUTCHours()).padStart(2, '0');
+    const mm = String(v.getUTCMinutes()).padStart(2, '0');
+    const ss = String(v.getUTCSeconds()).padStart(2, '0');
+    return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+  }
+  if (typeof v === 'object') {
+    if (Array.isArray(v.richText)) {
+      return v.richText.map((t) => t.text || '').join('');
+    }
+    if (v.text != null) return String(v.text);
+    if (v.result != null) return String(v.result);
+    if (v.formula != null) return String(v.formula);
+    if (v.hyperlink) return String(v.hyperlink);
+    if (v.error) return String(v.error);
+  }
+  // 마지막 안전망 — exceljs 의 .text 게터(있을 때)
+  if (typeof cell.text === 'string') return cell.text;
+  return '';
+}
+
 // 시트의 모든 셀을 (가능한) 문자열로 추출한 matrix 반환
+// 완전히 빈 행은 제거(xlsx 의 blankrows:false 동일).
 function readMatrix(sheet) {
-  // raw:false → 표시값(문자열)로 변환 (날짜/숫자 포맷팅 적용).
-  // blankrows:false 로 완전히 빈 행 자동 제거 (앞쪽 안내문이 빈 행 포함된 경우 대비).
-  const matrix = xlsx.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: '',
-    raw: false,
-    blankrows: false,
-  });
-  return matrix.map((row) => row.map((c) => (c == null ? '' : String(c))));
+  const matrix = [];
+  // actualRowCount / rowCount 대신 eachRow 로 사용된 행만 순회 후 빈 행 제거
+  const lastRow = sheet.actualRowCount || sheet.rowCount || 0;
+  const lastCol = sheet.actualColumnCount || sheet.columnCount || 0;
+  for (let r = 1; r <= lastRow; r++) {
+    const row = sheet.getRow(r);
+    const arr = [];
+    let hasVal = false;
+    for (let c = 1; c <= lastCol; c++) {
+      const s = cellToString(row.getCell(c));
+      if (s !== '') hasVal = true;
+      arr.push(s);
+    }
+    if (hasVal) matrix.push(arr);
+  }
+  return matrix;
 }
 
 // matrix + headerRowIndex 로 headers, rows(object[]) 를 만든다.
@@ -220,7 +267,7 @@ function parseSheet(sheet, sheetName) {
 //       [sheetName]: { headers, rows, matrix, detectedHeaderRowIndex }
 //     }
 //   }
-export function parseFile(buffer, originalName) {
+export async function parseFile(buffer, originalName) {
   const lower = (originalName || '').toLowerCase();
   if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) return parseXlsxLike(buffer);
   return parseCsvLike(buffer);
@@ -247,10 +294,13 @@ function parseCsvLike(buffer) {
   };
 }
 
-function parseXlsxLike(buffer) {
-  const wb = xlsx.read(buffer, { type: 'buffer' });
-  const sheetNames = wb.SheetNames || [];
-  const parsedPerSheet = sheetNames.map((sn) => parseSheet(wb.Sheets[sn], sn));
+async function parseXlsxLike(buffer) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  // 워크북 순서 유지 (exceljs 는 worksheets 가 정의 순서대로 정렬됨)
+  const worksheets = wb.worksheets || [];
+  const sheetNames = worksheets.map((ws) => ws.name);
+  const parsedPerSheet = worksheets.map((ws) => parseSheet(ws, ws.name));
 
   const sheets = parsedPerSheet.map((p) => ({
     sheetName: p.sheetName,

@@ -23,7 +23,7 @@ await step('privacyMasking', async () => {
 
 await step('fileParser', async () => {
   const m = await import('../src/services/fileParser.service.js');
-  const out = m.parseFile(Buffer.from('상품명,리뷰내용\n티셔츠,너무 작아요\n'), 'x.csv');
+  const out = await m.parseFile(Buffer.from('상품명,리뷰내용\n티셔츠,너무 작아요\n'), 'x.csv');
   assert.equal(out.rows.length, 1, 'CSV 파싱 실패');
   assert.deepEqual(out.sheets, [], 'CSV 는 sheets 배열이 비어 있어야 함');
   assert.equal(out.selectedSheetName, null, 'CSV 는 selectedSheetName 이 null');
@@ -31,13 +31,14 @@ await step('fileParser', async () => {
 
 // XLSX 멀티 시트 / 헤더 행 자동 감지 테스트
 async function buildXlsxBuffer(sheetSpecs) {
-  const { default: xlsx } = await import('xlsx');
-  const wb = xlsx.utils.book_new();
+  const { default: ExcelJS } = await import('exceljs');
+  const wb = new ExcelJS.Workbook();
   for (const spec of sheetSpecs) {
-    const ws = xlsx.utils.aoa_to_sheet(spec.aoa);
-    xlsx.utils.book_append_sheet(wb, ws, spec.name);
+    const ws = wb.addWorksheet(spec.name);
+    for (const row of spec.aoa) ws.addRow(row);
   }
-  return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const arr = await wb.xlsx.writeBuffer();
+  return Buffer.isBuffer(arr) ? arr : Buffer.from(arr);
 }
 
 await step('XLSX #1 — "리뷰데이터" 시트 자동 추천 (첫 시트일 때)', async () => {
@@ -54,7 +55,7 @@ await step('XLSX #1 — "리뷰데이터" 시트 자동 추천 (첫 시트일 �
     { name: '요약', aoa: [['지표', '값'], ['총합', 2]] },
     { name: 'README', aoa: [['이 파일은 샘플입니다']] },
   ]);
-  const out = m.parseFile(buf, 'demo.xlsx');
+  const out = await m.parseFile(buf, 'demo.xlsx');
   assert.equal(out.selectedSheetName, '리뷰데이터', `자동 추천 실패: ${out.selectedSheetName}`);
   assert(out.sheets.length === 3, `sheets 개수: ${out.sheets.length}`);
   assert(out.headers.includes('상품명') && out.headers.includes('리뷰내용'), '헤더 인식 실패');
@@ -76,7 +77,7 @@ await step('XLSX #2 — 첫 시트가 README 여도 "리뷰데이터" 추천', a
     },
     { name: '요약', aoa: [['항목', '값'], ['합계', 3]] },
   ]);
-  const out = m.parseFile(buf, 'demo.xlsx');
+  const out = await m.parseFile(buf, 'demo.xlsx');
   assert.equal(out.selectedSheetName, '리뷰데이터', `자동 추천 실패: ${out.selectedSheetName}`);
   assert(out.rows.length === 3, 'rows 개수 불일치');
 });
@@ -95,7 +96,7 @@ await step('XLSX #3 — 상단 2행 안내문, 3행이 헤더 (headerRowIndex=2)
       ],
     },
   ]);
-  const out = m.parseFile(buf, 'demo.xlsx');
+  const out = await m.parseFile(buf, 'demo.xlsx');
   const sheet = out.sheets[0];
   assert.equal(sheet.detectedHeaderRowIndex, 2, `headerRowIndex=2 기대, 실제 ${sheet.detectedHeaderRowIndex}`);
   assert.deepEqual(out.headers, ['상품명', '옵션명', '별점', '리뷰내용', '작성일'], '헤더 불일치');
@@ -119,7 +120,7 @@ await step('XLSX #4 — 컬럼 매핑 후보에 제목/안내문이 들어가지
       ],
     },
   ]);
-  const out = fp.parseFile(buf, 'demo.xlsx');
+  const out = await fp.parseFile(buf, 'demo.xlsx');
   const mapping = cm.autoMapColumns(out.headers, out.rows);
   // 매핑 후보의 컬럼명 값은 모두 headers 안에 있어야 한다
   for (const [field, info] of Object.entries(mapping)) {
@@ -2782,8 +2783,8 @@ await step('getReviewsForIssue — 매칭 없음 / null 입력 → []', async ()
 
 await step('export xlsx — 5개 시트 + 한글 컬럼명 워크북 생성', async () => {
   const m = await import('../src/services/export.service.js');
-  const xlsx = (await import('xlsx')).default;
-  const buf = m.buildAnalysisWorkbook(
+  const { default: ExcelJS } = await import('exceljs');
+  const buf = await m.buildAnalysisWorkbook(
     [{
       productName: '린넨 와이드 팬츠',
       totalReviews: 100,
@@ -2800,16 +2801,26 @@ await step('export xlsx — 5개 시트 + 한글 컬럼명 워크북 생성', as
     { analysisDate: '2026-06-01' },
   );
   assert(Buffer.isBuffer(buf), 'workbook 이 buffer 가 아님');
-  const wb = xlsx.read(buf, { type: 'buffer' });
-  assert.deepEqual(wb.SheetNames, ['리포트 요약', '상품별 요약', '반복 이슈', '리뷰 데이터', 'CS 답글 초안'],
-    `시트 구성 불일치: ${wb.SheetNames.join(',')}`);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const names = wb.worksheets.map((w) => w.name);
+  assert.deepEqual(names, ['리포트 요약', '상품별 요약', '반복 이슈', '리뷰 데이터', 'CS 답글 초안'],
+    `시트 구성 불일치: ${names.join(',')}`);
   // 리뷰 데이터 시트에 한글 헤더 + 마스킹 리뷰 내용 포함
-  const reviewSheet = xlsx.utils.sheet_to_json(wb.Sheets['리뷰 데이터'], { header: 1 });
-  assert(reviewSheet[0].includes('리뷰 내용'), '리뷰 데이터 한글 헤더 누락');
-  assert(reviewSheet.some((row) => row.includes('허리가 작아요')), '리뷰 내용 누락');
+  const reviewWs = wb.getWorksheet('리뷰 데이터');
+  const reviewMatrix = [];
+  reviewWs.eachRow({ includeEmpty: false }, (row) => {
+    // row.values 는 1-indexed (0 번 인덱스는 undefined)
+    reviewMatrix.push(row.values.slice(1).map((v) => (v == null ? '' : String(v))));
+  });
+  assert(reviewMatrix[0].includes('리뷰 내용'), '리뷰 데이터 한글 헤더 누락');
+  assert(reviewMatrix.some((row) => row.includes('허리가 작아요')), '리뷰 내용 누락');
   // 내부 필드명(영문) 이 헤더에 노출되지 않아야 함
-  assert(!reviewSheet[0].some((h) => /reviewId|issueCategory|content/.test(String(h))),
-    `내부 필드명 노출: ${reviewSheet[0].join(',')}`);
+  assert(!reviewMatrix[0].some((h) => /reviewId|issueCategory|content/.test(String(h))),
+    `내부 필드명 노출: ${reviewMatrix[0].join(',')}`);
+  // 헤더 행 굵게 스타일 확인 (exceljs 마이그레이션 보너스)
+  const headerRow = reviewWs.getRow(1);
+  assert(headerRow.getCell(1).font?.bold === true, '헤더 행 굵기 스타일 누락');
 });
 
 await step('summary — productRankingByNegative: 5건 미만 상품은 비율 높아도 제외 + negativeRatio 포함', async () => {

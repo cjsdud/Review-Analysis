@@ -355,7 +355,7 @@ router.get('/:id/export.csv', requireAuth, (req, res) => {
 
 // GET /api/analysis/:id/export.xlsx — 사용자용 다중 시트 엑셀 리포트.
 // query: productKey (있으면 해당 상품만 — 상품 상세 리포트용)
-router.get('/:id/export.xlsx', requireAuth, (req, res) => {
+router.get('/:id/export.xlsx', requireAuth, async (req, res) => {
   if (!assertAnalysisOwnership(req, res)) return;
   const job = db.prepare('SELECT summary FROM analysis_jobs WHERE id = ?').get(req.params.id);
   let summary = {};
@@ -378,7 +378,7 @@ router.get('/:id/export.xlsx', requireAuth, (req, res) => {
   const baseName = productKey
     ? `ReviewFit_상품상세리포트_${products[0]?.productName || productKey}_${date}.xlsx`
     : `ReviewFit_전체리포트_${date}.xlsx`;
-  const buf = buildAnalysisWorkbook(products, summary, {
+  const buf = await buildAnalysisWorkbook(products, summary, {
     analysisDate: date,
     productName: productKey ? products[0]?.productName : undefined,
   });
