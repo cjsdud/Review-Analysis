@@ -128,6 +128,29 @@ function maskedReviewForProduct(review, classification, productKey) {
   };
 }
 
+// LLM 호출 1건마다 requestType 별 usage row 를 남기는 통일된 wrapper.
+// aiClient.* 가 끝난 직후 lastUsage / lastCallStatus / lastCallModel 을 읽어
+// llm_usage_logs 에 기록한다. mock/skipped 도 token=0 으로 일관 기록 — 관리자
+// 콘솔에서 "이번 분석이 OpenAI 를 정말 호출했는가" 를 한눈에 보기 위함.
+async function callWithUsage(fn, { requestType, role, userId, analysisId }) {
+  const result = await fn();
+  const provider = aiClient.aiMode;
+  const status = aiClient.lastCallStatus;
+  const usage = aiClient.lastUsage || {};
+  const model = aiClient.lastCallModel || aiClient.modelForRole?.(role || 'review') || null;
+  recordLlmUsage({
+    userId, analysisId, provider, model,
+    promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
+    requestType, usage,
+    status: status === 'fallback' ? 'ok' : (status === 'skipped' ? 'ok' : 'ok'),
+    openaiCalled: provider === 'openai' && status === 'ok',
+    fallbackUsed: status === 'fallback' || (provider !== 'openai' && status !== 'skipped'),
+    fallbackProvider: status === 'fallback' ? 'mock' : null,
+    error: status === 'fallback' ? aiClient.lastCallError : null,
+  });
+  return result;
+}
+
 // 플랜 정책 기반 mini 재분석 — Pro/Business 만 활성. 캐시 + token usage 로깅 포함.
 // 분석 단위 카운터(cacheHit, miss, miniReanalysis, openaiCalled, fallbackUsed) 를
 // 반환해 runAnalysis 가 한 줄 분석 summary 로그를 남길 수 있게 한다.
@@ -420,26 +443,25 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       issueRatio,
     });
 
-    // 4) LLM 요약
-    const report = await aiClient.generateProductImprovementReport({
-      productName,
-      totalReviews: total,
-      negativeReviews,
-      negativeRatio,
-      topIssues,
-    });
+    // 4) LLM 요약 — 호출마다 product_summary usage row 1건 기록.
+    const report = await callWithUsage(
+      () => aiClient.generateProductImprovementReport({
+        productName, totalReviews: total, negativeReviews, negativeRatio, topIssues,
+      }),
+      { requestType: 'product_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
+    );
 
-    // 5) 답글 템플릿 — 상위 이슈별, polarity/actionable/severity 정보를 함께 넘김
+    // 5) 답글 템플릿 — 상위 이슈별. 각 호출이 cs_reply usage row 1건씩 기록.
     const replyTemplates = [];
     for (const iss of topIssues.slice(0, 3)) {
-      const variants = await aiClient.generateReplyTemplates({
-        category: iss.category,
-        issueLabel: iss.issueLabel,
-        recommendedAction: iss.recommendedAction,
-        polarity: iss.polarity,
-        isActionableIssue: true,
-        severity: iss.severity,
-      });
+      const variants = await callWithUsage(
+        () => aiClient.generateReplyTemplates({
+          category: iss.category, issueLabel: iss.issueLabel,
+          recommendedAction: iss.recommendedAction, polarity: iss.polarity,
+          isActionableIssue: true, severity: iss.severity,
+        }),
+        { requestType: 'cs_reply', role: 'csReply', userId: opts.userId || null, analysisId: opts.analysisId || null },
+      );
       if (variants && variants.length) replyTemplates.push({ issueLabel: iss.issueLabel, variants });
     }
 
@@ -532,12 +554,15 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     .sort((a, b) => b.issueReviewCount - a.issueReviewCount || b.totalIssueCount - a.totalIssueCount)
     .slice(0, 10);
 
-  const overall = await aiClient.generateMonthlyReport({
-    totalReviews,
-    negativeReviews,
-    negativeRatio: ratio3(negativeReviews, totalReviews),
-    topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
-  });
+  const overall = await callWithUsage(
+    () => aiClient.generateMonthlyReport({
+      totalReviews,
+      negativeReviews,
+      negativeRatio: ratio3(negativeReviews, totalReviews),
+      topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
+    }),
+    { requestType: 'report_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
+  );
 
   // 전체 키워드 TOP 10 — 모든 리뷰 기준으로 한 번 더 추출 (상품별과 별도 집계라 합산이 아닌 전역 매칭)
   const positiveKeywordsTop10All = extractPositiveKeywords(reviews, classifications);

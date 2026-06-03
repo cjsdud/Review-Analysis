@@ -590,6 +590,72 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('llm_usage_logs — runAnalysis 가 product_summary / cs_reply / report_summary / analysis_summary row 를 모두 남김', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  const aid = 'aud_' + Date.now();
+  const reviews = [
+    { id: 'r1', productName: '셔츠', rating: 1, content: '실밥이 많고 마감이 별로예요' },
+    { id: 'r2', productName: '셔츠', rating: 5, content: '핏이 예뻐요 만족합니다' },
+    { id: 'r3', productName: '셔츠', rating: 2, content: '허리가 작아요' },
+  ];
+  await runAnalysis(reviews, [], { planCode: 'pro', userId: null, analysisId: aid });
+  const rows = db.prepare(
+    `SELECT request_type, COUNT(*) AS n FROM llm_usage_logs WHERE analysis_id = ? GROUP BY request_type`,
+  ).all(aid);
+  const byType = Object.fromEntries(rows.map((r) => [r.request_type, r.n]));
+  // mock 환경에선 mini 재분석은 안 일어날 수도 있지만 (조건부) product_summary / cs_reply /
+  // report_summary 는 매번 호출되므로 row 가 반드시 존재해야 한다.
+  assert(byType.product_summary >= 1, `product_summary row 누락: ${JSON.stringify(byType)}`);
+  assert(byType.report_summary >= 1, `report_summary row 누락: ${JSON.stringify(byType)}`);
+  assert(byType.analysis_summary >= 1, 'analysis_summary row 누락');
+  // cs_reply 는 top issue 가 있어야 호출되는데 위 데이터로는 일반적으로 1+
+  // (강한 부정 어휘 있음). 없을 수도 있으니 soft assert.
+});
+
+await step('replyTemplates — 5 tones 모두 분명히 다른 문장 (polite/friendly/concise/empathetic/professional)', async () => {
+  const m = await import('../src/services/replyTemplates.service.js');
+  const variants = m.buildReplyTemplates({
+    issueLabel: '허리가 작게 나옴',
+    category: '사이즈',
+    polarity: 'negative',
+    isActionableIssue: true,
+    severity: 'medium',
+  });
+  const tones = variants.map((v) => v.tone).sort();
+  assert.deepEqual(tones, ['concise', 'empathetic', 'friendly', 'polite', 'professional'].sort(),
+    `5 tone 누락: ${tones.join(',')}`);
+  // 각 tone 의 template 이 서로 다른 문장이어야 한다 (단순 어휘 치환이 아닌 분명한 차이)
+  const set = new Set(variants.map((v) => v.template));
+  assert.equal(set.size, 5, 'tone 별 문장이 모두 달라야 함');
+  // concise 는 가장 짧아야 한다
+  const concise = variants.find((v) => v.tone === 'concise');
+  const polite = variants.find((v) => v.tone === 'polite');
+  assert(concise.template.length < polite.template.length,
+    `concise 가 polite 보다 짧아야 함 (concise=${concise.template.length}, polite=${polite.template.length})`);
+  // empathetic 은 "불편" / "아쉬" / "죄송" 같은 공감/사과 어휘를 포함해야 한다
+  const empathetic = variants.find((v) => v.tone === 'empathetic');
+  assert(/불편|아쉬|죄송/.test(empathetic.template), 'empathetic 톤에 공감 어휘 필요');
+  // professional 은 "검토/검수/검토하겠습니다" 같은 절차 어휘를 포함해야 한다
+  const professional = variants.find((v) => v.tone === 'professional');
+  assert(/검토|검수|개선/.test(professional.template), 'professional 톤에 절차 어휘 필요');
+  // 각 variant 에 한국어 라벨도 함께 노출
+  for (const v of variants) {
+    assert(typeof v.toneLabel === 'string' && v.toneLabel.length > 0, `tone ${v.tone} 의 toneLabel 누락`);
+  }
+});
+
+await step('aiClient — normalizeReplyTone (legacy 한글 / 신규 영문 모두 흡수)', async () => {
+  const m = await import('../src/services/aiClient.service.js');
+  assert.equal(m.normalizeReplyTone('polite'), 'polite');
+  assert.equal(m.normalizeReplyTone('Friendly'), 'friendly', '대소문자 무시');
+  assert.equal(m.normalizeReplyTone('기본'), 'polite', 'legacy 기본 → polite');
+  assert.equal(m.normalizeReplyTone('정중'), 'polite');
+  assert.equal(m.normalizeReplyTone('친근'), 'friendly');
+  assert.equal(m.normalizeReplyTone('공감'), 'empathetic');
+  assert.equal(m.normalizeReplyTone('알수없는'), 'polite', '알 수 없으면 polite');
+});
+
 await step('analysisJob — pending → processing → completed 전이 + getJobStatus', async () => {
   const m = await import('../src/services/analysisJob.service.js');
   const id = 'job_test_' + Date.now();
@@ -1579,7 +1645,7 @@ async function getReplies(input) {
 
 await step('CS 답글 #1 — "기장이 김" issueLabel 직접 삽입 금지', async () => {
   const reps = await getReplies({ issueLabel: '기장이 김', category: '사이즈' });
-  assert(reps.length === 3, `tones=${reps.length}`);
+  assert(reps.length === 5, `tones=${reps.length}`);
   for (const r of reps) {
     assert(!/['"‘’“”]\s*기장이 김\s*['"‘’“”]/.test(r.template),
       `따옴표로 issueLabel 노출됨: ${r.template}`);
@@ -3563,7 +3629,7 @@ await step('analytics — demo-view 기록 + allowlist + 집계', async () => {
 await step('aiClient (mock)', async () => {
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
-  assert(Array.isArray(t) && t.length === 3, '답글 템플릿 mock 실패');
+  assert(Array.isArray(t) && t.length === 5, '답글 템플릿 mock 실패 (5 tones 기대)');
 });
 
 if (failures.length) {

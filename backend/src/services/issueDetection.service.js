@@ -121,11 +121,27 @@ export async function buildIssueClusters(classifications, reviewMap, aiClient) {
     }
   }
 
-  // 라벨 없는 묶음 → LLM 으로 이름 생성(없으면 카테고리 기본 라벨)
+  // 라벨 없는 묶음 → LLM 으로 이름 생성(없으면 카테고리 기본 라벨).
+  // 호출마다 issue_label usage row 1건 기록 (provider/model/token 추적).
+  const { recordLlmUsage } = await import('./ai/usage.service.js');
+  const { PROMPT_VERSION, ANALYSIS_VERSION } = await import('./ai/index.js');
   for (const cl of needLabel) {
     if (aiClient) {
       try {
         const label = await aiClient.generateIssueLabel(cl.category, cl.evidenceReviews);
+        const status = aiClient.lastCallStatus;
+        recordLlmUsage({
+          provider: aiClient.aiMode,
+          model: aiClient.lastCallModel || aiClient.modelForRole?.('summary') || null,
+          promptVersion: PROMPT_VERSION,
+          analysisVersion: ANALYSIS_VERSION,
+          requestType: 'issue_label',
+          usage: aiClient.lastUsage || {},
+          openaiCalled: aiClient.aiMode === 'openai' && status === 'ok',
+          fallbackUsed: status === 'fallback' || (aiClient.aiMode !== 'openai' && status !== 'skipped'),
+          fallbackProvider: status === 'fallback' ? 'mock' : null,
+          error: status === 'fallback' ? aiClient.lastCallError : null,
+        });
         cl.issueLabel = label || `${cl.category} 관련 의견`;
         cl.source = 'llm';
         continue;

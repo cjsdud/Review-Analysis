@@ -182,24 +182,39 @@ export function buildReplyTemplates(input) {
   const promise = getReplyActionPhrase(issueLabel, category, recommendedAction);
   const strong = isStrongIssue(issueLabel, category) || severity === 'high';
 
+  // 5 가지 말투(tone) — 사용자가 segmented 컨트롤에서 골라 사용한다.
+  // 각 tone 은 단순 어휘 치환이 아니라 시작 문장 / 공감 표현 / 길이 / 끝맺음이 모두
+  // 분명히 달라지도록 작성. 기본값은 'polite' (기존 '기본' 톤과 호환).
+  //
+  //   polite       : 정중한 말투  — 기본 고객센터 톤. 안정적, 사과 1회.
+  //   friendly     : 친근한 말투  — 부드럽고 가까운 톤. 딱딱한 표현 회피.
+  //   concise      : 간결한 말투  — 1~2 문장, 군더더기 없음.
+  //   empathetic   : 공감형 말투  — 불편 인정 + 구체적 지점 언급 (부정 리뷰에 적합).
+  //   professional : 전문적 말투  — 공식 브랜드 응대, 검토/개선 절차 중심.
   let tones;
   if (strong) {
     tones = {
-      기본: `안녕하세요 고객님, 소중한 후기 감사합니다.\n이용에 불편을 드려 죄송합니다. ${phrase}.\n말씀해주신 부분은 확인 후 더 정확히 안내드릴 수 있도록 ${promise}.`,
-      정중: `안녕하세요 고객님, 소중한 후기 남겨주셔서 감사합니다.\n먼저 불편을 드린 점 진심으로 죄송합니다. ${phrase}.\n남겨주신 의견은 담당 부서에 전달해 ${promise}. 교환·반품이 필요하시면 언제든 편히 말씀해 주세요.`,
-      친근: `안녕하세요 고객님, 후기 남겨주셔서 감사합니다.\n불편하셨다니 정말 죄송해요. ${phrase}.\n말씀해주신 부분은 꼼꼼히 확인해서 ${promise}. 다음엔 꼭 더 만족하실 수 있게 노력할게요.`,
+      polite: `안녕하세요 고객님, 소중한 후기 남겨주셔서 감사합니다.\n이용에 불편을 드린 점 정중히 사과드립니다. ${phrase}.\n남겨주신 의견은 담당 부서에 전달해 ${promise}. 교환·반품이 필요하시면 편히 말씀해 주세요.`,
+      friendly: `안녕하세요 고객님, 후기 정성스럽게 남겨주셔서 감사합니다.\n불편하셨을 텐데 정말 죄송해요. ${phrase}.\n말씀해 주신 부분은 꼼꼼히 확인해서 ${promise}. 다음엔 꼭 더 만족하실 수 있게 준비할게요.`,
+      concise: `후기 감사합니다. 불편을 드려 죄송합니다.\n${phrase} 관련 의견은 확인 후 ${promise}.`,
+      empathetic: `${phrase} 부분에서 많이 불편하셨을 것 같습니다. 먼저 죄송하다는 말씀 드립니다.\n남겨주신 의견은 같은 불편이 반복되지 않도록 ${promise}. 교환·반품이 필요하시면 언제든 말씀해 주세요.`,
+      professional: `안녕하세요 고객님, 소중한 피드백 감사합니다.\n해당 ${phrase} 사례는 품질 검수 및 공정 점검 대상으로 접수하였습니다.\n관련 부서와 함께 ${promise}. 추가 안내가 필요하시면 고객센터로 문의해 주시기 바랍니다.`,
     };
   } else {
     tones = {
-      기본: `안녕하세요 고객님, 소중한 후기 감사합니다.\n${phrase}.\n말씀해주신 부분은 상세페이지와 상품 안내에 더 잘 반영하겠습니다.`,
-      정중: `안녕하세요 고객님, 소중한 후기 남겨주셔서 감사합니다.\n${phrase}.\n남겨주신 의견은 관련 안내를 보완하는 데 참고하겠습니다. ${promise}.`,
-      친근: `안녕하세요 고객님, 후기 남겨주셔서 감사합니다.\n${phrase}.\n말씀해주신 부분은 꼼꼼히 확인해서 상품 안내에 더 잘 반영해볼게요.`,
+      polite: `안녕하세요 고객님, 소중한 후기 남겨주셔서 감사합니다.\n${phrase}.\n남겨주신 의견은 관련 안내를 보완하는 데 참고하겠습니다. ${promise}.`,
+      friendly: `안녕하세요 고객님, 후기 남겨주셔서 감사합니다.\n${phrase}.\n말씀해 주신 부분은 꼼꼼히 확인해서 상품 안내에 더 잘 반영해 볼게요.`,
+      concise: `후기 감사합니다. ${phrase} 관련 의견은 상품 안내에 참고하겠습니다.`,
+      empathetic: `${phrase} 부분에서 아쉬움을 느끼셨을 것 같습니다.\n남겨주신 의견은 더 만족스러운 상품을 준비하는 데 참고하겠습니다. ${promise}.`,
+      professional: `소중한 피드백 감사합니다.\n${phrase} 관련 의견은 상품 품질 검토 및 상세페이지 개선 과정에 반영하도록 검토하겠습니다.`,
     };
   }
 
   return [
-    { issueLabel, tone: '기본', template: tones.기본 },
-    { issueLabel, tone: '정중', template: tones.정중 },
-    { issueLabel, tone: '친근', template: tones.친근 },
+    { issueLabel, tone: 'polite',       toneLabel: '정중한 말투',     template: tones.polite },
+    { issueLabel, tone: 'friendly',     toneLabel: '친근한 말투',     template: tones.friendly },
+    { issueLabel, tone: 'concise',      toneLabel: '간결한 말투',     template: tones.concise },
+    { issueLabel, tone: 'empathetic',   toneLabel: '공감형 말투',     template: tones.empathetic },
+    { issueLabel, tone: 'professional', toneLabel: '전문적인 말투',   template: tones.professional },
   ];
 }

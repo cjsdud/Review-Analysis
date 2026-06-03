@@ -83,6 +83,31 @@ export function resetSessionStats() {
 const SYSTEM =
   '너는 한국 패션 이커머스 리뷰 분석 도우미다. 항상 지시한 JSON만 출력한다. 코드블록(```), 주석, 설명 문장을 덧붙이지 않는다.';
 
+// CS 답글 말투 5 종 — 프론트 segmented 컨트롤이 toneLabel 을 그대로 보여준다.
+// LLM 이 '기본/정중/친근' 같은 legacy 한글 라벨을 줘도 normalizeReplyTone 에서 흡수.
+export const REPLY_TONE_LABELS = {
+  polite: '정중한 말투',
+  friendly: '친근한 말투',
+  concise: '간결한 말투',
+  empathetic: '공감형 말투',
+  professional: '전문적인 말투',
+};
+const REPLY_TONE_LEGACY = {
+  // 한글 legacy 매핑 — 구버전 데이터/응답 호환.
+  기본: 'polite',
+  정중: 'polite',
+  친근: 'friendly',
+  간결: 'concise',
+  공감: 'empathetic',
+  전문: 'professional',
+};
+export function normalizeReplyTone(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (REPLY_TONE_LABELS[raw]) return raw;
+  if (REPLY_TONE_LEGACY[value?.trim?.()]) return REPLY_TONE_LEGACY[value.trim()];
+  return 'polite';
+}
+
 // ---------- JSON 안전 파싱 ----------
 // 입력: text(string). 출력: 파싱된 값 또는 fallback. 코드블록/잡텍스트가 섞여도 첫 JSON 블록을 추출 시도.
 function parseJsonSafe(text, fallback) {
@@ -356,7 +381,8 @@ export async function generateReplyTemplates(issueSummary) {
       })
       .map((t) => ({
         issueLabel: t.issueLabel || issueSummary.issueLabel || '',
-        tone: t.tone || '기본',
+        tone: normalizeReplyTone(t.tone),
+        toneLabel: REPLY_TONE_LABELS[normalizeReplyTone(t.tone)] || '정중한 말투',
         template: t.template.trim(),
       }));
     return out.length ? out : null;
@@ -483,9 +509,23 @@ function buildReportPrompt(productSummary) {
 
 function buildReplyPrompt(issueSummary) {
   return [
-    '너는 패션 쇼핑몰 CS 담당자다. 아래 이슈에 대한 답글 초안을 기본/정중/친근 3가지 말투로 작성한다.',
-    '각 답글은 2~3문장, 사과 + 구체적 개선 약속을 포함한다.',
-    '반드시 JSON {"templates":[{"issueLabel":"...","tone":"기본","template":"..."}]} 만 출력.',
+    '너는 패션 쇼핑몰 CS 담당자다. 아래 이슈에 대한 답글 초안을 5 가지 말투(tone)로 각각 작성한다.',
+    '',
+    'tone 별 작성 기준 (반드시 문장 길이 / 시작 문장 / 어휘가 분명히 달라야 한다):',
+    '- polite       : 정중한 기본 고객센터 톤. 안정적, 사과 1회, 2~3 문장.',
+    '- friendly     : 부드럽고 가까운 톤. 너무 딱딱한 표현 회피. 이모지는 쓰지 않는다.',
+    '- concise      : 짧고 명확. 1~2 문장. 군더더기 없음.',
+    '- empathetic   : 고객 불편을 먼저 인정. 아쉬웠던 지점을 구체적으로 언급. 부정 리뷰에 적합.',
+    '- professional : 공식 브랜드 응대. 차분, 검토/개선 절차 중심. 과한 감정 표현은 없다.',
+    '',
+    '공통 규칙:',
+    '- "반드시 개선하겠습니다" 처럼 확정적 약속 대신 "개선에 참고하겠습니다 / 검토하겠습니다" 처럼 안전하게.',
+    '- 긍정 맥락엔 불필요한 사과 금지.',
+    '- 답글 본문에 issueLabel 을 따옴표로 그대로 인용하지 말 것.',
+    '',
+    '반드시 아래 JSON 만 출력한다 (다른 텍스트 금지):',
+    '{"templates":[{"issueLabel":"...","tone":"polite|friendly|concise|empathetic|professional","template":"..."}]}',
+    '',
     JSON.stringify(issueSummary),
   ].join('\n');
 }

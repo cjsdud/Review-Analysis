@@ -353,7 +353,9 @@ export default function DashboardPage() {
       </SectionCard>
 
       {/* 차트 클릭 시 열리는 카테고리 사전 필터 리뷰 모달 */}
+      {/* key=category — 다른 카테고리 클릭마다 fresh state 로 remount (필터 잔재 차단) */}
       <ReviewExplorerModal
+        key={reviewsModalCategory || 'closed'}
         open={reviewsModalOpen}
         onClose={() => { setReviewsModalOpen(false); setReviewsModalCategory(''); }}
         analysisId={analysisId}

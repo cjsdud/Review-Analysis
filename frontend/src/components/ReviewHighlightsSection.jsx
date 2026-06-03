@@ -149,7 +149,10 @@ export default function ReviewHighlightsSection({
       </div>
 
       {!useExternalOpen && (
+        // key=openSentiment — 다른 감성을 다시 클릭할 때마다 모달이 깨끗한 state 로
+        // remount 된다. 이전 필터/페이지 잔재 + setState/loadPage 레이스 차단.
         <ReviewExplorerModal
+          key={openSentiment || 'closed'}
           open={openSentiment !== null}
           onClose={() => setOpenSentiment(null)}
           analysisId={analysisId}

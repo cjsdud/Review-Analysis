@@ -86,6 +86,18 @@ function ReviewCard({ r, onSelectProduct, productPath }) {
   );
 }
 
+// initialSentiment 가 'all'/'positive'/'neutral'/'negative'/'mixed' 중 어떤 값이든
+// 안전하게 받기 위해 normalize. 한글 라벨('긍정' 등) 으로 들어오는 케이스도 처리.
+function normalizeSentiment(value) {
+  const raw = String(value || '').toLowerCase().trim();
+  if (['positive', '긍정', 'pos'].includes(raw)) return 'positive';
+  if (['neutral', '중립', 'neu'].includes(raw)) return 'neutral';
+  if (['negative', '부정', 'neg'].includes(raw)) return 'negative';
+  if (['mixed', '복합', '복합반응', 'mixed_reaction'].includes(raw)) return 'mixed';
+  if (raw === 'all' || raw === '전체' || raw === '') return 'all';
+  return raw;
+}
+
 export default function ReviewExplorerModal({
   open,
   onClose,
@@ -97,7 +109,10 @@ export default function ReviewExplorerModal({
   description: descriptionOverride,
 }) {
   const navigate = useNavigate();
-  const [sentiment, setSentiment] = useState(initialSentiment);
+  // initialSentiment 가 prop 으로 바뀌어 들어오면 그대로 sentiment state 초기값에 반영.
+  // 모달 부모는 <ReviewExplorerModal key={initialSentiment} ... /> 패턴으로 remount 해서
+  // "긍정 → 부정 → 긍정" 같은 재선택 시 매번 깨끗한 state 로 시작하게 한다.
+  const [sentiment, setSentiment] = useState(() => normalizeSentiment(initialSentiment));
   const [productName, setProductName] = useState(initialProductName);
   const [category, setCategory] = useState(initialCategory);
   const [keyword, setKeyword] = useState('');
@@ -140,9 +155,12 @@ export default function ReviewExplorerModal({
     }
   }, [open, analysisId, sentiment, sort, productName, keyword, rating, hasIssue, category]);
 
-  useEffect(() => { setSentiment(initialSentiment); }, [initialSentiment, open]);
-  useEffect(() => { setProductName(initialProductName); }, [initialProductName, open]);
-  useEffect(() => { setCategory(initialCategory); }, [initialCategory, open]);
+  // initialSentiment prop 이 바뀌면 (parent 가 key 로 remount 하지 않는 케이스 안전망)
+  // 한 번 더 sentiment 를 sync. 사용자가 모달 안에서 chip 으로 sentiment 를 바꾼 뒤에는
+  // initialSentiment 가 같은 값으로 다시 들어오지 않는 한 덮어쓰지 않는다.
+  useEffect(() => { setSentiment(normalizeSentiment(initialSentiment)); }, [initialSentiment]);
+  useEffect(() => { setProductName(initialProductName); }, [initialProductName]);
+  useEffect(() => { setCategory(initialCategory); }, [initialCategory]);
   // 필터/정렬 변경 시 1페이지로 리셋해서 로드
   useEffect(() => { loadPage(1); }, [loadPage]);
 
