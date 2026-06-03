@@ -17,7 +17,7 @@ import { buildProductDetailPath } from '../utils/reportRoutes.js';
 import PlanGatedExport, { PrintWatermark } from '../components/PlanGatedExport.jsx';
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
-import { getAnalysis, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
+import { getAnalysis, getAnalysisStatus, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
 
 export default function DashboardPage() {
   const { analysisId } = useParams();
@@ -57,12 +57,40 @@ export default function DashboardPage() {
     })();
   }, [analysisId]);
 
-  // 진행 중일 때만 5초마다 폴링 — 완료되면 자동으로 페이지 reload.
+  // 진행 중일 때만 5초마다 status API 만 폴링. completed 가 되면 그제서야 report 데이터를
+  // 다시 fetch — 화면 전체 reload 없이 스크롤/UI 상태 유지.
   useEffect(() => {
-    if (!jobState || (jobState.status !== 'processing' && jobState.status !== 'pending')) return;
-    const t = setInterval(() => { setLoading(true); window.location.reload(); }, 5000);
-    return () => clearInterval(t);
-  }, [jobState]);
+    if (!analysisId) return;
+    if (!jobState) return;
+    if (jobState.status === 'completed' || jobState.status === 'failed' || jobState.status === 'error') return;
+    let cancelled = false;
+    let inFlight = false;
+    async function poll() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const s = await getAnalysisStatus(analysisId);
+        if (cancelled || !s) return;
+        if (s.status === 'completed' || s.status === 'done') {
+          // 완료 — report data 만 다시 fetch 하고 jobState 클리어
+          const [a, ps] = await Promise.all([getAnalysis(analysisId), getProducts(analysisId)]);
+          if (cancelled) return;
+          setSummary(a.summary);
+          setProducts(ps);
+          setJobState(null);
+        } else {
+          // 진행 중 — progress / errorMessage 만 갱신 (전체 화면 유지)
+          setJobState((prev) => ({ ...prev, status: s.status, progress: s.progress, errorMessage: s.errorMessage }));
+        }
+      } catch (e) {
+        if (!cancelled) console.warn('[dashboard] poll error', e.message);
+      } finally {
+        inFlight = false;
+      }
+    }
+    const timer = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [analysisId, jobState]);
 
   function goProduct(productKey) {
     const path = buildProductDetailPath({ analysisId, productKey });

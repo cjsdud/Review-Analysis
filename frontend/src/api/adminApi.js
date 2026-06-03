@@ -22,6 +22,8 @@ export const adminApi = {
   llmLogs:        (params = {}) => client.get('/admin/llm-logs', { params }).then((r) => r.data),
   llmLogDetail:   (id) => client.get(`/admin/llm-logs/${id}`).then((r) => r.data),
   llmLogSummary:  () => client.get('/admin/llm-logs/summary').then((r) => r.data),
+  analysisStatusSummary: () => client.get('/admin/analysis-status-summary').then((r) => r.data),
+  retryAnalysis:  (id, reason) => client.post(`/admin/analyses/${id}/retry`, { reason }).then((r) => r.data),
 };
 
 export async function getActiveAnnouncements() {

@@ -114,6 +114,15 @@ try {
   console.warn('[seed][warning] seedConfiguredAccounts 실패:', e.message);
 }
 
+// 서버 부팅 후 한 번 — 재시작/배포로 인해 멈춰 있던 processing/pending row 를
+// failed 로 일괄 전환. 실패 사유를 errorMessage 에 남겨 사용자/관리자가 인지 가능.
+import { recoverStaleAnalysisJobs } from './services/analysisJob.service.js';
+try {
+  recoverStaleAnalysisJobs();
+} catch (e) {
+  console.warn('[startup] analysisJob recovery skipped:', e.message);
+}
+
 app.listen(PORT, () => {
   const serving = isProd && distExists ? ', serving frontend/dist' : '';
   console.log(`[review-fit] backend on port ${PORT} (AI mode: ${aiMode}${serving})`);

@@ -622,6 +622,69 @@ await step('analysisJob — failed 전이 + errorMessage 저장', async () => {
   assert(s.failedAt, 'failedAt 채워짐');
 });
 
+await step('analysisJob — recoverStaleAnalysisJobs: 오래된 processing 만 failed 로', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  // 1) 1시간 전 processing — 회수 대상
+  const oldId = 'job_old_' + Date.now();
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, created_at)
+     VALUES (?, ?, 'processing', ?, datetime('now', '-2 hours'))`,
+  ).run(oldId, 'u1', JSON.stringify({}));
+  // 2) 방금 만든 processing — 보호 (cutoff 안 넘김)
+  const newId = 'job_new_' + Date.now();
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, created_at)
+     VALUES (?, ?, 'processing', ?, datetime('now'))`,
+  ).run(newId, 'u1', JSON.stringify({}));
+  // 3) completed — 절대 건드리지 않음
+  const doneId = 'job_done_' + Date.now();
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, created_at)
+     VALUES (?, ?, 'completed', ?, datetime('now', '-3 hours'))`,
+  ).run(doneId, 'u1', JSON.stringify({}));
+
+  const r = m.recoverStaleAnalysisJobs();
+  assert(r.recovered >= 1, '최소 1건은 회수');
+  assert.equal(m.getJobStatus(oldId).status, 'failed', '오래된 processing → failed');
+  assert(m.getJobStatus(oldId).errorMessage.includes('서버 재시작'), 'errorMessage 안내');
+  assert.equal(m.getJobStatus(newId).status, 'processing', '최근 processing 은 보호');
+  assert.equal(m.getJobStatus(doneId).status, 'completed', 'completed 는 그대로');
+});
+
+await step('analysisJob — getAnalysisStatusSummary 카운트 + 최근 실패/진행 목록', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const sum = m.getAnalysisStatusSummary({ recentLimit: 3 });
+  assert(typeof sum.pendingCount === 'number');
+  assert(typeof sum.processingCount === 'number');
+  assert(typeof sum.completedCount === 'number');
+  assert(typeof sum.failedCount === 'number');
+  assert(Array.isArray(sum.recentFailed));
+  assert(Array.isArray(sum.recentProcessing));
+});
+
+await step('analysisJob — retryAnalysisJob 가드 (completed/processing/없음)', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  // 없는 id
+  const r1 = await m.retryAnalysisJob('does_not_exist');
+  assert.equal(r1.ok, false);
+  assert.equal(r1.status, 404);
+  // processing 인 row — 차단
+  const procId = 'retry_proc_' + Date.now();
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, 'processing', '{}')`)
+    .run(procId, 'u1');
+  const r2 = await m.retryAnalysisJob(procId);
+  assert.equal(r2.ok, false);
+  assert.equal(r2.status, 409);
+  // failed row — 통과
+  const failId = 'retry_fail_' + Date.now();
+  db.prepare(`INSERT INTO analysis_jobs (id, upload_id, status, summary) VALUES (?, ?, 'failed', '{}')`)
+    .run(failId, 'u1');
+  const r3 = await m.retryAnalysisJob(failId);
+  assert.equal(r3.ok, true);
+});
+
 await step('analysisJob — legacy status (done/error) 노멀라이즈해서 반환', async () => {
   const m = await import('../src/services/analysisJob.service.js');
   const db = (await import('../src/db/database.js')).default;

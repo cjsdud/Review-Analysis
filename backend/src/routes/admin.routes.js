@@ -10,6 +10,12 @@ import { logAdminAction, isLastAdmin, listAdminLogs } from '../services/adminAud
 import { getDemoViewStats } from '../services/analytics.service.js';
 import { resetMonthlyUsage } from '../services/billing.service.js';
 import { listLlmLogs, getLlmLog, getLlmUsageSummary } from '../services/ai/usage.service.js';
+import {
+  getAnalysisStatusSummary,
+  retryAnalysisJob,
+  createPendingJob,
+  runAnalysisJob,
+} from '../services/analysisJob.service.js';
 
 const router = Router();
 
@@ -496,6 +502,72 @@ router.get('/llm-logs/:id', (req, res) => {
   const row = getLlmLog(req.params.id);
   if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: '로그를 찾을 수 없습니다.' });
   res.json({ success: true, log: rowToLlmLog(row) });
+});
+
+// ===== 분석 진행 상태 (Admin only) =====
+// 관리자가 pending/processing/completed/failed 카운트 + 최근 실패/진행 목록을 본다.
+router.get('/analysis-status-summary', (_req, res) => {
+  res.json({ success: true, summary: getAnalysisStatusSummary({ recentLimit: 5 }) });
+});
+
+// 실패 분석 재실행 — admin 만. completed/processing/pending 은 차단.
+// 사용자 plan 사용량은 다시 차감하지 않음 (테스트/복구 목적).
+router.post('/analyses/:analysisId/retry', async (req, res) => {
+  const { analysisId } = req.params;
+  const guard = await retryAnalysisJob(analysisId);
+  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+  const job = guard.job;
+
+  // upload_files.rows 는 완료 시 NULL 처리되지만 failed 분석은 그대로 살아 있다.
+  const reviews = loadReviews(job.upload_id);
+  if (!reviews.length) {
+    return res.status(409).json({
+      error: '원본 리뷰 데이터가 남아 있지 않아 재실행할 수 없습니다. 사용자가 다시 업로드해야 합니다.',
+    });
+  }
+
+  // 기존 row 를 pending 으로 리셋하고 (createPendingJob 이 INSERT 라 여기선 직접 UPDATE)
+  // background 로 실행. retry 자체 로그는 admin_action_logs 에 남긴다.
+  const dbMod = (await import('../db/database.js')).default;
+  dbMod.prepare(
+    `UPDATE analysis_jobs
+     SET status = 'pending', progress = 0, error_message = NULL, failed_at = NULL,
+         started_at = NULL, completed_at = NULL
+     WHERE id = ?`,
+  ).run(analysisId);
+
+  const sub = job.user_id
+    ? dbMod.prepare(`SELECT plan_code FROM subscriptions WHERE user_id = ? AND status IN ('active','trialing') ORDER BY created_at DESC LIMIT 1`).get(job.user_id)
+    : null;
+  const planCode = sub?.plan_code || 'free';
+  const corrections = loadAllCorrections();
+
+  setImmediate(() => {
+    runAnalysisJob({
+      analysisId,
+      uploadId: job.upload_id,
+      userId: job.user_id,
+      reviews,
+      corrections,
+      planCode,
+      isSample: job.is_sample === 1,
+    }).catch((e) => console.error('[admin retry] background error', e));
+  });
+
+  logAdminAction({
+    adminUserId: req.user.id,
+    actionType: 'ANALYSIS_RETRIED',
+    targetType: 'analysis',
+    targetId: analysisId,
+    reason: (req.body?.reason || '').slice(0, 500),
+  });
+
+  res.json({
+    success: true,
+    analysisId,
+    status: 'processing',
+    message: '분석을 다시 시작했습니다.',
+  });
 });
 
 export default router;

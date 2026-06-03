@@ -53,7 +53,7 @@ function loadCorrections(analysisId, productKey) {
 }
 
 // 전체 user_corrections payload 배열을 그대로 로드 (review-level 적용용).
-function loadAllCorrections() {
+export function loadAllCorrections() {
   const rows = db.prepare('SELECT review_pk, categories FROM user_corrections ORDER BY created_at').all();
   const out = [];
   for (const r of rows) {
@@ -109,7 +109,7 @@ export function applyHistoricalCorrections(products) {
   }
 }
 
-function loadReviews(uploadId) {
+export function loadReviews(uploadId) {
   const rows = db.prepare('SELECT * FROM reviews WHERE upload_id = ?').all(uploadId);
   return rows.map((r) => ({
     id: r.id,

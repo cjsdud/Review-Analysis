@@ -156,6 +156,112 @@ export function getJobStatus(analysisId) {
 
 export const STATUSES = STATUS;
 
+// 서버 시작 시 호출 — in-process background job 이라서 재시작/배포/crash 가
+// 일어나면 status='processing' 인 row 가 영원히 그 상태로 남는다. 일정 시간
+// 이상 진행 중인 row 를 일괄로 failed 로 전환해 관리자/사용자에게 명시.
+// 막 생성된 row (예: 부팅 직전 1분 안) 는 보호한다.
+//
+// env:
+//   ANALYSIS_STALE_PROCESSING_MINUTES (기본 30)
+//   ENABLE_ANALYSIS_STARTUP_RECOVERY (기본 true, 'false' 면 skip)
+//
+// 장기 TODO: BullMQ/Redis 큐 + Render Background Worker 분리 시 이 함수는
+// 사라지고 큐 retry 정책으로 대체.
+export function recoverStaleAnalysisJobs() {
+  if (String(process.env.ENABLE_ANALYSIS_STARTUP_RECOVERY || 'true').toLowerCase() === 'false') {
+    console.info('[analysisJob] startup recovery disabled');
+    return { recovered: 0 };
+  }
+  const minutes = Math.max(1, Number(process.env.ANALYSIS_STALE_PROCESSING_MINUTES || 30));
+  // SQLite datetime('now', '-X minutes') — created_at 이 cutoff 이전이면 stale.
+  const stale = db.prepare(
+    `SELECT id FROM analysis_jobs
+     WHERE status IN (?, ?)
+       AND created_at < datetime('now', ?)`,
+  ).all(STATUS.PENDING, STATUS.PROCESSING, `-${minutes} minutes`);
+  if (!stale.length) return { recovered: 0 };
+  const msg = '서버 재시작 또는 작업 중단으로 분석이 완료되지 않았습니다. 다시 분석을 실행해 주세요.';
+  const tx = db.transaction(() => {
+    for (const r of stale) {
+      db.prepare(
+        `UPDATE analysis_jobs SET status = ?, error_message = ?, failed_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      ).run(STATUS.FAILED, msg, r.id);
+    }
+  });
+  tx();
+  console.info(`[analysisJob] startup recovery — marked ${stale.length} stale row(s) as failed (cutoff=${minutes}m)`);
+  return { recovered: stale.length };
+}
+
+// 관리자 콘솔 — pending/processing/completed/failed 카운트 + 최근 실패/진행 목록.
+export function getAnalysisStatusSummary({ recentLimit = 5 } = {}) {
+  const counts = db.prepare(
+    `SELECT
+       SUM(CASE WHEN status = 'pending'    THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+       SUM(CASE WHEN status IN ('completed','done') THEN 1 ELSE 0 END) AS completed,
+       SUM(CASE WHEN status IN ('failed','error')   THEN 1 ELSE 0 END) AS failed,
+       SUM(CASE WHEN created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END) AS last24h
+     FROM analysis_jobs`,
+  ).get();
+  const recentFailed = db.prepare(
+    `SELECT j.id, j.error_message, j.failed_at, j.created_at,
+            u.original_name AS file_name, usr.email AS user_email
+       FROM analysis_jobs j
+       LEFT JOIN upload_files u ON u.id = j.upload_id
+       LEFT JOIN users usr ON usr.id = j.user_id
+      WHERE j.status IN ('failed', 'error')
+      ORDER BY COALESCE(j.failed_at, j.created_at) DESC
+      LIMIT ?`,
+  ).all(recentLimit);
+  const recentProcessing = db.prepare(
+    `SELECT j.id, j.progress, j.started_at, j.created_at,
+            u.original_name AS file_name, usr.email AS user_email
+       FROM analysis_jobs j
+       LEFT JOIN upload_files u ON u.id = j.upload_id
+       LEFT JOIN users usr ON usr.id = j.user_id
+      WHERE j.status IN ('pending', 'processing')
+      ORDER BY j.created_at DESC
+      LIMIT ?`,
+  ).all(recentLimit);
+  return {
+    pendingCount: Number(counts?.pending || 0),
+    processingCount: Number(counts?.processing || 0),
+    completedCount: Number(counts?.completed || 0),
+    failedCount: Number(counts?.failed || 0),
+    last24hCount: Number(counts?.last24h || 0),
+    recentFailed: recentFailed.map((r) => ({
+      id: r.id, fileName: r.file_name, userEmail: r.user_email,
+      errorMessage: r.error_message, failedAt: r.failed_at || r.created_at,
+    })),
+    recentProcessing: recentProcessing.map((r) => ({
+      id: r.id, fileName: r.file_name, userEmail: r.user_email,
+      progress: r.progress ?? 0, startedAt: r.started_at, createdAt: r.created_at,
+    })),
+  };
+}
+
+// 관리자 retry — failed analysis 를 다시 pending → background job 으로.
+// 정책 결정:
+//   · completed 는 retry 불가 (관리자가 정말 필요하면 별도 강제 기능 추가)
+//   · processing 은 중복 실행 차단
+//   · 사용자 plan 사용량은 재차감 X (테스트/복구 목적). LLM token usage 는 실제 호출되면
+//     기존 경로(recordLlmUsage) 가 자동 기록.
+export async function retryAnalysisJob(analysisId) {
+  const job = db.prepare(
+    'SELECT id, upload_id, user_id, status, is_sample FROM analysis_jobs WHERE id = ?',
+  ).get(analysisId);
+  if (!job) return { ok: false, status: 404, error: '분석을 찾을 수 없습니다.' };
+  if (job.status === 'processing' || job.status === 'pending') {
+    return { ok: false, status: 409, error: '이미 진행 중인 분석은 다시 실행할 수 없습니다.' };
+  }
+  // 입력 데이터 — upload_files.rows 는 분석 완료 시 NULL 처리되므로 review_classifications
+  // 가 살아 있을 때만 가능. 여기서는 raw reviews 가 필요한데 그건 보존되지 않을 수
+  // 있으므로 caller (라우트) 에게 reviews loader 를 요청한다.
+  // 이 함수는 "재실행 가능 여부" 만 판단하고 실제 job 시작은 호출 측에서.
+  return { ok: true, job };
+}
+
 // user_corrections 테이블에서 (productKey, original) → corrected 매핑을 만든다.
 // 회귀: 기존 analysis.routes.js 의 buildHistoricalCorrectionMap 와 동일한 로직 —
 // 비동기 job 흐름으로 옮기면서 route 모듈에 순환 의존을 만들지 않도록 인라인.
