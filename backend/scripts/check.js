@@ -551,6 +551,76 @@ await step('billing — checkCanGenerateCsReply / checkCanUploadFile / resetMont
   assert.equal(m.checkCanUploadFile(null).ok, true, '익명은 통과');
 });
 
+await step('aiClient — role 별 model 분리 + env override', async () => {
+  // 동적 import 후 modelForRole 검증.
+  const ai = (await import('../src/services/aiClient.service.js')).default;
+  // 기본값 (LLM_MODEL 도 없는 mock 환경) — 모두 빈 문자열 또는 fallback default
+  const review = ai.modelForRole('review');
+  const summary = ai.modelForRole('summary');
+  const precision = ai.modelForRole('precision');
+  const csReply = ai.modelForRole('csReply');
+  // 모두 동일 LLM_MODEL fallback 이거나 빈 문자열
+  assert(typeof review === 'string');
+  assert(typeof summary === 'string');
+  assert(typeof precision === 'string');
+  assert(typeof csReply === 'string');
+});
+
+await step('aiClient — classifyAmbiguousReviews 가 새 schema (mentionedAspects / improvementIssues) 로 정규화', async () => {
+  const ai = (await import('../src/services/aiClient.service.js')).default;
+  // mock 모드에서 호출 — schema 가 신규 키를 가져야 함.
+  const out = await ai.classifyAmbiguousReviews([{ id: 'r1', content: '핏 좋아요' }], ['사이즈', '소재/두께']);
+  assert(Array.isArray(out) && out.length === 1);
+  const o = out[0];
+  assert.equal(o.reviewId, 'r1');
+  assert(Array.isArray(o.mentionedAspects), 'mentionedAspects 배열 보장');
+  assert(Array.isArray(o.improvementIssues), 'improvementIssues 배열 보장');
+  assert.equal(typeof o.needsReply, 'boolean');
+});
+
+await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const reviews = [
+    { id: '1', productName: '셔츠', rating: 5, content: '핏 좋아요 만족' },
+    { id: '2', productName: '셔츠', rating: 3, content: '색감은 예쁜데 화면보다 조금 어두워요' },
+    { id: '3', productName: '셔츠', rating: 1, content: '환불 원합니다 못 입겠어요' },
+  ];
+  const { summary } = await runAnalysis(reviews);
+  assert(summary.sentimentCounts.mixed >= 0, 'mixed 키 존재');
+  assert(typeof summary.sentimentRatios.mixed === 'number');
+});
+
+await step('reviewClassification — 실제 의류 리뷰 8케이스 (mentionedAspect vs improvementIssue)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const cases = [
+    { id: 'C1', content: '핏도 너무 예쁘고 재질도 엄청 좋았습니다', sentiment: 'positive', maxIssues: 0 },
+    { id: 'C2', content: '편하고 색감 좋습니다', sentiment: 'positive', maxIssues: 0 },
+    { id: 'C3', content: '배송 빠르고 좋아요 가성비 오집니다', sentiment: 'positive', maxIssues: 0 },
+    { id: 'C4', content: '100사이즈가 살짝 작긴하지만 이너로 입기에 딱입니다', acceptSentiments: ['positive', 'mixed'], minIssues: 1 },
+    { id: 'C5', content: '가격에 맞는 품질이에요 조금 따갑긴 하지만 한철 입을 용으로 적당', sentiment: 'mixed', minIssues: 1 },
+    { id: 'C6', content: '마감이 별로고 실밥이 많아요', sentiment: 'negative', minIssues: 1 },
+    { id: 'C7', content: '비침이 없어서 너무 좋았습니다', sentiment: 'positive', maxIssues: 0 },
+    { id: 'C8', content: '색감은 예쁜데 화면보다 조금 어두워요', sentiment: 'mixed', minIssues: 1 },
+  ];
+  for (const c of cases) {
+    const r = m.classifyReview({ id: c.id, productName: 'P', content: c.content });
+    if (c.sentiment) {
+      assert.equal(r.sentiment, c.sentiment, `${c.id} sentiment: 기대 ${c.sentiment}, 실제 ${r.sentiment}`);
+    } else if (c.acceptSentiments) {
+      assert(c.acceptSentiments.includes(r.sentiment),
+        `${c.id} sentiment: 기대 ${c.acceptSentiments.join('|')}, 실제 ${r.sentiment}`);
+    }
+    const issues = r.improvementIssues || [];
+    if (typeof c.minIssues === 'number') {
+      assert(issues.length >= c.minIssues, `${c.id} issues 부족: ${issues.length}`);
+    }
+    if (typeof c.maxIssues === 'number') {
+      assert(issues.length <= c.maxIssues,
+        `${c.id} issues 과다 (칭찬을 개선이슈로 잡음): ${issues.map((i) => i.issueLabel).join(' | ')}`);
+    }
+  }
+});
+
 await step('reviewClassification — 실제 의류 리뷰 10케이스 (mentionedAspect vs improvementIssue)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const cases = [

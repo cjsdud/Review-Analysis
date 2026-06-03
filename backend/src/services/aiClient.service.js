@@ -22,6 +22,19 @@ const API_KEY = KEYS[PROVIDER] || '';
 const MODEL = process.env.LLM_MODEL || process.env.AI_MODEL || DEFAULT_MODEL[PROVIDER] || '';
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 20000);
 
+// 요청 유형별 모델 — OPENAI_<ROLE>_MODEL env 우선, 없으면 LLM_MODEL fallback,
+// 그래도 없으면 provider 기본값. 관리자 로그에 requestType 별 model 이 정확히
+// 기록되도록 호출 시 명시적으로 골라 쓴다.
+const ROLE_MODELS = {
+  review:    process.env.OPENAI_REVIEW_MODEL    || MODEL,
+  summary:   process.env.OPENAI_SUMMARY_MODEL   || MODEL,
+  precision: process.env.OPENAI_PRECISION_MODEL || MODEL,
+  csReply:   process.env.OPENAI_CS_REPLY_MODEL  || MODEL,
+};
+export function modelForRole(role) {
+  return ROLE_MODELS[role] || MODEL || '';
+}
+
 // 실제 호출 가능한 provider + 키가 있으면 그 이름, 아니면 'mock'
 export const aiMode = SUPPORTED.includes(PROVIDER) && API_KEY ? PROVIDER : 'mock';
 
@@ -50,6 +63,7 @@ function resetLastUsage() {
 // "정말 OpenAI 가 호출됐는지" 를 정확하게 보여주기 위해.
 let lastCallStatus = 'idle';
 let lastCallError = null;
+let lastCallModel = null;
 let sessionStats = { realCalls: 0, fallbacks: 0, skipped: 0, lastError: null };
 function setCallStatus(status, error = null) {
   lastCallStatus = status;
@@ -101,11 +115,15 @@ async function fetchWithTimeout(url, options) {
 }
 
 // provider별 호출 → 모델이 생성한 텍스트(JSON 문자열) 반환. 실패 시 throw(상위에서 mock fallback).
-async function callLLM(prompt, { system = SYSTEM } = {}) {
+// model 은 ROLE_MODELS 에서 결정된 실제 호출 모델. 호출 직후 lastCallModel 에 저장되어
+// recordLlmUsage 가 정확한 모델명을 llm_usage_logs 에 남긴다.
+async function callLLM(prompt, { system = SYSTEM, model } = {}) {
   if (aiMode === 'mock' || authDisabled) throw new Error('MOCK_MODE');
-  if (aiMode === 'openai') return callOpenAI(prompt, system);
-  if (aiMode === 'gemini') return callGemini(prompt, system);
-  if (aiMode === 'claude') return callClaude(prompt, system);
+  const m = model || MODEL;
+  lastCallModel = m;
+  if (aiMode === 'openai') return callOpenAI(prompt, system, m);
+  if (aiMode === 'gemini') return callGemini(prompt, system, m);
+  if (aiMode === 'claude') return callClaude(prompt, system, m);
   throw new Error(`unsupported provider: ${aiMode}`);
 }
 
@@ -113,12 +131,12 @@ function flagAuth(status) {
   if (status === 401 || status === 403) authDisabled = true;
 }
 
-async function callOpenAI(prompt, system) {
+async function callOpenAI(prompt, system, model) {
   const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${API_KEY}` },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
@@ -136,8 +154,8 @@ async function callOpenAI(prompt, system) {
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-async function callGemini(prompt, system) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+async function callGemini(prompt, system, model) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -155,7 +173,7 @@ async function callGemini(prompt, system) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
-async function callClaude(prompt, system) {
+async function callClaude(prompt, system, model) {
   const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -164,7 +182,7 @@ async function callClaude(prompt, system) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: 1024,
       temperature: 0.3,
       system,
@@ -183,14 +201,15 @@ async function callClaude(prompt, system) {
 // 실제 호출 → 파싱 → 검증. 어떤 단계든 실패하면 null 반환(호출부가 mock 사용).
 // 호출 결과는 lastCallStatus / sessionStats 에 정확히 기록되어 관리자 로그가
 // "openaiCalled=true 인데 token=0" 처럼 거짓말하지 않도록 한다.
-async function tryLLM(prompt, pick) {
+async function tryLLM(prompt, pick, { role = 'review' } = {}) {
   if (aiMode === 'mock' || authDisabled) {
     setCallStatus('skipped');
     return null;
   }
   resetLastUsage();
+  const model = modelForRole(role);
   try {
-    const raw = await callLLM(prompt);
+    const raw = await callLLM(prompt, { model });
     const parsed = parseJsonSafe(raw, null);
     const result = pick(parsed);
     if (result == null) {
@@ -213,14 +232,70 @@ async function tryLLM(prompt, pick) {
 //    출력: [{ reviewId, categories:[{name, issue, confidence}] }]
 // ===================================================================
 export async function classifyAmbiguousReviews(reviews, categories) {
-  const llm = await tryLLM(buildClassifyPrompt(reviews, categories), (parsed) => {
-    const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : null;
-    if (!arr || !arr.length) return null;
-    return arr
-      .filter((x) => x && x.reviewId)
-      .map((x) => ({ reviewId: x.reviewId, categories: Array.isArray(x.categories) ? x.categories : [] }));
-  });
+  const llm = await tryLLM(
+    buildClassifyPrompt(reviews, categories),
+    (parsed) => {
+      const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : null;
+      if (!arr || !arr.length) return null;
+      return arr
+        .filter((x) => x && x.reviewId)
+        .map((x) => normalizeClassifyResult(x));
+    },
+    { role: 'precision' },
+  );
   return llm || mockClassify(reviews);
+}
+
+// LLM 응답 한 건 정규화 — 새 schema (sentiment / mentionedAspects /
+// improvementIssues / needsReply) 를 기본으로 받고, 구 schema (categories)
+// 도 호환 허용. 어떤 모양이 들어와도 다운스트림은 두 배열을 안정적으로 본다.
+function normalizeClassifyResult(x) {
+  const id = x.reviewId;
+  const sentiment = ['positive', 'neutral', 'negative', 'mixed'].includes(x.sentiment) ? x.sentiment : null;
+  const confidence = typeof x.confidence === 'number' ? x.confidence : null;
+  const mentionedAspects = Array.isArray(x.mentionedAspects)
+    ? x.mentionedAspects
+        .filter((a) => a && (a.category || a.categoryLabel))
+        .map((a) => ({
+          category: a.category || a.categoryLabel,
+          categoryLabel: a.categoryLabel || a.category,
+          sentiment: ['positive', 'neutral', 'negative', 'mixed'].includes(a.sentiment) ? a.sentiment : 'neutral',
+        }))
+    : [];
+  let improvementIssues = Array.isArray(x.improvementIssues)
+    ? x.improvementIssues
+        .filter((i) => i && (i.issueLabel || i.category))
+        .map((i) => ({
+          category: i.category || i.categoryLabel || '기타',
+          categoryLabel: i.categoryLabel || i.category || '기타',
+          issueLabel: i.issueLabel || `${i.category || ''} 관련 의견`,
+          severity: ['low', 'medium', 'high'].includes(i.severity) ? i.severity : 'medium',
+          evidence: (i.evidence || '').slice(0, 140),
+          confidence: typeof i.confidence === 'number' ? i.confidence : (confidence ?? 0.7),
+        }))
+    : [];
+  // 구 schema fallback — `categories: [{name, issue, confidence}]` 만 줬을 때
+  // improvementIssues 로 흡수. (mentionedAspects 로는 절대 넣지 않음)
+  if (improvementIssues.length === 0 && Array.isArray(x.categories)) {
+    improvementIssues = x.categories
+      .filter((c) => c && c.name)
+      .map((c) => ({
+        category: c.name,
+        categoryLabel: c.name,
+        issueLabel: c.issue || `${c.name} 관련 의견`,
+        severity: ['low', 'medium', 'high'].includes(c.severity) ? c.severity : 'medium',
+        evidence: '',
+        confidence: typeof c.confidence === 'number' ? c.confidence : 0.7,
+      }));
+  }
+  return {
+    reviewId: id,
+    sentiment,
+    confidence,
+    mentionedAspects,
+    improvementIssues,
+    needsReply: x.needsReply === true,
+  };
 }
 
 // ===================================================================
@@ -234,7 +309,7 @@ export async function generateIssueLabel(category, reviews) {
   const llm = await tryLLM(prompt, (parsed) => {
     const label = typeof parsed?.label === 'string' ? parsed.label.trim() : '';
     return label ? label.slice(0, 30) : null;
-  });
+  }, { role: 'summary' });
   return llm || `${category} 관련 의견`;
 }
 
@@ -253,7 +328,7 @@ export async function generateProductImprovementReport(productSummary) {
       ? parsed.detailPageActions.filter((a) => typeof a === 'string' && a.trim())
       : fallback.detailPageActions;
     return { detailPageActions: detailPageActions.length ? detailPageActions : fallback.detailPageActions, summary };
-  });
+  }, { role: 'summary' });
   return llm || fallback;
 }
 
@@ -285,7 +360,7 @@ export async function generateReplyTemplates(issueSummary) {
         template: t.template.trim(),
       }));
     return out.length ? out : null;
-  });
+  }, { role: 'csReply' });
   return llm || ruleBased;
 }
 
@@ -305,7 +380,7 @@ export async function generateMonthlyReport(overallSummary) {
   const llm = await tryLLM(prompt, (parsed) => {
     const summary = typeof parsed?.summary === 'string' && parsed.summary.trim() ? parsed.summary.trim() : null;
     return summary ? { summary } : null;
-  });
+  }, { role: 'summary' });
   return llm || mockMonthly(overallSummary);
 }
 
@@ -313,9 +388,14 @@ export async function generateMonthlyReport(overallSummary) {
 // Mock 헬퍼 (실제 응답과 동일한 형태 유지)
 // ===================================================================
 function mockClassify(reviews) {
-  return reviews.map((r) => ({
+  // 새 schema 와 동일한 모양으로 — 룰 기반 결과와 호환되도록 빈 양쪽 배열.
+  return reviews.map((r) => normalizeClassifyResult({
     reviewId: r.id,
-    categories: [{ name: '기타', issue: null, confidence: 0.4 }],
+    sentiment: null,
+    confidence: 0.4,
+    mentionedAspects: [],
+    improvementIssues: [],
+    needsReply: false,
   }));
 }
 
@@ -357,13 +437,36 @@ function mockProductReport(productSummary) {
 // (mockReplyTemplates / REPLY_PROMISE 는 replyTemplates.service.js 로 이동)
 
 // ---------- 프롬프트 빌더 ----------
+// 새 schema — mentionedAspects(언급) vs improvementIssues(실제 개선 신호) 를
+// 명시적으로 분리해서 받는다. 칭찬 맥락이 improvementIssues 로 새는 것을 막기
+// 위해 LLM 지시를 강하게 둔다 (스펙 PART 3 의 원칙 그대로).
 function buildClassifyPrompt(reviews, categories) {
   return [
-    '너는 패션 리뷰 분류기다. 아래 카테고리 중에서만 라벨링한다.',
-    `카테고리: ${categories.join(', ')}`,
-    '각 리뷰는 여러 카테고리에 속할 수 있다(multi-label). 불만이 없으면 categories를 빈 배열로 둔다.',
-    '반드시 아래 JSON 객체만 출력한다.',
-    '{"results":[{"reviewId":"...","categories":[{"name":"사이즈","issue":"허리가 작음","confidence":0.8}]}]}',
+    '너는 패션 리뷰 분석기다. 한국 의류 리뷰에서 "언급된 항목" 과 "실제 개선이 필요한 문제" 를 구분한다.',
+    `카테고리(name 후보): ${categories.join(', ')}`,
+    '',
+    '아래 원칙을 반드시 지킨다:',
+    '1) 상품 속성이 언급되었다고 해서 improvementIssues 에 넣지 마라.',
+    '2) 칭찬 맥락이면 mentionedAspects 에만 넣어라.',
+    '3) improvementIssues 는 실제 불만/아쉬움/불편/결함/기대와의 차이가 있을 때만.',
+    '4) "핏이 예뻐요" / "색감 좋아요" / "재질 좋아요" / "배송 빨라요" / "가성비 좋아요" 는 improvementIssues 가 아니다.',
+    '5) 긍정 리뷰 안에서도 낮은 severity 의 개선 이슈는 가능하다.',
+    '6) improvementIssues 가 있다고 무조건 sentiment=negative 로 분류하지 마라.',
+    '7) severity 는 low / medium / high 셋 중 하나.',
+    '8) sentiment 는 positive / neutral / negative / mixed 중 하나.',
+    '',
+    '반드시 아래 JSON 객체만 출력한다 (다른 텍스트 금지):',
+    JSON.stringify({
+      results: [{
+        reviewId: 'string',
+        sentiment: 'positive|neutral|negative|mixed',
+        confidence: 0.0,
+        mentionedAspects: [{ category: 'string', categoryLabel: 'string', sentiment: 'positive|neutral|negative|mixed' }],
+        improvementIssues: [{ category: 'string', categoryLabel: 'string', issueLabel: 'string', severity: 'low|medium|high', evidence: 'string', confidence: 0.0 }],
+        needsReply: false,
+      }],
+    }),
+    '',
     '리뷰:',
     JSON.stringify(reviews),
   ].join('\n');
@@ -398,8 +501,10 @@ export default {
   generateReplyTemplates,
   generateMonthlyReport,
   resetSessionStats,
+  modelForRole,
   get lastUsage()      { return lastUsage; },
   get lastCallStatus() { return lastCallStatus; },
   get lastCallError()  { return lastCallError; },
+  get lastCallModel()  { return lastCallModel; },
   get sessionStats()   { return sessionStats; },
 };

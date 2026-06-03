@@ -67,13 +67,16 @@ function deriveProductInsight({ positiveRatio, negativeRatio, issueRatio }) {
 // 비율은 소수 3자리로 통일.
 const ratio3 = (a, b) => (b ? Number((a / b).toFixed(3)) : 0);
 
-// 리뷰 → 감성 카운트 집계
+// 리뷰 → 감성 카운트 집계. mixed 도 자체 버킷으로 — 기존 positive/neutral/negative
+// 합산 비율 계산이 깨지지 않도록 ratios 도 4 키 모두 채운다. 프론트가 mixed 모르는
+// 화면에서는 (positive+neutral+negative) 만 합쳐도 100% 가까이 나옴 (mixed 가 적을 때).
 function aggregateSentiment(classifications) {
-  const counts = { positive: 0, neutral: 0, negative: 0 };
+  const counts = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
   for (const c of classifications) {
     const s = c.sentiment || 'neutral';
     if (s === 'positive') counts.positive++;
     else if (s === 'negative') counts.negative++;
+    else if (s === 'mixed') counts.mixed++;
     else counts.neutral++;
   }
   const total = classifications.length;
@@ -81,6 +84,7 @@ function aggregateSentiment(classifications) {
     positive: ratio3(counts.positive, total),
     neutral: ratio3(counts.neutral, total),
     negative: ratio3(counts.negative, total),
+    mixed: ratio3(counts.mixed, total),
   };
   return { counts, ratios };
 }
@@ -195,8 +199,11 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
     }
     stats.miniReanalysisCount = reanalyze.length;
     stats.errorMessage = callError;
+    // 실제 호출 시 aiClient 가 ROLE='precision' 기반으로 모델을 골라 썼다.
+    // env 가 override 했다면 그 모델이 lastCallModel 에 있다 — 그걸 우선 기록.
+    const actualModel = aiClient.lastCallModel || model;
     recordLlmUsage({
-      userId, analysisId, provider, model,
+      userId, analysisId, provider, model: actualModel,
       promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
       requestType: reqType, usage, status: 'ok',
       openaiCalled: stats.openaiCalled,
@@ -209,25 +216,43 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
     const byId = new Map((llmResults || []).map((r) => [r.reviewId, r]));
     for (const t of reanalyze) {
       const r = byId.get(t.classification.reviewId);
-      if (!r || !Array.isArray(r.categories) || r.categories.length === 0) continue;
-      const newCategories = r.categories
-        .filter((cat) => cat && cat.name)
-        .map((cat) => ({
-          name: FASHION_CATEGORIES.includes(cat.name) ? cat.name : '기타',
-          issue: cat.issue || null,
-          confidence: typeof cat.confidence === 'number' ? cat.confidence : 0.7,
-          evidence: t.content.slice(0, 140),
-          source: 'llm-mini',
-          strength: 3,
-          issuePolarity: cat.issuePolarity || 'negative',
-          isActionableIssue: cat.isActionableIssue !== false,
-          severity: cat.severity || 'medium',
-        }));
-      const split = splitAspectAndIssue(newCategories);
+      if (!r) continue;
+      // 새 schema (mentionedAspects / improvementIssues 분리) 우선. 둘 다 비어 있고
+      // sentiment 도 없으면 mini 결과 의미 없음 — 기존 nano 결과 유지.
+      const aspects = Array.isArray(r.mentionedAspects) ? r.mentionedAspects : [];
+      const issues = Array.isArray(r.improvementIssues) ? r.improvementIssues : [];
+      if (!r.sentiment && aspects.length === 0 && issues.length === 0) continue;
+
+      // improvementIssues → 기존 categories[] 호환 형태로 복원.
+      // mentionedAspects 는 categories 에 절대 넣지 않는다 (반복 이슈 차트 오염 방지).
+      const newCategories = issues.map((iss) => ({
+        name: FASHION_CATEGORIES.includes(iss.category) ? iss.category : (iss.category || '기타'),
+        issue: iss.issueLabel || null,
+        confidence: typeof iss.confidence === 'number' ? iss.confidence : (r.confidence ?? 0.7),
+        evidence: (iss.evidence || t.content).slice(0, 140),
+        source: 'llm-mini',
+        strength: 3,
+        issuePolarity: 'negative',
+        isActionableIssue: true,
+        severity: ['low', 'medium', 'high'].includes(iss.severity) ? iss.severity : 'medium',
+      }));
       const merged = {
+        sentiment: r.sentiment || null,
+        confidence: typeof r.confidence === 'number' ? r.confidence : null,
         categories: newCategories,
-        mentionedAspects: split.mentionedAspects,
-        improvementIssues: split.improvementIssues,
+        mentionedAspects: aspects.map((a) => ({
+          category: a.category,
+          categoryLabel: a.categoryLabel || a.category,
+          sentiment: a.sentiment || 'neutral',
+        })),
+        improvementIssues: issues.map((iss) => ({
+          category: iss.category,
+          categoryLabel: iss.categoryLabel || iss.category,
+          issueLabel: iss.issueLabel,
+          severity: iss.severity || 'medium',
+          evidence: iss.evidence || '',
+        })),
+        needsReply: r.needsReply === true,
       };
       mergeMiniResult(t.classification, merged);
       saveReviewAnalysisCache({
@@ -250,12 +275,21 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
   return stats;
 }
 
-// mini 결과 → 기존 classification 에 덮어쓰기. 빈 결과면 유지.
+// mini 결과 → 기존 classification 에 덮어쓰기. 둘 다 비어 있으면 유지.
+// sentiment / confidence 가 들어오면 함께 갱신 — mini 모델의 재판단을 반영.
 function mergeMiniResult(classification, merged) {
-  if (!merged || !Array.isArray(merged.categories) || merged.categories.length === 0) return;
-  classification.categories = merged.categories;
+  if (!merged) return;
+  const hasAspects = Array.isArray(merged.mentionedAspects) && merged.mentionedAspects.length > 0;
+  const hasIssues = Array.isArray(merged.improvementIssues) && merged.improvementIssues.length > 0;
+  // sentiment 도 categories 도 아무 의미 있는 값이 없으면 그대로 유지.
+  if (!merged.sentiment && !hasAspects && !hasIssues) return;
+  if (merged.sentiment) classification.sentiment = merged.sentiment;
+  if (typeof merged.confidence === 'number') classification.confidence = merged.confidence;
+  // categories 는 improvementIssues 기준만 — mentionedAspects 가 차트로 새는 것 방지.
+  classification.categories = Array.isArray(merged.categories) ? merged.categories : [];
   classification.mentionedAspects = merged.mentionedAspects || [];
   classification.improvementIssues = merged.improvementIssues || [];
+  classification.needsReply = merged.needsReply === true;
   classification.ambiguous = false;
 }
 
