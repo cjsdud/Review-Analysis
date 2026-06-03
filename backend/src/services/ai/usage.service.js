@@ -4,31 +4,76 @@
 import db from '../../db/database.js';
 
 // 모델별 1k token 단가 (USD). 실제 운영 단가에 맞춰 env 로 덮을 수 있게.
-// OpenAI 의 nano/mini 모델은 향후 발표 시점에 맞춰 갱신 필요.
+// OpenAI 공식 가격 페이지 (https://openai.com/pricing) 기준으로 주기적 갱신 필요.
+// suffix 가 붙은 풀 모델명(gpt-4o-mini-2024-07-18 등) 도 normalizeModelName 으로 흡수.
+const DEFAULT_PRICES = {
+  'gpt-4o-mini':  { input: 0.00015, output: 0.0006 },   // $0.15/$0.60 per 1M
+  'gpt-4o':       { input: 0.0025,  output: 0.01 },     // $2.50/$10.00 per 1M
+  'gpt-4.1-nano': { input: 0.0001,  output: 0.0004 },
+  'gpt-4.1-mini': { input: 0.0004,  output: 0.0016 },
+  'gpt-4.1':      { input: 0.002,   output: 0.008 },
+  // 과거 코드에서 placeholder 로 사용했던 'gpt-5.4-*' 도 0 처리 안 되도록 보존.
+  // 실제 호출이 되면 OpenAI 측에서 404 가 나서 fallback 으로 빠지지만, 만약 env override 로
+  // 진짜 새 모델로 매핑된 경우엔 가격값을 env 로 다시 덮으면 된다.
+  'gpt-5.4-nano': { input: 0.00005, output: 0.0002 },
+  'gpt-5.4-mini': { input: 0.00015, output: 0.0006 },
+  'gpt-5.4':      { input: 0.0025,  output: 0.01 },
+};
+
+// suffix 가 붙은 OpenAI 모델명을 base 모델명으로 정규화.
+// 예: 'gpt-4o-mini-2024-07-18' → 'gpt-4o-mini', 'GPT-4o' → 'gpt-4o'.
+export function normalizeModelName(model) {
+  const raw = String(model || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (DEFAULT_PRICES[raw]) return raw;
+  // 가장 긴 prefix 부터 매칭 — 'gpt-4o-mini' 가 'gpt-4o' 보다 우선.
+  const ordered = Object.keys(DEFAULT_PRICES).sort((a, b) => b.length - a.length);
+  for (const base of ordered) {
+    if (raw.startsWith(base)) return base;
+  }
+  return raw;
+}
+
 function modelPrice(model) {
   if (!model) return null;
-  const key = `LLM_PRICE_${String(model).toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+  const normalized = normalizeModelName(model);
+  const key = `LLM_PRICE_${normalized.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
   const envInput = Number(process.env[`${key}_INPUT_PER_1K`]);
   const envOutput = Number(process.env[`${key}_OUTPUT_PER_1K`]);
   if (Number.isFinite(envInput) && Number.isFinite(envOutput)) {
     return { input: envInput, output: envOutput };
   }
-  // 기본 추정 단가 (1k token 당 USD). env 로 덮지 않은 모델은 여기서 잡힌다.
-  // 모르는 모델은 null → 비용 계산 스킵 (token 수만 기록).
-  const defaults = {
-    'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-    'gpt-4o':      { input: 0.0025,  output: 0.01 },
-    'gpt-4.1-nano': { input: 0.0001, output: 0.0004 },
-    'gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
-    'gpt-4.1':      { input: 0.002,  output: 0.008 },
-  };
-  return defaults[model] || null;
+  return DEFAULT_PRICES[normalized] || null;
+}
+
+// 알 수 없는 모델은 console.warn 한 번만 — 같은 모델이 매번 찍히지 않게 dedupe.
+const _missingPricingWarned = new Set();
+function warnMissingPricing(model) {
+  if (!model || _missingPricingWarned.has(model)) return;
+  _missingPricingWarned.add(model);
+  console.warn(`[llm-cost] missing pricing for model="${model}" — estimated_cost_usd will be 0. Add it to DEFAULT_PRICES or set LLM_PRICE_<MODEL>_*_PER_1K env.`);
 }
 
 function estimateCostUsd({ model, inputTokens, outputTokens }) {
   const p = modelPrice(model);
-  if (!p) return null;
-  return Number((inputTokens / 1000 * p.input + outputTokens / 1000 * p.output).toFixed(6));
+  if (!p) {
+    warnMissingPricing(model);
+    // null 이 아니라 0 을 반환 — SQL SUM 이 NULL row 를 만들지 않고 일관 합계.
+    return 0;
+  }
+  return Number((inputTokens / 1000 * p.input + outputTokens / 1000 * p.output).toFixed(8));
+}
+
+// OpenAI/Gemini/Claude 응답의 usage 구조를 방어적으로 흡수.
+// totalTokens 만 있고 input/output 이 0 이면 토큰이 합쳐진 형태 — input 으로 추정해 비용 0 방지.
+export function normalizeUsage(usage = {}) {
+  const u = usage || {};
+  let input = Number(u.inputTokens ?? u.input_tokens ?? u.prompt_tokens ?? u.promptTokenCount ?? 0) || 0;
+  let output = Number(u.outputTokens ?? u.output_tokens ?? u.completion_tokens ?? u.candidatesTokenCount ?? 0) || 0;
+  let total = Number(u.totalTokens ?? u.total_tokens ?? u.totalTokenCount ?? 0) || 0;
+  if (total > 0 && input === 0 && output === 0) input = total; // 분리 정보 없으면 보수적으로 input 으로
+  if (total === 0 && (input > 0 || output > 0)) total = input + output;
+  return { inputTokens: input, outputTokens: output, totalTokens: total };
 }
 
 // 호출 1건 기록.
@@ -59,9 +104,12 @@ export function recordLlmUsage({
   fallbackProvider = null,
 } = {}) {
   if (!provider || !requestType) return null;
-  const input = Number(usage.inputTokens) || 0;
-  const output = Number(usage.outputTokens) || 0;
-  const total = Number(usage.totalTokens) || input + output;
+  // 다양한 provider 응답 schema 흡수 — prompt_tokens / promptTokenCount 등도 인식.
+  const norm = normalizeUsage(usage);
+  const input = norm.inputTokens;
+  const output = norm.outputTokens;
+  const total = norm.totalTokens;
+  // 모델명은 호출 직전 lastCallModel 기준이 정상 — null 이면 cost 0 + warning.
   const cost = estimateCostUsd({ model, inputTokens: input, outputTokens: output });
   try {
     const r = db.prepare(
@@ -137,11 +185,14 @@ export function getLlmUsageSummary() {
             SUM(fallback_used) AS fallbacks
      FROM llm_usage_logs WHERE created_at >= date('now', 'start of month')`,
   ).get();
+  // 명시적 Number 변환 — better-sqlite3 가 numeric 합계를 그대로 number 로 주지만,
+  // null 도 가능하므로 fallback 0. toFixed 호출 없이 원본 float 유지 (6 자리에서
+  // 끊으면 매우 작은 비용이 0 으로 떨어진다).
   return {
     todayTotalTokens: Number(today?.tokens || 0),
-    todayEstimatedCostUsd: Number((today?.cost || 0).toFixed?.(6) || 0),
+    todayEstimatedCostUsd: Number(today?.cost ?? 0),
     monthTotalTokens: Number(month?.tokens || 0),
-    monthEstimatedCostUsd: Number((month?.cost || 0).toFixed?.(6) || 0),
+    monthEstimatedCostUsd: Number(month?.cost ?? 0),
     openaiCallCount: Number(counts?.openai || 0),
     cacheHitCount: Number(counts?.cache_hits || 0),
     fallbackCount: Number(counts?.fallbacks || 0),

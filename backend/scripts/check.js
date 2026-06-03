@@ -496,6 +496,60 @@ await step('aiClient — lastUsage 가 provider 응답에서 token 추출 (OpenA
   assert.equal(fromMissing, 0);
 });
 
+await step('ai/usage — estimateCostUsd: gpt-4o-mini / 4505 input → 0 보다 큰 비용', async () => {
+  const u = await import('../src/services/ai/usage.service.js');
+  // 비공개 모듈 함수라 record → SUM 으로 간접 검증.
+  const db = (await import('../src/db/database.js')).default;
+  db.prepare('DELETE FROM llm_usage_logs WHERE provider = ?').run('test_cost');
+  u.recordLlmUsage({
+    provider: 'test_cost', model: 'gpt-4o-mini', requestType: 'review_reanalysis',
+    usage: { inputTokens: 4505, outputTokens: 0 },
+  });
+  const row = db.prepare(`SELECT estimated_cost_usd FROM llm_usage_logs WHERE provider = ?`).get('test_cost');
+  assert(row.estimated_cost_usd > 0, `cost=0 (4505 input × gpt-4o-mini 면 0 초과여야): ${row.estimated_cost_usd}`);
+  // gpt-4o-mini: $0.15 per 1M input → 4505 * 0.15 / 1_000_000 = 0.000675
+  assert(row.estimated_cost_usd > 0.0006 && row.estimated_cost_usd < 0.0008,
+    `예상 ~0.000675 인데 실제 ${row.estimated_cost_usd}`);
+});
+
+await step('ai/usage — normalizeModelName: suffix 가 붙은 모델명도 base 로 흡수', async () => {
+  const u = await import('../src/services/ai/usage.service.js');
+  assert.equal(u.normalizeModelName('gpt-4o-mini-2024-07-18'), 'gpt-4o-mini');
+  assert.equal(u.normalizeModelName('GPT-4o'), 'gpt-4o');
+  assert.equal(u.normalizeModelName('gpt-4o'), 'gpt-4o');
+  // gpt-4o-mini-* 가 gpt-4o 보다 우선 매칭 (긴 prefix 우선)
+  assert.equal(u.normalizeModelName('gpt-4o-mini-latest'), 'gpt-4o-mini');
+});
+
+await step('ai/usage — normalizeUsage: total 만 있고 input/output 0 이면 input 으로 추정', async () => {
+  const u = await import('../src/services/ai/usage.service.js');
+  const n = u.normalizeUsage({ total_tokens: 4505 });
+  assert.equal(n.totalTokens, 4505);
+  assert(n.inputTokens > 0, '총 토큰만 있을 때 input>0 로 추정');
+  // Gemini schema
+  const g = u.normalizeUsage({ promptTokenCount: 100, candidatesTokenCount: 50, totalTokenCount: 150 });
+  assert.equal(g.inputTokens, 100);
+  assert.equal(g.outputTokens, 50);
+  assert.equal(g.totalTokens, 150);
+});
+
+await step('analysisJob — updateProgress 가 절대 감소하지 않음 + completed 후엔 무시', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const id = 'prog_mono_' + Date.now();
+  m.createPendingJob({ analysisId: id, uploadId: 'u1', userId: null, totalReviews: 10, isSample: false });
+  m.markProcessing(id);
+  m.updateProgress(id, 30);
+  assert.equal(m.getJobStatus(id).progress, 30);
+  m.updateProgress(id, 50);
+  assert.equal(m.getJobStatus(id).progress, 50);
+  // 더 작은 값 — 무시
+  m.updateProgress(id, 20);
+  assert.equal(m.getJobStatus(id).progress, 50, '감소 시도 무시');
+  m.markCompleted(id, JSON.stringify({}));
+  m.updateProgress(id, 90);
+  assert.equal(m.getJobStatus(id).progress, 100, 'completed 후엔 변경 무시');
+});
+
 await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', async () => {
   const usage = await import('../src/services/ai/usage.service.js');
   // 분석 단위 요약 행 1개 + OpenAI 호출 1개 + mock fallback 1개 기록

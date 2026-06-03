@@ -42,7 +42,13 @@ function formatNumber(n) {
 
 function formatCost(n) {
   if (n == null) return '—';
-  return `$${Number(n).toFixed(4)}`;
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '—';
+  if (num <= 0) return '$0.0000';
+  // 매우 작은 비용($0.0000 으로 반올림되는 값) 은 명시적으로 표시 — "기록은 됐는데
+  // 0 처럼 보임" 오해 방지.
+  if (num < 0.0001) return '< $0.0001';
+  return `$${num.toFixed(4)}`;
 }
 
 function formatDate(s) {

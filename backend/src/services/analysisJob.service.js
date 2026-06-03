@@ -71,8 +71,14 @@ export function markFailed(analysisId, errorMessage) {
 }
 
 // 단계형 progress 업데이트 — runAnalysis 가 내부적으로 호출할 콜백.
+// 절대 감소하지 않음 (DB 현재 값보다 작으면 무시) — 단계 콜백 + 외부 markProcessing
+// 호출이 섞여도 progress 가 뒤로 가는 것처럼 보이지 않게.
 export function updateProgress(analysisId, progress) {
   const p = Math.max(0, Math.min(100, Math.round(progress)));
+  const row = db.prepare('SELECT progress, status FROM analysis_jobs WHERE id = ?').get(analysisId);
+  if (!row) return;
+  if (row.status === STATUS.COMPLETED || row.status === STATUS.FAILED) return;
+  if ((row.progress ?? 0) >= p) return;
   setStatus(analysisId, { progress: p });
 }
 
@@ -91,12 +97,22 @@ export async function runAnalysisJob({
 }) {
   try {
     markProcessing(analysisId);
-    updateProgress(analysisId, 20);
-
+    // runAnalysis 가 자체 단계별 progress (10/25/45/55/60/60~85/92) 를 onProgress 로
+    // 보내므로 여기서는 시작점만 찍고 따로 20% 를 강제하지 않는다.
     const { summary, products, classifications } = await runAnalysis(
       reviews,
       corrections,
-      { planCode, userId, analysisId, analysisMode },
+      {
+        planCode, userId, analysisId, analysisMode,
+        // runAnalysis 내부 단계 — 25%(분류 시작) → 45% (분류 완료) → 55% (mini)
+        // → 60% (clusters) → 60~85% (상품 루프) → 92% (요약 끝).
+        // 여기서 80% 까지만 허용해 후속 DB 저장 후 markCompleted(100%) 가 자연스럽게 잇도록.
+        onProgress: async ({ progress }) => {
+          // 80% 상한 — 그 뒤 DB 저장이 남아 있으므로 markCompleted 가 100% 로 마감.
+          const capped = Math.min(80, progress);
+          updateProgress(analysisId, capped);
+        },
+      },
     );
     // 과거 사용자 분류 수정 이력 반영 — user_corrections 테이블 참조.
     applyHistoricalCorrectionsLocal(products);

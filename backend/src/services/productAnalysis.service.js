@@ -327,6 +327,19 @@ function mergeMiniResult(classification, merged) {
 export async function runAnalysis(reviews, corrections = [], opts = {}) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
+  // progress reporter — 단계별로 호출자(runAnalysisJob) 에 비율(0~99)을 전달.
+  // 같은 값 / 더 작은 값은 무시 → 절대 감소하지 않음. 호출 실패는 silently skip.
+  let lastProgress = 5;
+  async function reportProgress(p, step) {
+    const safe = Math.max(lastProgress, Math.min(99, Math.round(p)));
+    if (safe === lastProgress) return;
+    lastProgress = safe;
+    if (typeof opts.onProgress === 'function') {
+      try { await opts.onProgress({ progress: safe, step }); } catch { /* ignore */ }
+    }
+  }
+  await reportProgress(10, 'preprocessing');
+
   // 분석 방식 결정 — opts.analysisMode 가 없으면 플랜 기본값. plan 정책 + mode →
   // effectivePolicy 로 합쳐 이번 분석에서 어떤 LLM 단계가 실제로 켜질지 정한다.
   const planCode = opts.planCode || 'free';
@@ -343,7 +356,9 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   // generateMonthlyReport 까지 누적된다.
   if (typeof aiClient.resetSessionStats === 'function') aiClient.resetSessionStats();
 
+  await reportProgress(25, 'classification_started');
   const classifications = await classifyAll(reviews, aiClient, { ratingReliable });
+  await reportProgress(45, 'classification_done');
 
   if (corrections && corrections.length) {
     applyReviewCorrections(reviews, classifications, corrections);
@@ -382,10 +397,15 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   );
   console.info('[ReviewFit AI] miniReanalysisCount=' + reanalyzeStats.miniReanalysisCount);
 
+  await reportProgress(55, 'mini_reanalysis_done');
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
+  await reportProgress(60, 'clusters_built');
 
   const productNames = [...new Set(reviews.map((r) => r.productName))];
   const products = [];
+  // 상품 루프 — 매 5상품마다 또는 마지막에 진행률 업데이트. 60% → 85% 구간.
+  let productIdx = 0;
+  const productCount = productNames.length || 1;
 
   for (const productName of productNames) {
     const productReviews = reviews.filter((r) => r.productName === productName);
@@ -526,7 +546,13 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       reviewHighlights,
       ratingReliable,
     });
+    productIdx++;
+    // 상품 루프 진행률 — 5 상품마다 또는 마지막에 보고. 60% + 0~25% × ratio.
+    if (productIdx % 5 === 0 || productIdx === productCount) {
+      await reportProgress(60 + (productIdx / productCount) * 25, 'product_summaries');
+    }
   }
+  await reportProgress(85, 'overall_summary_started');
 
   // 7) 전체 요약 + 카테고리 분포
   const totalReviews = reviews.length;
@@ -585,6 +611,7 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
         { requestType: 'report_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
       )
     : { summary: '리뷰 반응 기본 흐름을 정리했어요. 더 자세한 요약은 기본 분석 이상에서 제공됩니다.' };
+  await reportProgress(92, 'finalizing');
 
   // 전체 키워드 TOP 10 — 모든 리뷰 기준으로 한 번 더 추출 (상품별과 별도 집계라 합산이 아닌 전역 매칭)
   const positiveKeywordsTop10All = extractPositiveKeywords(reviews, classifications);
