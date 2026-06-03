@@ -22,12 +22,15 @@ const STATUS = Object.freeze({
   LEGACY_ERROR: 'error',
 });
 
-export function createPendingJob({ analysisId, uploadId, userId, totalReviews, isSample }) {
+export function createPendingJob({ analysisId, uploadId, userId, totalReviews, isSample, analysisMode = null }) {
   db.prepare(
     `INSERT INTO analysis_jobs
-       (id, upload_id, status, summary, user_id, is_sample, progress, total_reviews)
-     VALUES (?, ?, 'pending', ?, ?, ?, 0, ?)`,
-  ).run(analysisId, uploadId, JSON.stringify({}), userId || null, isSample ? 1 : 0, totalReviews);
+       (id, upload_id, status, summary, user_id, is_sample, progress, total_reviews, analysis_mode)
+     VALUES (?, ?, 'pending', ?, ?, ?, 0, ?, ?)`,
+  ).run(
+    analysisId, uploadId, JSON.stringify({}),
+    userId || null, isSample ? 1 : 0, totalReviews, analysisMode,
+  );
 }
 
 function setStatus(analysisId, fields) {
@@ -84,6 +87,7 @@ export async function runAnalysisJob({
   corrections,
   planCode,
   isSample,
+  analysisMode = null,
 }) {
   try {
     markProcessing(analysisId);
@@ -92,7 +96,7 @@ export async function runAnalysisJob({
     const { summary, products, classifications } = await runAnalysis(
       reviews,
       corrections,
-      { planCode, userId, analysisId },
+      { planCode, userId, analysisId, analysisMode },
     );
     // 과거 사용자 분류 수정 이력 반영 — user_corrections 테이블 참조.
     applyHistoricalCorrectionsLocal(products);
@@ -132,7 +136,7 @@ export async function runAnalysisJob({
 export function getJobStatus(analysisId) {
   const row = db.prepare(
     `SELECT id, status, progress, total_reviews, error_message,
-            created_at, started_at, completed_at, failed_at, user_id
+            created_at, started_at, completed_at, failed_at, user_id, analysis_mode
      FROM analysis_jobs WHERE id = ?`,
   ).get(analysisId);
   if (!row) return null;
@@ -151,6 +155,7 @@ export function getJobStatus(analysisId) {
     completedAt: row.completed_at,
     failedAt: row.failed_at,
     userId: row.user_id,
+    analysisMode: row.analysis_mode || null,
   };
 }
 

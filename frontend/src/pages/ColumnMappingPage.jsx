@@ -8,6 +8,9 @@ import SectionCard from '../components/SectionCard.jsx';
 import SheetSelector from '../components/SheetSelector.jsx';
 import { getUpload, saveMapping, reparseUpload } from '../api/uploadApi.js';
 import { runAnalysis } from '../api/analysisApi.js';
+import AnalysisModeSelector from '../components/AnalysisModeSelector.jsx';
+import { defaultAnalysisModeFor } from '../constants/analysisModes.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const SOURCE_LABELS = {
   smartstore: '스마트스토어',
@@ -27,6 +30,10 @@ export default function ColumnMappingPage() {
   const [error, setError] = useState('');
   const [saveTemplate, setSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  // 분석 방식 선택 — 사용자 플랜 기본값으로 초기화. AuthContext 의 subscription.planCode 사용.
+  const { subscription } = useAuth();
+  const userPlan = subscription?.planCode || 'free';
+  const [analysisMode, setAnalysisMode] = useState(() => defaultAnalysisModeFor(userPlan));
 
   function applyUpload(data) {
     setUpload(data);
@@ -97,7 +104,7 @@ export default function ColumnMappingPage() {
       await saveMapping(uploadId, mapping, { saveAsTemplate: saveTemplate, templateName });
       // 분석은 백그라운드로 시작됨 — 응답에는 analysisId 만 들어 있고 상태는 processing.
       // 대시보드 대신 히스토리로 보내서 사용자가 진행률을 보고 완료 후 리포트로 이동하게 함.
-      const res = await runAnalysis(uploadId);
+      const res = await runAnalysis(uploadId, { analysisMode });
       navigate(`/history?highlight=${encodeURIComponent(res.analysisId)}`);
     } catch (e) {
       setError(e.message);
@@ -186,6 +193,13 @@ export default function ColumnMappingPage() {
             onChange={handleChange}
           />
         )}
+
+        <AnalysisModeSelector
+          value={analysisMode}
+          onChange={setAnalysisMode}
+          userPlan={userPlan}
+          totalReviews={upload.rowCount || 0}
+        />
 
         <div className="mapping-footer">
           <label className="mapping-footer__save">

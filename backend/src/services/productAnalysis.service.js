@@ -16,6 +16,11 @@ import {
 } from './ai/index.js';
 import { getCachedReviewAnalysis, saveReviewAnalysisCache } from './ai/cache.service.js';
 import { recordLlmUsage } from './ai/usage.service.js';
+import {
+  computeEffectivePolicy,
+  defaultAnalysisModeFor,
+  getAnalysisMode,
+} from '../constants/analysisModes.js';
 import { buildIssueClusters } from './issueDetection.service.js';
 import aiClient from './aiClient.service.js';
 import {
@@ -322,6 +327,13 @@ function mergeMiniResult(classification, merged) {
 export async function runAnalysis(reviews, corrections = [], opts = {}) {
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
+  // 분석 방식 결정 — opts.analysisMode 가 없으면 플랜 기본값. plan 정책 + mode →
+  // effectivePolicy 로 합쳐 이번 분석에서 어떤 LLM 단계가 실제로 켜질지 정한다.
+  const planCode = opts.planCode || 'free';
+  const analysisMode = opts.analysisMode || defaultAnalysisModeFor(planCode);
+  const planPolicy = selectLlmMode(planCode);
+  const effectivePolicy = computeEffectivePolicy(planPolicy, analysisMode);
+
   // 배치 단위 rating 신뢰도 — 한 점수에 몰리거나 텍스트와 충돌하면 false 가 되어
   // 이후 감성 판정에서 rating 보조 신호가 꺼진다.
   const ratingReliable = isRatingReliable(reviews);
@@ -341,19 +353,22 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   //   - Free/Starter: policy.allowMiniReanalysis=false → 단계 자체 skip
   //   - Pro/Business: shouldReanalyze=true 인 항목 + maxMiniReanalysisRatio 이내만 호출
   // 캐시 hit 이면 LLM 호출 없이 result 사용, miss 면 호출 + 캐시 저장 + token usage 로깅.
-  const reanalyzeStats = await maybeMiniReanalyze({
-    classifications,
-    reviewMap,
-    planCode: opts.planCode || 'free',
-    userId: opts.userId || null,
-    analysisId: opts.analysisId || null,
-  });
+  // mini 재분석은 effectivePolicy.allowMiniReanalysis 가 true 일 때만. plan policy
+  // 가 허용해도 사용자가 quick/standard/batch 를 골랐으면 false 가 되어 OFF.
+  const reanalyzeStats = effectivePolicy.allowMiniReanalysis
+    ? await maybeMiniReanalyze({
+        classifications,
+        reviewMap,
+        planCode,
+        userId: opts.userId || null,
+        analysisId: opts.analysisId || null,
+      })
+    : { cacheHitCount: 0, cacheMissCount: 0, miniReanalysisCount: 0, openaiCalled: false, fallbackUsed: false, fallbackProvider: null, model: null };
 
-  // 운영 진단용 첫 줄 — 호출 *전* 환경/플랜만 출력. 호출 결과 (openaiCalled
-  // / fallbackUsed) 는 모든 LLM 호출이 끝난 뒤 sessionStats 로 정확히 찍는다.
-  const planCode = opts.planCode || 'free';
-  const policy = selectLlmMode(planCode);
+  // 운영 진단용 첫 줄 — 호출 *전* 환경/플랜/모드만 출력. 호출 결과는 끝나고 sessionStats 로.
+  const policy = planPolicy;
   console.info('[ReviewFit AI] provider=' + aiClient.aiMode);
+  console.info('[ReviewFit AI] mode=' + analysisMode + ' (label=' + (getAnalysisMode(analysisMode)?.label || '?') + ')');
   console.info('[ReviewFit AI] plan=' + planCode + ' llmMode=' + policy.mode);
   console.info('[ReviewFit AI] reviewModel=' + policy.reviewModel);
   console.info('[ReviewFit AI] summaryModel=' + policy.summaryModel);
@@ -443,26 +458,30 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       issueRatio,
     });
 
-    // 4) LLM 요약 — 호출마다 product_summary usage row 1건 기록.
-    const report = await callWithUsage(
-      () => aiClient.generateProductImprovementReport({
-        productName, totalReviews: total, negativeReviews, negativeRatio, topIssues,
-      }),
-      { requestType: 'product_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
-    );
+    // 4) 상품 요약 — analysisMode 가 quick 이면 LLM 호출 스킵 (룰 기반 fallback).
+    const report = effectivePolicy.usesProductSummaryLlm
+      ? await callWithUsage(
+          () => aiClient.generateProductImprovementReport({
+            productName, totalReviews: total, negativeReviews, negativeRatio, topIssues,
+          }),
+          { requestType: 'product_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
+        )
+      : { detailPageActions: [], summary: '' };
 
-    // 5) 답글 템플릿 — 상위 이슈별. 각 호출이 cs_reply usage row 1건씩 기록.
+    // 5) CS 답글 — analysisMode 가 quick/batch 면 OFF.
     const replyTemplates = [];
-    for (const iss of topIssues.slice(0, 3)) {
-      const variants = await callWithUsage(
-        () => aiClient.generateReplyTemplates({
-          category: iss.category, issueLabel: iss.issueLabel,
-          recommendedAction: iss.recommendedAction, polarity: iss.polarity,
-          isActionableIssue: true, severity: iss.severity,
-        }),
-        { requestType: 'cs_reply', role: 'csReply', userId: opts.userId || null, analysisId: opts.analysisId || null },
-      );
-      if (variants && variants.length) replyTemplates.push({ issueLabel: iss.issueLabel, variants });
+    if (effectivePolicy.usesCsReplyLlm) {
+      for (const iss of topIssues.slice(0, 3)) {
+        const variants = await callWithUsage(
+          () => aiClient.generateReplyTemplates({
+            category: iss.category, issueLabel: iss.issueLabel,
+            recommendedAction: iss.recommendedAction, polarity: iss.polarity,
+            isActionableIssue: true, severity: iss.severity,
+          }),
+          { requestType: 'cs_reply', role: 'csReply', userId: opts.userId || null, analysisId: opts.analysisId || null },
+        );
+        if (variants && variants.length) replyTemplates.push({ issueLabel: iss.issueLabel, variants });
+      }
     }
 
     // 6) 마스킹된 리뷰 목록 (상세에서 사용)
@@ -554,15 +573,18 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     .sort((a, b) => b.issueReviewCount - a.issueReviewCount || b.totalIssueCount - a.totalIssueCount)
     .slice(0, 10);
 
-  const overall = await callWithUsage(
-    () => aiClient.generateMonthlyReport({
-      totalReviews,
-      negativeReviews,
-      negativeRatio: ratio3(negativeReviews, totalReviews),
-      topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
-    }),
-    { requestType: 'report_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
-  );
+  // 전체 요약 — quick 모드는 OFF. 룰 기반 짧은 fallback 만 제공.
+  const overall = effectivePolicy.usesOverallSummaryLlm
+    ? await callWithUsage(
+        () => aiClient.generateMonthlyReport({
+          totalReviews,
+          negativeReviews,
+          negativeRatio: ratio3(negativeReviews, totalReviews),
+          topCategories: [...categoryDistribution].sort((a, b) => b.count - a.count),
+        }),
+        { requestType: 'report_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
+      )
+    : { summary: '리뷰 반응 기본 흐름을 정리했어요. 더 자세한 요약은 기본 분석 이상에서 제공됩니다.' };
 
   // 전체 키워드 TOP 10 — 모든 리뷰 기준으로 한 번 더 추출 (상품별과 별도 집계라 합산이 아닌 전역 매칭)
   const positiveKeywordsTop10All = extractPositiveKeywords(reviews, classifications);
@@ -593,6 +615,11 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     averageRating,
     // 배치 단위 rating 신뢰도 — 셀러에게 "별점 그대로 믿지 마세요" 안내를 띄울 수 있는 신호.
     ratingReliable,
+    // 사용자/관리자가 리포트 상단/히스토리에서 "이 분석이 어떤 방식이었는지" 확인할 수 있게 동봉.
+    // 관리자만 보는 effectivePolicy 도 함께 (일반 사용자 UI 는 analysisMode 만 노출).
+    analysisMode,
+    analysisModeLabel: getAnalysisMode(analysisMode)?.label || null,
+    effectivePolicy,
     productCount: productNames.length,
     categoryDistribution,
     otherCount,

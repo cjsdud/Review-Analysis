@@ -1,7 +1,9 @@
 import client from './client.js';
 
-export async function runAnalysis(uploadId) {
-  const { data } = await client.post('/analysis', { uploadId });
+export async function runAnalysis(uploadId, { analysisMode } = {}) {
+  const body = { uploadId };
+  if (analysisMode) body.analysisMode = analysisMode;
+  const { data } = await client.post('/analysis', body);
   return data;
 }
 

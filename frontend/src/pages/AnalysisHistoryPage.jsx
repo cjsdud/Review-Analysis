@@ -18,6 +18,14 @@ function isSampleHistory(it) {
 }
 
 // 상태별 라벨/톤. 'done'(legacy) 도 'completed' 와 동일 표시.
+const MODE_LABEL = {
+  quick: '빠른 분석',
+  standard: '기본 분석',
+  precision: '정밀 분석',
+  advanced: '고급 분석',
+  batch: '대량 배치 분석',
+};
+
 const STATUS_META = {
   pending:    { label: '대기 중',  tone: 'tag--neutral' },
   processing: { label: '분석 중',  tone: 'tag--neutral' },
@@ -156,6 +164,9 @@ export default function AnalysisHistoryPage() {
                   <div className="history-card__stats">
                     <span className="tag tag--neutral">리뷰 {it.totalReviews ?? '—'}건</span>
                     <span className="tag tag--neutral">상품 {it.productCount ?? '—'}개</span>
+                    {it.analysisMode && (
+                      <span className="tag tag--neutral">{MODE_LABEL[it.analysisMode] || it.analysisMode}</span>
+                    )}
                     <StatusBadge status={it.status} progress={it.progress} />
                   </div>
                   {isReady ? (

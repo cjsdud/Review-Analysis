@@ -590,6 +590,92 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('analysisModes — canUseAnalysisMode 권한 매트릭스 (batch=Starter 이상)', async () => {
+  const m = await import('../src/constants/analysisModes.js');
+  // Free
+  assert.equal(m.canUseAnalysisMode('free', 'quick'), true);
+  assert.equal(m.canUseAnalysisMode('free', 'standard'), false);
+  assert.equal(m.canUseAnalysisMode('free', 'batch'), false);
+  // Starter — batch 허용 (spec 핵심)
+  assert.equal(m.canUseAnalysisMode('starter', 'quick'), true);
+  assert.equal(m.canUseAnalysisMode('starter', 'standard'), true);
+  assert.equal(m.canUseAnalysisMode('starter', 'batch'), true);
+  assert.equal(m.canUseAnalysisMode('starter', 'precision'), false);
+  assert.equal(m.canUseAnalysisMode('starter', 'advanced'), false);
+  // Pro
+  assert.equal(m.canUseAnalysisMode('pro', 'precision'), true);
+  assert.equal(m.canUseAnalysisMode('pro', 'advanced'), false);
+  // Business — 전체 허용
+  for (const mid of ['quick', 'standard', 'precision', 'advanced', 'batch']) {
+    assert.equal(m.canUseAnalysisMode('business', mid), true, `business 가 ${mid} 차단됨`);
+  }
+  // 기본값
+  assert.equal(m.defaultAnalysisModeFor('free'), 'quick');
+  assert.equal(m.defaultAnalysisModeFor('business'), 'advanced');
+});
+
+await step('analysisModes — computeEffectivePolicy: plan=Business + mode=quick 이면 mini OFF', async () => {
+  const m = await import('../src/constants/analysisModes.js');
+  const ai = await import('../src/services/ai/index.js');
+  // Business plan + advanced mode → 모두 ON
+  const advanced = m.computeEffectivePolicy(ai.selectLlmMode('business'), 'advanced');
+  assert.equal(advanced.allowMiniReanalysis, true);
+  assert.equal(advanced.usesCsReplyLlm, true);
+  assert.equal(advanced.usesAdvancedReport, true);
+  // Business 이지만 quick 으로 다운그레이드 → 모두 OFF (가장 중요한 spec)
+  const quick = m.computeEffectivePolicy(ai.selectLlmMode('business'), 'quick');
+  assert.equal(quick.allowMiniReanalysis, false, 'Business + quick 은 mini OFF');
+  assert.equal(quick.usesCsReplyLlm, false, 'Business + quick 은 CS LLM OFF');
+  assert.equal(quick.usesProductSummaryLlm, false);
+  assert.equal(quick.usesOverallSummaryLlm, false);
+  // Pro plan + standard mode → mini OFF (mode 가 OFF 이므로)
+  const proStd = m.computeEffectivePolicy(ai.selectLlmMode('pro'), 'standard');
+  assert.equal(proStd.allowMiniReanalysis, false);
+  assert.equal(proStd.usesProductSummaryLlm, true);
+  // batch — Starter 가능, mini OFF + cs OFF + summary ON
+  const batch = m.computeEffectivePolicy(ai.selectLlmMode('starter'), 'batch');
+  assert.equal(batch.usesBatch, true);
+  assert.equal(batch.allowMiniReanalysis, false);
+  assert.equal(batch.usesCsReplyLlm, false);
+  assert.equal(batch.usesProductSummaryLlm, true);
+});
+
+await step('runAnalysis — analysisMode=quick 이면 product_summary / cs_reply / report_summary LLM 호출 모두 OFF', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  const aid = 'mode_quick_' + Date.now();
+  await runAnalysis(
+    [{ id: 'q1', productName: '셔츠', rating: 5, content: '핏이 예뻐요 만족' }],
+    [],
+    { planCode: 'business', userId: null, analysisId: aid, analysisMode: 'quick' },
+  );
+  const rows = db.prepare(
+    `SELECT request_type FROM llm_usage_logs WHERE analysis_id = ?`,
+  ).all(aid);
+  const types = new Set(rows.map((r) => r.request_type));
+  assert(!types.has('product_summary'), `quick 인데 product_summary 호출됨`);
+  assert(!types.has('cs_reply'), 'quick 인데 cs_reply 호출됨');
+  assert(!types.has('report_summary'), 'quick 인데 report_summary 호출됨');
+  // analysis_summary 는 메타 로그라 항상 남는다.
+  assert(types.has('analysis_summary'), 'analysis_summary row 누락');
+});
+
+await step('runAnalysis — analysisMode=standard 면 product_summary/report_summary 호출되지만 mini=OFF', async () => {
+  const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  const aid = 'mode_std_' + Date.now();
+  await runAnalysis(
+    [{ id: 's1', productName: '셔츠', rating: 2, content: '허리가 너무 작아요 환불' }],
+    [],
+    { planCode: 'pro', userId: null, analysisId: aid, analysisMode: 'standard' },
+  );
+  const rows = db.prepare(`SELECT request_type FROM llm_usage_logs WHERE analysis_id = ?`).all(aid);
+  const types = new Set(rows.map((r) => r.request_type));
+  assert(types.has('product_summary'), `standard 는 product_summary 호출되어야 함`);
+  assert(types.has('report_summary'), 'standard 는 report_summary 호출되어야 함');
+  assert(!types.has('review_reanalysis'), 'standard 는 mini 재분석 OFF');
+});
+
 await step('llm_usage_logs — runAnalysis 가 product_summary / cs_reply / report_summary / analysis_summary row 를 모두 남김', async () => {
   const { runAnalysis } = await import('../src/services/productAnalysis.service.js');
   const db = (await import('../src/db/database.js')).default;

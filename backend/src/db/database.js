@@ -97,6 +97,9 @@ ensureColumn('analysis_jobs', 'error_message', 'error_message TEXT');
 ensureColumn('analysis_jobs', 'started_at', 'started_at TEXT');
 ensureColumn('analysis_jobs', 'completed_at', 'completed_at TEXT');
 ensureColumn('analysis_jobs', 'failed_at', 'failed_at TEXT');
+// 사용자가 업로드 시점에 고른 "분석 방식" — quick/standard/precision/advanced/batch.
+// 히스토리/리포트 라벨 + effectivePolicy 계산에 사용.
+ensureColumn('analysis_jobs', 'analysis_mode', 'analysis_mode TEXT');
 
 // llm_usage_logs 확장 컬럼 (이전 마이그레이션엔 없었음 — idempotent 추가).
 // 관리자 콘솔 "AI 분석 로그" 화면이 한 row 로 분석 단위 요약을 보여줄 수 있게 한다.
@@ -228,7 +231,7 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
     .prepare(
       `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at, j.is_sample,
               j.progress, j.total_reviews, j.error_message,
-              j.started_at, j.completed_at, j.failed_at,
+              j.started_at, j.completed_at, j.failed_at, j.analysis_mode,
               u.original_name AS original_name, u.source AS source,
               (SELECT COUNT(*) FROM product_analyses p WHERE p.analysis_id = j.id) AS product_count
          FROM analysis_jobs j
@@ -269,6 +272,7 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
       originalName: r.original_name || null,
       status: normalizedStatus,
       progress: r.progress ?? (normalizedStatus === 'completed' ? 100 : 0),
+      analysisMode: r.analysis_mode || null,
       totalReviews: r.total_reviews ?? summary.totalReviews ?? null,
       productCount: r.product_count ?? summary.productCount ?? null,
       errorMessage: r.error_message || null,

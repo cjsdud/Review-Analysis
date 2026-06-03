@@ -8,6 +8,11 @@ import {
   runAnalysisJob,
   getJobStatus,
 } from '../services/analysisJob.service.js';
+import {
+  canUseAnalysisMode,
+  defaultAnalysisModeFor,
+  getAnalysisMode,
+} from '../constants/analysisModes.js';
 import { buildAnalysisCsv, buildAnalysisWorkbook } from '../services/export.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { checkCanCreateAnalysis, getUserSubscription, recordUsage } from '../services/billing.service.js';
@@ -132,7 +137,11 @@ export function loadReviews(uploadId) {
 // background 에서 진행. 프론트는 GET /:id/status 로 polling 한다.
 // 60초 timeout 회피 + LLM 호출 시간 무관하게 UI 가 안 죽도록 한 핵심 변경.
 router.post('/', requireAuth, async (req, res) => {
-  const schema = z.object({ uploadId: z.string().min(1) });
+  const schema = z.object({
+    uploadId: z.string().min(1),
+    // 사용자가 업로드 화면에서 고른 분석 방식 (선택). 없으면 플랜 기본값 사용.
+    analysisMode: z.enum(['quick', 'standard', 'precision', 'advanced', 'batch']).optional(),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'uploadId가 필요합니다.' });
 
@@ -147,6 +156,21 @@ router.post('/', requireAuth, async (req, res) => {
   const guard = checkCanCreateAnalysis(userId, reviews.length);
   if (!guard.ok) return res.status(guard.status).json(guard.body);
 
+  // 분석 방식 결정 — 사용자가 안 골랐으면 플랜 기본값. 플랜에 허용 안 되면 403.
+  const sub = userId ? getUserSubscription(userId) : null;
+  const planCode = sub?.plan_code || 'free';
+  const requestedMode = parsed.data.analysisMode || defaultAnalysisModeFor(planCode);
+  if (!canUseAnalysisMode(planCode, requestedMode)) {
+    const mode = getAnalysisMode(requestedMode);
+    return res.status(403).json({
+      success: false,
+      code: 'ANALYSIS_MODE_NOT_ALLOWED',
+      message: `현재 플랜에서는 ${mode?.label || requestedMode}을(를) 사용할 수 없어요. ${mode?.minPlan === 'business' ? 'Business' : mode?.minPlan === 'pro' ? 'Pro' : 'Starter'} 이상에서 사용할 수 있습니다.`,
+      upgradeRequired: true,
+      requiredPlan: mode?.minPlan || 'starter',
+    });
+  }
+
   // 1) pending row 즉시 생성 — 프론트가 polling 할 id 를 응답.
   const analysisId = nanoid();
   const isSample =
@@ -159,6 +183,7 @@ router.post('/', requireAuth, async (req, res) => {
       userId,
       totalReviews: reviews.length,
       isSample,
+      analysisMode: requestedMode,
     });
   } catch (e) {
     return res.status(500).json({ error: `분석 작업 생성 실패: ${e.message}` });
@@ -167,8 +192,6 @@ router.post('/', requireAuth, async (req, res) => {
   // 2) background 분석 실행 — fire-and-forget. runAnalysisJob 내부에서 모든
   // 예외를 catch 해 status=failed 로 저장하므로 process 가 죽을 일 없음.
   const allCorrections = loadAllCorrections();
-  const sub = userId ? getUserSubscription(userId) : null;
-  const planCode = sub?.plan_code || 'free';
   setImmediate(() => {
     runAnalysisJob({
       analysisId,
@@ -178,6 +201,7 @@ router.post('/', requireAuth, async (req, res) => {
       corrections: allCorrections,
       planCode,
       isSample,
+      analysisMode: requestedMode,
     }).catch((e) => console.error('[analysis] background error', e));
   });
 
@@ -236,6 +260,7 @@ router.get('/:id', requireAuth, (req, res) => {
     analysisId: job.id,
     status: 'completed',
     progress: 100,
+    analysisMode: job.analysis_mode || null,
     summary: JSON.parse(job.summary),
     products,
     createdAt: job.created_at,
