@@ -1,16 +1,26 @@
 // 업로드 화면의 "분석 방식 선택" — 5 가지 카드 radio.
-// 현재 플랜으로 사용 가능한 옵션은 클릭 가능, 그 외는 lock + 필요 플랜 안내.
-//
-// props:
-//   value           : 현재 선택된 mode id
-//   onChange(modeId): 선택 변경 콜백 (disabled 카드는 호출되지 않음)
-//   userPlan        : 'free' | 'starter' | 'pro' | 'business' (없으면 free 로 간주)
-//   totalReviews?   : 리뷰 수 — 많을 때 batch 카드에 "대량 리뷰에 추천" badge
-import { ANALYSIS_MODES, canUseAnalysisMode, planLabel } from '../constants/analysisModes.js';
+// 카드 구조:
+//   1. 제목 + (잠금시) 필요 플랜 chip
+//   2. 한 줄 요약
+//   3. 핵심 bullet 3 개
+//   4. 작은 "사용 한도" 라인 3 줄
+import {
+  ANALYSIS_MODES,
+  canUseAnalysisMode,
+  getLimitsForCard,
+  formatPlanLimitLines,
+  planLabel,
+} from '../constants/analysisModes.js';
 
 const LARGE_REVIEW_THRESHOLD = 3000;
 
-export default function AnalysisModeSelector({ value, onChange, userPlan = 'free', totalReviews = 0 }) {
+export default function AnalysisModeSelector({
+  value,
+  onChange,
+  userPlan = 'free',
+  currentFeatures = null, // /api/me 의 usage 객체 (현재 plan 한도)
+  totalReviews = 0,
+}) {
   return (
     <fieldset className="analysis-mode" aria-label="분석 방식 선택">
       <legend className="analysis-mode__legend">분석 방식 선택</legend>
@@ -26,11 +36,13 @@ export default function AnalysisModeSelector({ value, onChange, userPlan = 'free
           const allowed = canUseAnalysisMode(userPlan, mode.id);
           const isActive = value === mode.id;
           const isLargeRec = mode.id === 'batch' && totalReviews >= LARGE_REVIEW_THRESHOLD;
+          const limits = getLimitsForCard({ mode, userPlan, currentFeatures });
+          const limitLines = formatPlanLimitLines(limits);
           return (
             <label
               key={mode.id}
               className={`analysis-mode__card${isActive ? ' is-active' : ''}${allowed ? '' : ' is-locked'}`}
-              title={allowed ? mode.description : `${planLabel(mode.minPlan)} 이상에서 사용할 수 있습니다.`}
+              title={allowed ? mode.summary : `${planLabel(mode.minPlan)} 이상에서 사용할 수 있습니다.`}
             >
               <input
                 type="radio"
@@ -53,20 +65,18 @@ export default function AnalysisModeSelector({ value, onChange, userPlan = 'free
                     <span className="tag tag--success">대량 리뷰에 추천</span>
                   )}
                 </div>
-                <div className="analysis-mode__card-desc">{mode.description}</div>
-                <div className="analysis-mode__card-meta muted">
-                  <span>{mode.speedLabel}</span>
-                  <span>·</span>
-                  <span>{mode.depthLabel}</span>
-                </div>
-                <div className="analysis-mode__card-best muted">
-                  추천: {mode.bestFor}
-                </div>
-                {!allowed && (
-                  <div className="analysis-mode__upgrade muted">
-                    {planLabel(mode.minPlan)} 이상에서 사용할 수 있습니다.
+                <div className="analysis-mode__card-summary">{mode.summary}</div>
+                <ul className="analysis-mode__bullets">
+                  {mode.bullets.map((b) => <li key={b}>{b}</li>)}
+                </ul>
+                <div className="analysis-mode__limits">
+                  <div className="analysis-mode__limits-title muted">
+                    사용 한도{!allowed ? ` (${planLabel(mode.minPlan)} 기준)` : ''}
                   </div>
-                )}
+                  <ul className="analysis-mode__limits-list muted">
+                    {limitLines.map((l) => <li key={l}>{l}</li>)}
+                  </ul>
+                </div>
               </div>
             </label>
           );

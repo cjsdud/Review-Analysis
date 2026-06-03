@@ -590,6 +590,19 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('plans — frontend PLAN_LIMITS 와 backend PLAN_FEATURES 숫자 일치', async () => {
+  const fe = await import('../../frontend/src/constants/analysisModes.js');
+  const be = await import('../src/constants/plans.js');
+  const KEYS = ['monthlyReviewLimit', 'monthlyFileLimit', 'maxProductsPerFile', 'monthlyCsReplyLimit', 'dataRetentionDays'];
+  for (const code of ['free', 'starter', 'pro', 'business']) {
+    const f = fe.PLAN_LIMITS[code];
+    const b = be.PLAN_FEATURES[code];
+    for (const k of KEYS) {
+      assert.equal(f[k], b[k], `${code}.${k} 불일치 (frontend=${f[k]} backend=${b[k]})`);
+    }
+  }
+});
+
 await step('plans — normalizePlan (대소문자/공백 변형 흡수)', async () => {
   const m = await import('../src/constants/plans.js');
   assert.equal(m.normalizePlan('Business'), 'business');

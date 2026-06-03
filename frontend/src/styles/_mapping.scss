@@ -445,3 +445,49 @@
   &__lock       { font-size: 11px; }
   &__upgrade    { font-size: 11px; color: $text-sub; }
 }
+
+// 카드 안 요약/bullet/한도 영역
+.analysis-mode__card-summary {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.analysis-mode__bullets {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  li {
+    position: relative;
+    padding-left: 12px;
+    word-break: keep-all;
+    &::before {
+      content: '·';
+      position: absolute;
+      left: 4px;
+      color: #94a3b8;
+    }
+  }
+}
+.analysis-mode__limits {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
+}
+.analysis-mode__limits-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.analysis-mode__limits-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  li { word-break: keep-all; }
+}

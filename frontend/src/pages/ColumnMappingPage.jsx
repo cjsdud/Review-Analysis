@@ -33,7 +33,7 @@ export default function ColumnMappingPage() {
   // 분석 방식 선택 — 사용자 플랜 기본값으로 초기화. AuthContext 의 subscription.planCode 사용.
   // 페이지 진입 시 /api/me 를 한 번 다시 호출 — 관리자 콘솔에서 막 plan 을 바꾼 직후에도
   // stale 캐시 없이 최신 plan 으로 lock 카드 계산이 되도록.
-  const { subscription, refresh: refreshAuth } = useAuth();
+  const { subscription, usage: currentFeatures, refresh: refreshAuth } = useAuth();
   useEffect(() => { refreshAuth?.(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
   const userPlan = String(subscription?.planCode || 'free').trim().toLowerCase();
   const [analysisMode, setAnalysisMode] = useState(() => defaultAnalysisModeFor(userPlan));
@@ -210,6 +210,7 @@ export default function ColumnMappingPage() {
           value={analysisMode}
           onChange={setAnalysisMode}
           userPlan={userPlan}
+          currentFeatures={currentFeatures}
           totalReviews={upload.rowCount || 0}
         />
 
