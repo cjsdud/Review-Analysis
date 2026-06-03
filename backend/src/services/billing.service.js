@@ -6,7 +6,7 @@
 import { nanoid } from 'nanoid';
 import db from '../db/database.js';
 import { getBooleanSetting, getNumberSetting } from './settings.service.js';
-import { getPlanFeatures, resolveLlmPolicy, USAGE_EVENT_TYPES } from '../constants/plans.js';
+import { getPlanFeatures, normalizePlan, resolveLlmPolicy, USAGE_EVENT_TYPES } from '../constants/plans.js';
 
 // app_settings 의 billing_enforce_limits 가 환경변수보다 우선. 없으면 env fallback.
 const ENV_ENFORCE = String(process.env.BILLING_ENFORCE_LIMITS || 'false').toLowerCase() === 'true';
@@ -136,9 +136,13 @@ export function checkCanCreateAnalysis(userId, reviewCount) {
 // /api/me 응답용 — user + subscription + 이번 달 사용량 + 플랜 기능 플래그.
 export function buildMeContext(user) {
   if (!user) return null;
+  // DB 의 subscriptions 를 매 호출마다 다시 조회 — 관리자가 막 plan 을 바꿔도
+  // 다음 /api/me 부터 즉시 반영. req.user(JWT 페이로드) 에 박힌 plan 은 신뢰하지
+  // 않는다 (stale 위험).
   const sub = getUserSubscription(user.id);
-  const plan = getPlanByCode(sub?.plan_code || 'free');
-  const features = getPlanFeatures(plan.code);
+  const planCode = normalizePlan(sub?.plan_code || 'free');
+  const plan = getPlanByCode(planCode);
+  const features = getPlanFeatures(planCode);
   const monthlyAnalysisUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.ANALYSIS_CREATED);
   const monthlyFileUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.FILE_UPLOADED);
   const monthlyCsReplyUsed = getMonthlyUsage(user.id, USAGE_EVENT_TYPES.CS_REPLY_GENERATED);

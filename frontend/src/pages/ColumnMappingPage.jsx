@@ -31,9 +31,21 @@ export default function ColumnMappingPage() {
   const [saveTemplate, setSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   // 분석 방식 선택 — 사용자 플랜 기본값으로 초기화. AuthContext 의 subscription.planCode 사용.
-  const { subscription } = useAuth();
-  const userPlan = subscription?.planCode || 'free';
+  // 페이지 진입 시 /api/me 를 한 번 다시 호출 — 관리자 콘솔에서 막 plan 을 바꾼 직후에도
+  // stale 캐시 없이 최신 plan 으로 lock 카드 계산이 되도록.
+  const { subscription, refresh: refreshAuth } = useAuth();
+  useEffect(() => { refreshAuth?.(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
+  const userPlan = String(subscription?.planCode || 'free').trim().toLowerCase();
   const [analysisMode, setAnalysisMode] = useState(() => defaultAnalysisModeFor(userPlan));
+  // user plan 이 늦게 도착해도 (또는 변경 후 refresh) 기본 선택값을 다시 계산해서
+  // free→business 로 올라간 경우 carousel 이 quick 에 묶이지 않게.
+  useEffect(() => {
+    setAnalysisMode((prev) => {
+      // 사용자가 이미 직접 고른 mode 가 현재 plan 으로도 허용되면 유지.
+      // (사용자 선택 우선 — 단순 plan 상승만으로 강제 변경하지 않음)
+      return prev || defaultAnalysisModeFor(userPlan);
+    });
+  }, [userPlan]);
 
   function applyUpload(data) {
     setUpload(data);

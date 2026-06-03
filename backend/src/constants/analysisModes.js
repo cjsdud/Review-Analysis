@@ -93,12 +93,17 @@ export function getAnalysisMode(id) {
   return ANALYSIS_MODES[id] || null;
 }
 
+// plan / minPlan 둘 다 정규화한 뒤 비교 — 'Business'/'BUSINESS' 같은 변형 흡수.
 export function canUseAnalysisMode(userPlan, analysisMode) {
   const mode = ANALYSIS_MODES[analysisMode];
   if (!mode) return false;
-  const userRank = PLAN_ORDER[userPlan] ?? 0;
-  const minRank = PLAN_ORDER[mode.minPlan] ?? 0;
-  return userRank >= minRank;
+  const plan = normalizePlanLocal(userPlan);
+  const minPlan = normalizePlanLocal(mode.minPlan);
+  return (PLAN_ORDER[plan] ?? 0) >= (PLAN_ORDER[minPlan] ?? 0);
+}
+function normalizePlanLocal(v) {
+  const raw = String(v || '').trim().toLowerCase();
+  return PLAN_ORDER[raw] !== undefined ? raw : 'free';
 }
 
 // 플랜별 기본 선택값 — 업로드 화면이 초기 선택을 결정할 때 사용.

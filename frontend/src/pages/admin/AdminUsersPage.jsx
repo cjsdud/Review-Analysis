@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { adminApi } from '../../api/adminApi.js';
 import LoadingState from '../../components/LoadingState.jsx';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 const PLAN_OPTIONS = ['free', 'starter', 'pro', 'business'];
 const STATUS_OPTIONS = ['active', 'trialing', 'past_due', 'canceled', 'expired'];
 
 export default function AdminUsersPage() {
+  const { user: currentUser, refresh: refreshCurrentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -61,7 +63,13 @@ export default function AdminUsersPage() {
         <div className="admin-users-grid">
           <UsersTable users={users} onSelect={setSelected} />
           {selected && (
-            <UserDetail userId={selected} onClose={() => setSelected(null)} onUpdated={refresh} />
+            <UserDetail
+              userId={selected}
+              onClose={() => setSelected(null)}
+              onUpdated={refresh}
+              currentUserId={currentUser?.id}
+              refreshCurrentUser={refreshCurrentUser}
+            />
           )}
         </div>
       )}
@@ -103,7 +111,7 @@ function UsersTable({ users, onSelect }) {
   );
 }
 
-function UserDetail({ userId, onClose, onUpdated }) {
+function UserDetail({ userId, onClose, onUpdated, currentUserId, refreshCurrentUser }) {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState({});
   const [reason, setReason] = useState('');
@@ -132,6 +140,11 @@ function UserDetail({ userId, onClose, onUpdated }) {
       setMsg('저장 완료');
       onUpdated?.();
       await load();
+      // 변경 대상이 현재 로그인 관리자 본인이면 AuthContext 의 /api/me 도 재조회
+      // → 업로드 화면의 currentPlan / 분석 방식 선택 카드가 즉시 새 plan 반영.
+      if (userId === currentUserId && typeof refreshCurrentUser === 'function') {
+        try { await refreshCurrentUser(); } catch { /* ignore */ }
+      }
     } catch (e) {
       setErr(e.message);
     } finally {

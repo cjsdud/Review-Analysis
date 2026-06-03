@@ -16,6 +16,10 @@ export default function AnalysisModeSelector({ value, onChange, userPlan = 'free
       <legend className="analysis-mode__legend">분석 방식 선택</legend>
       <p className="analysis-mode__hint muted">
         리뷰 수와 필요한 분석 깊이에 맞게 분석 방식을 선택해 주세요.
+        {' '}
+        <span title={`현재 플랜: ${planLabel(userPlan)}`} style={{ fontWeight: 600 }}>
+          현재 플랜: {planLabel(userPlan)}
+        </span>
       </p>
       <div className="analysis-mode__grid" role="radiogroup">
         {ANALYSIS_MODES.map((mode) => {

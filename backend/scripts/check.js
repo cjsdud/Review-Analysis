@@ -590,6 +590,25 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('plans — normalizePlan (대소문자/공백 변형 흡수)', async () => {
+  const m = await import('../src/constants/plans.js');
+  assert.equal(m.normalizePlan('Business'), 'business');
+  assert.equal(m.normalizePlan(' BUSINESS '), 'business');
+  assert.equal(m.normalizePlan('PRO'), 'pro');
+  assert.equal(m.normalizePlan(null), 'free');
+  assert.equal(m.normalizePlan('unknown'), 'free', '알 수 없는 값은 free fallback');
+});
+
+await step('analysisModes — canUseAnalysisMode 가 Business 대소문자 흡수', async () => {
+  const m = await import('../src/constants/analysisModes.js');
+  for (const variant of ['business', 'Business', 'BUSINESS', ' business ']) {
+    for (const mode of ['quick', 'standard', 'precision', 'advanced', 'batch']) {
+      assert.equal(m.canUseAnalysisMode(variant, mode), true,
+        `business 변형(${JSON.stringify(variant)}) 에서 ${mode} 차단됨`);
+    }
+  }
+});
+
 await step('analysisModes — canUseAnalysisMode 권한 매트릭스 (batch=Starter 이상)', async () => {
   const m = await import('../src/constants/analysisModes.js');
   // Free

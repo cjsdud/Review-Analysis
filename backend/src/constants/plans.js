@@ -4,6 +4,13 @@
 
 export const PLAN_CODES = ['free', 'starter', 'pro', 'business'];
 
+// plan 문자열 정규화 — 'Business' / ' BUSINESS ' / 'business' 같은 변형을 모두 흡수.
+// 알 수 없는 값은 'free' 로 fallback (안전한 최소 권한).
+export function normalizePlan(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return PLAN_CODES.includes(raw) ? raw : 'free';
+}
+
 // 기능/한도 매트릭스.
 // 한도는 plans 테이블의 monthly_analysis_limit / max_reviews_per_analysis 와 별도로
 // "엑셀 전체 다운로드 가능?", "정밀 분석?" 처럼 boolean 기능 가시성을 정의한다.

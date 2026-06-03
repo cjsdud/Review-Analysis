@@ -157,9 +157,15 @@ router.post('/', requireAuth, async (req, res) => {
   if (!guard.ok) return res.status(guard.status).json(guard.body);
 
   // 분석 방식 결정 — 사용자가 안 골랐으면 플랜 기본값. 플랜에 허용 안 되면 403.
+  // ※ req.user.plan 이 아니라 DB 의 subscriptions 를 매번 다시 조회 — 관리자가
+  //   막 plan 을 바꿔도 다음 분석 요청부터 즉시 반영. JWT 페이로드의 stale plan
+  //   을 절대 신뢰하지 않는다.
   const sub = userId ? getUserSubscription(userId) : null;
-  const planCode = sub?.plan_code || 'free';
+  const planCode = (await import('../constants/plans.js')).normalizePlan(sub?.plan_code || 'free');
   const requestedMode = parsed.data.analysisMode || defaultAnalysisModeFor(planCode);
+  console.info(
+    `[ReviewFit Plan] userId=${userId || 'anon'} dbPlan=${planCode} requestedMode=${requestedMode} allowed=${canUseAnalysisMode(planCode, requestedMode)}`,
+  );
   if (!canUseAnalysisMode(planCode, requestedMode)) {
     const mode = getAnalysisMode(requestedMode);
     return res.status(403).json({

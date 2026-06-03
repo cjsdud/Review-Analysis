@@ -52,10 +52,17 @@ export const ANALYSIS_MODES = [
   },
 ];
 
+export function normalizePlan(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return PLAN_ORDER[raw] !== undefined ? raw : 'free';
+}
+
 export function canUseAnalysisMode(userPlan, modeId) {
   const mode = ANALYSIS_MODES.find((m) => m.id === modeId);
   if (!mode) return false;
-  return (PLAN_ORDER[userPlan] ?? 0) >= (PLAN_ORDER[mode.minPlan] ?? 0);
+  const plan = normalizePlan(userPlan);
+  const minPlan = normalizePlan(mode.minPlan);
+  return (PLAN_ORDER[plan] ?? 0) >= (PLAN_ORDER[minPlan] ?? 0);
 }
 
 export function defaultAnalysisModeFor(plan) {
