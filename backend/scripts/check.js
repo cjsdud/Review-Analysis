@@ -590,6 +590,49 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('analysisJob — pending → processing → completed 전이 + getJobStatus', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const id = 'job_test_' + Date.now();
+  m.createPendingJob({ analysisId: id, uploadId: 'u1', userId: null, totalReviews: 10, isSample: false });
+  let s = m.getJobStatus(id);
+  assert.equal(s.status, 'pending');
+  assert.equal(s.progress, 0);
+  m.markProcessing(id);
+  s = m.getJobStatus(id);
+  assert.equal(s.status, 'processing');
+  assert(s.startedAt, 'startedAt 채워짐');
+  m.updateProgress(id, 50);
+  assert.equal(m.getJobStatus(id).progress, 50);
+  m.markCompleted(id, JSON.stringify({ totalReviews: 10 }));
+  s = m.getJobStatus(id);
+  assert.equal(s.status, 'completed');
+  assert.equal(s.progress, 100);
+  assert(s.completedAt, 'completedAt 채워짐');
+});
+
+await step('analysisJob — failed 전이 + errorMessage 저장', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const id = 'job_fail_' + Date.now();
+  m.createPendingJob({ analysisId: id, uploadId: 'u1', userId: null, totalReviews: 5, isSample: false });
+  m.markProcessing(id);
+  m.markFailed(id, 'timeout of 60000ms exceeded');
+  const s = m.getJobStatus(id);
+  assert.equal(s.status, 'failed');
+  assert.equal(s.errorMessage, 'timeout of 60000ms exceeded');
+  assert(s.failedAt, 'failedAt 채워짐');
+});
+
+await step('analysisJob — legacy status (done/error) 노멀라이즈해서 반환', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const db = (await import('../src/db/database.js')).default;
+  const id = 'job_legacy_' + Date.now();
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?, ?, ?, ?, ?)`,
+  ).run(id, 'u1', 'done', JSON.stringify({}), null);
+  const s = m.getJobStatus(id);
+  assert.equal(s.status, 'completed', '"done" → "completed" 정규화');
+});
+
 await step('reviewClassification — 실제 의류 리뷰 8케이스 (mentionedAspect vs improvementIssue)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const cases = [

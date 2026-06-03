@@ -629,5 +629,8 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     console.info('[ReviewFit AI] fallbackUsed=true reason=' + (session.lastError || 'unknown'));
   }
 
-  return { analysisId: nanoid(), summary, products, classifications };
+  // opts.analysisId 가 주어지면 그대로 — 비동기 job 흐름에서 pending row 가
+  // 먼저 만들어졌을 때 id 가 일치해야 한다. 없으면 새로 생성 (legacy).
+  const analysisId = opts.analysisId || nanoid();
+  return { analysisId, summary, products, classifications };
 }

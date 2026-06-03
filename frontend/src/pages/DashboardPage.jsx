@@ -25,21 +25,27 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [accessKind, setAccessKind] = useState(null); // 'AUTH_REQUIRED' | 'FORBIDDEN' | 'NOT_FOUND' | null
+  const [accessKind, setAccessKind] = useState(null);
   const [error, setError] = useState('');
+  // 분석이 아직 진행 중/실패면 jobState 만 받아 안내 화면을 띄운다.
+  const [jobState, setJobState] = useState(null);
   const [chartType, setChartType] = useState('bar');
-  // 차트 클릭 → ReviewExplorerModal 을 그 카테고리로 사전 필터해서 직접 연다.
   const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
   const [reviewsModalCategory, setReviewsModalCategory] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const [a, ps] = await Promise.all([getAnalysis(analysisId), getProducts(analysisId)]);
-        setSummary(a.summary);
-        setProducts(ps);
+        const a = await getAnalysis(analysisId);
+        // 비동기 job — 아직 진행 중이면 a.status='processing'/'failed' 이고 products 가 없다.
+        if (a.status && a.status !== 'completed' && a.status !== 'done') {
+          setJobState(a);
+        } else {
+          const ps = await getProducts(analysisId);
+          setSummary(a.summary);
+          setProducts(ps);
+        }
       } catch (e) {
-        // 권한/존재 에러는 AccessError 로 분기
         const status = e.status;
         if (status === 401) setAccessKind('AUTH_REQUIRED');
         else if (status === 403) setAccessKind('FORBIDDEN');
@@ -50,6 +56,13 @@ export default function DashboardPage() {
       }
     })();
   }, [analysisId]);
+
+  // 진행 중일 때만 5초마다 폴링 — 완료되면 자동으로 페이지 reload.
+  useEffect(() => {
+    if (!jobState || (jobState.status !== 'processing' && jobState.status !== 'pending')) return;
+    const t = setInterval(() => { setLoading(true); window.location.reload(); }, 5000);
+    return () => clearInterval(t);
+  }, [jobState]);
 
   function goProduct(productKey) {
     const path = buildProductDetailPath({ analysisId, productKey });
@@ -66,6 +79,25 @@ export default function DashboardPage() {
 
   if (loading) return <LoadingState title="리포트를 준비하고 있어요" />;
   if (accessKind) return <AccessError kind={accessKind} />;
+  if (jobState && jobState.status !== 'completed' && jobState.status !== 'done') {
+    const isFailed = jobState.status === 'failed' || jobState.status === 'error';
+    return (
+      <div className="state-box">
+        <div className="state-box__icon">{isFailed ? '⚠️' : '⏳'}</div>
+        <div className="state-box__title">
+          {isFailed ? '리뷰 분석에 실패했습니다.' : '리뷰 분석 중입니다.'}
+        </div>
+        <div className="state-box__desc">
+          {isFailed
+            ? (jobState.errorMessage || '잠시 후 다시 시도해 주세요.')
+            : '분석이 완료되면 자동으로 리포트가 표시됩니다.'}
+        </div>
+        <div className="page-actions" style={{ justifyContent: 'center', marginTop: 12 }}>
+          <button className="btn btn--primary" onClick={() => navigate('/history')}>분석 히스토리로 이동</button>
+        </div>
+      </div>
+    );
+  }
   if (error)
     return (
       <div>

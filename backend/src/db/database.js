@@ -88,6 +88,16 @@ ensureColumn('review_classifications', 'user_id', 'user_id TEXT');
 // 샘플 분석 표식 — 파일명/source 추론 없이 명시적 판별. 0=일반 업로드, 1=샘플 분석.
 ensureColumn('analysis_jobs', 'is_sample', 'is_sample INTEGER NOT NULL DEFAULT 0');
 
+// 비동기 분석 job 상태 추적 — 업로드 즉시 pending 으로 row 가 생성되고
+// background 가 processing → completed/failed 로 전이시킨다. progress 는
+// 0~100 단계형 (5/20/50/80/100).
+ensureColumn('analysis_jobs', 'progress', 'progress INTEGER NOT NULL DEFAULT 0');
+ensureColumn('analysis_jobs', 'total_reviews', 'total_reviews INTEGER');
+ensureColumn('analysis_jobs', 'error_message', 'error_message TEXT');
+ensureColumn('analysis_jobs', 'started_at', 'started_at TEXT');
+ensureColumn('analysis_jobs', 'completed_at', 'completed_at TEXT');
+ensureColumn('analysis_jobs', 'failed_at', 'failed_at TEXT');
+
 // llm_usage_logs 확장 컬럼 (이전 마이그레이션엔 없었음 — idempotent 추가).
 // 관리자 콘솔 "AI 분석 로그" 화면이 한 row 로 분석 단위 요약을 보여줄 수 있게 한다.
 ensureColumn('llm_usage_logs', 'analysis_version', 'analysis_version TEXT');
@@ -217,6 +227,8 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
   const rows = db
     .prepare(
       `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at, j.is_sample,
+              j.progress, j.total_reviews, j.error_message,
+              j.started_at, j.completed_at, j.failed_at,
               u.original_name AS original_name, u.source AS source,
               (SELECT COUNT(*) FROM product_analyses p WHERE p.analysis_id = j.id) AS product_count
          FROM analysis_jobs j
@@ -245,16 +257,25 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
       src === 'sample' ||
       (typeof r.original_name === 'string' &&
         r.original_name.toLowerCase() === 'sample_reviews_fashion.csv');
+    // status 노멀라이즈 — 신/구 값 통합. 'done' → 'completed', 'error' → 'failed'.
+    const normalizedStatus = r.status === 'done' ? 'completed'
+      : r.status === 'error' ? 'failed'
+      : r.status;
     return {
       id: r.id,
       uploadId: r.upload_id,
       source: src,
       isSample,
       originalName: r.original_name || null,
-      status: r.status,
-      totalReviews: summary.totalReviews ?? null,
+      status: normalizedStatus,
+      progress: r.progress ?? (normalizedStatus === 'completed' ? 100 : 0),
+      totalReviews: r.total_reviews ?? summary.totalReviews ?? null,
       productCount: r.product_count ?? summary.productCount ?? null,
+      errorMessage: r.error_message || null,
       createdAt: r.created_at,
+      startedAt: r.started_at,
+      completedAt: r.completed_at,
+      failedAt: r.failed_at,
     };
   });
 }

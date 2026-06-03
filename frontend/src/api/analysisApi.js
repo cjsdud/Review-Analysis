@@ -6,8 +6,15 @@ export async function runAnalysis(uploadId) {
 }
 
 export async function getAnalysis(analysisId) {
-  const { data } = await client.get(`/analysis/${analysisId}`);
+  // 비동기 job — 진행 중이면 202 가 떨어진다 (data.status = 'processing'/'failed').
+  // 202 도 정상 응답으로 받기 위해 validateStatus 확장.
+  const { data } = await client.get(`/analysis/${analysisId}`, { validateStatus: (s) => s >= 200 && s < 300 });
   return data;
+}
+
+export async function getAnalysisStatus(analysisId) {
+  const { data } = await client.get(`/analysis/${analysisId}/status`);
+  return data?.analysis || null;
 }
 
 // 최근 분석 히스토리 목록 (로그인 없음: 서버에 저장된 전체 분석)

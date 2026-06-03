@@ -3,6 +3,11 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import db from '../db/database.js';
 import { runAnalysis } from '../services/productAnalysis.service.js';
+import {
+  createPendingJob,
+  runAnalysisJob,
+  getJobStatus,
+} from '../services/analysisJob.service.js';
 import { buildAnalysisCsv, buildAnalysisWorkbook } from '../services/export.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { checkCanCreateAnalysis, getUserSubscription, recordUsage } from '../services/billing.service.js';
@@ -89,7 +94,7 @@ function buildHistoricalCorrectionMap() {
 
 // runAnalysis 직후 호출. products[].topIssues 중 과거에 사용자가 수정한 항목과 일치하면
 // 수정된 category/issueLabel 로 치환하고 source='correction', confidence=0.95.
-function applyHistoricalCorrections(products) {
+export function applyHistoricalCorrections(products) {
   const map = buildHistoricalCorrectionMap();
   if (map.size === 0) return;
   for (const p of products) {
@@ -122,76 +127,82 @@ function loadReviews(uploadId) {
   }));
 }
 
-// POST /api/analysis — 분석 실행 (로그인 필요 / 익명 데모는 환경변수로 허용)
+// POST /api/analysis — 분석 *시작* (요청 시점에는 완료를 기다리지 않음).
+// pending row 만 만든 뒤 즉시 analysisId 를 반환하고, 실제 분석은 setImmediate 로
+// background 에서 진행. 프론트는 GET /:id/status 로 polling 한다.
+// 60초 timeout 회피 + LLM 호출 시간 무관하게 UI 가 안 죽도록 한 핵심 변경.
 router.post('/', requireAuth, async (req, res) => {
   const schema = z.object({ uploadId: z.string().min(1) });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'uploadId가 필요합니다.' });
 
-  // 업로드 소유권 확인
-  const upload = db.prepare('SELECT id, original_name, user_id FROM upload_files WHERE id = ?').get(parsed.data.uploadId);
+  const upload = db.prepare('SELECT id, original_name, user_id, source FROM upload_files WHERE id = ?').get(parsed.data.uploadId);
   if (!upload) return res.status(404).json({ error: '업로드를 찾을 수 없습니다.' });
   if (!assertOwnership(req, res, upload)) return;
 
   const reviews = loadReviews(parsed.data.uploadId);
   if (!reviews.length) return res.status(400).json({ error: '정규화된 리뷰가 없습니다. 먼저 컬럼 매핑을 완료하세요.' });
 
-  // 플랜 제한 확인 (BILLING_ENFORCE_LIMITS=true 일 때만 실제 차단)
   const userId = req.user?.id || null;
   const guard = checkCanCreateAnalysis(userId, reviews.length);
   if (!guard.ok) return res.status(guard.status).json(guard.body);
 
+  // 1) pending row 즉시 생성 — 프론트가 polling 할 id 를 응답.
+  const analysisId = nanoid();
+  const isSample =
+    upload.source === 'sample' ||
+    (upload.original_name || '').toLowerCase() === 'sample_reviews_fashion.csv';
   try {
-    const allCorrections = loadAllCorrections();
-    // 플랜 정책 — runAnalysis 안의 mini 재분석 / 캐시 / token usage 로깅에 사용.
-    const sub = userId ? getUserSubscription(userId) : null;
-    const planCode = sub?.plan_code || 'free';
-    const { analysisId, summary, products, classifications } = await runAnalysis(
-      reviews,
-      allCorrections,
-      { planCode, userId },
-    );
-    applyHistoricalCorrections(products);
-
-    // 샘플 판별 표준: source === 'sample' 우선. 과거 데이터 호환을 위해 우리가
-    // 고정으로 사용하는 sample 파일명 매칭은 fallback.
-    summary.isSample =
-      upload.source === 'sample' ||
-      (upload.original_name || '').toLowerCase() === 'sample_reviews_fashion.csv';
-
-    db.prepare(
-      'INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id, is_sample) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(analysisId, parsed.data.uploadId, 'done', JSON.stringify(summary), userId, summary.isSample ? 1 : 0);
-
-    const insertPa = db.prepare(
-      'INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?, ?, ?, ?, ?, ?)',
-    );
-    const insertCls = db.prepare(
-      'INSERT INTO review_classifications (id, analysis_id, review_pk, sentiment, categories, user_id) VALUES (?, ?, ?, ?, ?, ?)',
-    );
-    const tx = db.transaction(() => {
-      products.forEach((p, i) =>
-        insertPa.run(`${analysisId}_${i}`, analysisId, p.productKey, p.productName, JSON.stringify(p), userId),
-      );
-      classifications.forEach((c, i) =>
-        insertCls.run(`${analysisId}_c${i}`, analysisId, c.reviewId, c.sentiment, JSON.stringify(c.categories), userId),
-      );
+    createPendingJob({
+      analysisId,
+      uploadId: parsed.data.uploadId,
+      userId,
+      totalReviews: reviews.length,
+      isSample,
     });
-    tx();
-
-    // 사용량 기록 (로그인 사용자만; 익명은 기록 안 함)
-    if (userId) recordUsage(userId, 'analysis_created', { analysisId, uploadId: parsed.data.uploadId });
-
-    // 분석 완료 후 임시 파싱 데이터 제거
-    db.prepare('UPDATE upload_files SET rows = NULL, sheet_parse_results = NULL WHERE id = ?').run(
-      parsed.data.uploadId,
-    );
-
-    res.json({ analysisId, summary });
   } catch (e) {
-    console.error('[analysis] error', e);
-    res.status(500).json({ error: `분석 중 오류: ${e.message}` });
+    return res.status(500).json({ error: `분석 작업 생성 실패: ${e.message}` });
   }
+
+  // 2) background 분석 실행 — fire-and-forget. runAnalysisJob 내부에서 모든
+  // 예외를 catch 해 status=failed 로 저장하므로 process 가 죽을 일 없음.
+  const allCorrections = loadAllCorrections();
+  const sub = userId ? getUserSubscription(userId) : null;
+  const planCode = sub?.plan_code || 'free';
+  setImmediate(() => {
+    runAnalysisJob({
+      analysisId,
+      uploadId: parsed.data.uploadId,
+      userId,
+      reviews,
+      corrections: allCorrections,
+      planCode,
+      isSample,
+    }).catch((e) => console.error('[analysis] background error', e));
+  });
+
+  // 3) 즉시 응답 — 프론트는 /history 로 이동해서 status polling.
+  res.json({
+    success: true,
+    analysisId,
+    status: 'processing',
+    message: '리뷰 분석을 시작했어요. 완료되면 분석 히스토리에서 확인할 수 있습니다.',
+  });
+});
+
+// GET /api/analysis/:id/status — 분석 job 상태 (프론트 polling 용).
+// 본인 분석만 조회 가능. completed 면 reportReady=true.
+router.get('/:id/status', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
+  const job = getJobStatus(req.params.id);
+  if (!job) return res.status(404).json({ error: 'NOT_FOUND', message: '분석을 찾을 수 없습니다.' });
+  res.json({
+    success: true,
+    analysis: {
+      ...job,
+      reportReady: job.status === 'completed',
+    },
+  });
 });
 
 // GET /api/analysis/:id — 전체 결과 (히스토리 재조회용).
@@ -201,13 +212,30 @@ router.get('/:id', requireAuth, (req, res) => {
   const job = db.prepare('SELECT * FROM analysis_jobs WHERE id = ?').get(req.params.id);
   if (!job) return res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
   if (!assertOwnership(req, res, job)) return;
+
+  // completed/done(legacy) 가 아니면 진행 중 / 실패 응답 — 프론트 대시보드가
+  // undefined report 에 깨지지 않도록.
+  const isReady = job.status === 'completed' || job.status === 'done';
+  if (!isReady) {
+    return res.status(202).json({
+      analysisId: job.id,
+      status: job.status,
+      progress: job.progress ?? 0,
+      errorMessage: job.error_message || null,
+      message: job.status === 'failed'
+        ? '리뷰 분석에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+        : '리뷰 분석 중입니다. 분석이 완료되면 리포트를 확인할 수 있어요.',
+    });
+  }
+
   const productRows = db
     .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
     .all(req.params.id);
   const products = productRows.map((r) => JSON.parse(r.data));
   res.json({
     analysisId: job.id,
-    status: job.status,
+    status: 'completed',
+    progress: 100,
     summary: JSON.parse(job.summary),
     products,
     createdAt: job.created_at,
@@ -254,6 +282,17 @@ router.get('/:id/products', requireAuth, (req, res) => {
 // GET /api/analysis/:id/products/:productKey — 상품 상세 (저장된 사용자 수정 반영)
 router.get('/:id/products/:productKey', requireAuth, (req, res) => {
   if (!assertAnalysisOwnership(req, res)) return;
+  // 비동기 job — 아직 진행 중이면 product_analyses 가 비어 있다. 친절한 안내로 분기.
+  const jobRow = db.prepare('SELECT status, error_message FROM analysis_jobs WHERE id = ?').get(req.params.id);
+  if (jobRow && jobRow.status !== 'completed' && jobRow.status !== 'done') {
+    return res.status(202).json({
+      status: jobRow.status,
+      message: jobRow.status === 'failed'
+        ? '리뷰 분석에 실패했습니다.'
+        : '리뷰 분석 중입니다. 분석이 완료되면 리포트를 확인할 수 있어요.',
+      errorMessage: jobRow.error_message || null,
+    });
+  }
   const row = db
     .prepare('SELECT data FROM product_analyses WHERE analysis_id = ? AND product_key = ?')
     .get(req.params.id, req.params.productKey);

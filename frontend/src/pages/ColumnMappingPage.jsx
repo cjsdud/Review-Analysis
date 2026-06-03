@@ -95,8 +95,10 @@ export default function ColumnMappingPage() {
     setAnalyzing(true);
     try {
       await saveMapping(uploadId, mapping, { saveAsTemplate: saveTemplate, templateName });
+      // 분석은 백그라운드로 시작됨 — 응답에는 analysisId 만 들어 있고 상태는 processing.
+      // 대시보드 대신 히스토리로 보내서 사용자가 진행률을 보고 완료 후 리포트로 이동하게 함.
       const res = await runAnalysis(uploadId);
-      navigate(`/dashboard/${res.analysisId}`);
+      navigate(`/history?highlight=${encodeURIComponent(res.analysisId)}`);
     } catch (e) {
       setError(e.message);
       setAnalyzing(false);
