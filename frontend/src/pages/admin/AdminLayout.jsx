@@ -8,6 +8,7 @@ const TABS = [
   { to: '/admin/settings', label: '운영 설정' },
   { to: '/admin/announcements', label: '공지/배너' },
   { to: '/admin/action-logs', label: '액션 로그' },
+  { to: '/admin/llm-logs', label: 'AI 분석 로그' },
 ];
 
 export default function AdminLayout() {

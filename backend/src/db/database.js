@@ -87,6 +87,17 @@ ensureColumn('review_classifications', 'user_id', 'user_id TEXT');
 
 // 샘플 분석 표식 — 파일명/source 추론 없이 명시적 판별. 0=일반 업로드, 1=샘플 분석.
 ensureColumn('analysis_jobs', 'is_sample', 'is_sample INTEGER NOT NULL DEFAULT 0');
+
+// llm_usage_logs 확장 컬럼 (이전 마이그레이션엔 없었음 — idempotent 추가).
+// 관리자 콘솔 "AI 분석 로그" 화면이 한 row 로 분석 단위 요약을 보여줄 수 있게 한다.
+ensureColumn('llm_usage_logs', 'analysis_version', 'analysis_version TEXT');
+ensureColumn('llm_usage_logs', 'review_count', 'review_count INTEGER');
+ensureColumn('llm_usage_logs', 'cache_hit_count', 'cache_hit_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('llm_usage_logs', 'cache_miss_count', 'cache_miss_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('llm_usage_logs', 'mini_reanalysis_count', 'mini_reanalysis_count INTEGER NOT NULL DEFAULT 0');
+ensureColumn('llm_usage_logs', 'openai_called', 'openai_called INTEGER NOT NULL DEFAULT 0');
+ensureColumn('llm_usage_logs', 'fallback_used', 'fallback_used INTEGER NOT NULL DEFAULT 0');
+ensureColumn('llm_usage_logs', 'fallback_provider', 'fallback_provider TEXT');
 // 기존 source='sample' 데이터 보정 (한 번만 의미 있음, 이미 1 이면 변화 없음)
 db.exec(`
   UPDATE analysis_jobs

@@ -30,21 +30,31 @@ function estimateCostUsd({ model, inputTokens, outputTokens }) {
 }
 
 // 호출 1건 기록.
-//   provider: 'openai' | 'gemini' | 'claude' | 'mock' | 'rule'
-//   requestType: 'review_analysis' | 'review_reanalysis' | 'report_summary' | 'cs_reply'
+//   provider: 'openai' | 'gemini' | 'claude' | 'mock' | 'rule' | 'cache'
+//   requestType: 'review_analysis' | 'review_reanalysis' | 'report_summary' | 'cs_reply' | 'analysis_summary'
 //   usage: { inputTokens, outputTokens, totalTokens? }
 //   status: 'ok' | 'error'
 //   error: 문자열 (status='error' 일 때)
+//   reviewCount / cacheHitCount / cacheMissCount / miniReanalysisCount: 분석 단위 요약용
+//   openaiCalled / fallbackUsed / fallbackProvider: 관리자 로그 화면 표시용
 export function recordLlmUsage({
   userId = null,
   analysisId = null,
   provider,
   model = null,
   promptVersion = null,
+  analysisVersion = null,
   requestType,
   usage = {},
   status = 'ok',
   error = null,
+  reviewCount = null,
+  cacheHitCount = 0,
+  cacheMissCount = 0,
+  miniReanalysisCount = 0,
+  openaiCalled = false,
+  fallbackUsed = false,
+  fallbackProvider = null,
 } = {}) {
   if (!provider || !requestType) return null;
   const input = Number(usage.inputTokens) || 0;
@@ -54,18 +64,86 @@ export function recordLlmUsage({
   try {
     const r = db.prepare(
       `INSERT INTO llm_usage_logs
-         (user_id, analysis_id, provider, model, prompt_version, request_type,
-          input_tokens, output_tokens, total_tokens, estimated_cost_usd, status, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (user_id, analysis_id, provider, model, prompt_version, analysis_version, request_type,
+          input_tokens, output_tokens, total_tokens, estimated_cost_usd,
+          review_count, cache_hit_count, cache_miss_count, mini_reanalysis_count,
+          openai_called, fallback_used, fallback_provider,
+          status, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      userId, analysisId, provider, model, promptVersion, requestType,
-      input, output, total, cost, status, error ? String(error).slice(0, 500) : null,
+      userId, analysisId, provider, model, promptVersion, analysisVersion, requestType,
+      input, output, total, cost,
+      reviewCount, cacheHitCount, cacheMissCount, miniReanalysisCount,
+      openaiCalled ? 1 : 0, fallbackUsed ? 1 : 0, fallbackProvider,
+      status, error ? String(error).slice(0, 500) : null,
     );
     return r.lastInsertRowid;
   } catch (e) {
     console.warn('[llm-usage] failed to record:', e.message);
     return null;
   }
+}
+
+// 관리자 콘솔용: 로그 목록 (페이징 + 필터).
+//   filters: { provider, model, requestType, userId, analysisId, dateFrom, dateTo }
+export function listLlmLogs({ page = 1, limit = 20, filters = {} } = {}) {
+  const where = [];
+  const params = [];
+  if (filters.provider)    { where.push('l.provider = ?');     params.push(filters.provider); }
+  if (filters.model)       { where.push('l.model = ?');        params.push(filters.model); }
+  if (filters.requestType) { where.push('l.request_type = ?'); params.push(filters.requestType); }
+  if (filters.userId)      { where.push('l.user_id = ?');      params.push(filters.userId); }
+  if (filters.analysisId)  { where.push('l.analysis_id = ?');  params.push(filters.analysisId); }
+  if (filters.dateFrom)    { where.push('l.created_at >= ?'); params.push(String(filters.dateFrom)); }
+  if (filters.dateTo)      { where.push('l.created_at <= ?'); params.push(String(filters.dateTo)); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const off = Math.max(0, (Number(page) - 1) * Number(limit));
+  const lim = Math.max(1, Math.min(Number(limit) || 20, 200));
+  const rows = db.prepare(
+    `SELECT l.*, u.email AS user_email FROM llm_usage_logs l
+     LEFT JOIN users u ON u.id = l.user_id
+     ${whereSql}
+     ORDER BY l.created_at DESC LIMIT ? OFFSET ?`,
+  ).all(...params, lim, off);
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM llm_usage_logs l ${whereSql}`).get(...params).n;
+  return { rows, total, page: Number(page) || 1, limit: lim };
+}
+
+export function getLlmLog(id) {
+  const row = db.prepare(
+    `SELECT l.*, u.email AS user_email FROM llm_usage_logs l
+     LEFT JOIN users u ON u.id = l.user_id WHERE l.id = ?`,
+  ).get(id);
+  return row || null;
+}
+
+// 관리자 콘솔용 요약 카드 — 오늘/이번 달 token 합계 / 예상 비용 / OpenAI 호출 / cache hit / fallback.
+export function getLlmUsageSummary() {
+  const today = db.prepare(
+    `SELECT COALESCE(SUM(total_tokens), 0) AS tokens,
+            COALESCE(SUM(estimated_cost_usd), 0) AS cost
+     FROM llm_usage_logs WHERE created_at >= date('now', 'start of day')`,
+  ).get();
+  const month = db.prepare(
+    `SELECT COALESCE(SUM(total_tokens), 0) AS tokens,
+            COALESCE(SUM(estimated_cost_usd), 0) AS cost
+     FROM llm_usage_logs WHERE created_at >= date('now', 'start of month')`,
+  ).get();
+  const counts = db.prepare(
+    `SELECT SUM(openai_called) AS openai,
+            SUM(cache_hit_count) AS cache_hits,
+            SUM(fallback_used) AS fallbacks
+     FROM llm_usage_logs WHERE created_at >= date('now', 'start of month')`,
+  ).get();
+  return {
+    todayTotalTokens: Number(today?.tokens || 0),
+    todayEstimatedCostUsd: Number((today?.cost || 0).toFixed?.(6) || 0),
+    monthTotalTokens: Number(month?.tokens || 0),
+    monthEstimatedCostUsd: Number((month?.cost || 0).toFixed?.(6) || 0),
+    openaiCallCount: Number(counts?.openai || 0),
+    cacheHitCount: Number(counts?.cache_hits || 0),
+    fallbackCount: Number(counts?.fallbacks || 0),
+  };
 }
 
 // 관리자 콘솔용 — 사용자/분석별 token 합계.

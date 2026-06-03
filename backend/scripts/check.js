@@ -440,6 +440,31 @@ await step('ai/cache — review_analysis_cache hit / miss / promptVersion 변경
   assert.equal(miss, null);
 });
 
+await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', async () => {
+  const usage = await import('../src/services/ai/usage.service.js');
+  // 분석 단위 요약 행 1개 + OpenAI 호출 1개 + mock fallback 1개 기록
+  usage.recordLlmUsage({
+    provider: 'mock', model: 'gpt-5.4-nano', requestType: 'analysis_summary',
+    reviewCount: 100, cacheHitCount: 20, cacheMissCount: 5, miniReanalysisCount: 5,
+    openaiCalled: false, fallbackUsed: true, fallbackProvider: 'mock',
+  });
+  usage.recordLlmUsage({
+    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'review_reanalysis',
+    usage: { inputTokens: 1000, outputTokens: 500 }, openaiCalled: true,
+  });
+  const list = usage.listLlmLogs({ page: 1, limit: 5 });
+  assert(list.rows.length >= 2, '로그 행 반환');
+  assert(list.total >= 2, 'total count 반환');
+  // provider filter
+  const openaiOnly = usage.listLlmLogs({ filters: { provider: 'openai' } });
+  assert(openaiOnly.rows.every((r) => r.provider === 'openai'), 'provider filter 작동');
+  // summary
+  const sum = usage.getLlmUsageSummary();
+  assert(typeof sum.todayTotalTokens === 'number');
+  assert(typeof sum.monthEstimatedCostUsd === 'number');
+  assert(sum.openaiCallCount >= 1, 'openai 호출 카운트 반영');
+});
+
 await step('ai/usage — llm_usage_logs 기록 + 토큰/비용 계산', async () => {
   const usage = await import('../src/services/ai/usage.service.js');
   const id = usage.recordLlmUsage({

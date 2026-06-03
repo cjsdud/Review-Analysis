@@ -9,6 +9,7 @@ import { listSettings, setSetting } from '../services/settings.service.js';
 import { logAdminAction, isLastAdmin, listAdminLogs } from '../services/adminAudit.service.js';
 import { getDemoViewStats } from '../services/analytics.service.js';
 import { resetMonthlyUsage } from '../services/billing.service.js';
+import { listLlmLogs, getLlmLog, getLlmUsageSummary } from '../services/ai/usage.service.js';
 
 const router = Router();
 
@@ -439,6 +440,62 @@ router.get('/action-logs', (req, res) => {
     reason: r.reason,
     createdAt: r.created_at,
   })));
+});
+
+// ===== AI 분석 로그 (LLM 사용량) =====
+// admin only — provider / model / token / cost / cache / fallback 정보를 한 줄씩 노출.
+// 일반 사용자 API 에서는 절대 노출하지 않는다.
+function rowToLlmLog(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    createdAt: r.created_at,
+    userId: r.user_id,
+    userEmail: r.user_email || null,
+    analysisId: r.analysis_id,
+    provider: r.provider,
+    model: r.model,
+    requestType: r.request_type,
+    promptVersion: r.prompt_version,
+    analysisVersion: r.analysis_version,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    totalTokens: r.total_tokens,
+    estimatedCostUsd: r.estimated_cost_usd,
+    reviewCount: r.review_count,
+    cacheHitCount: r.cache_hit_count,
+    cacheMissCount: r.cache_miss_count,
+    miniReanalysisCount: r.mini_reanalysis_count,
+    openaiCalled: r.openai_called === 1,
+    fallbackUsed: r.fallback_used === 1,
+    fallbackProvider: r.fallback_provider,
+    status: r.status,
+    errorMessage: r.error_message,
+  };
+}
+
+router.get('/llm-logs', (req, res) => {
+  const { page, limit, provider, model, requestType, userId, analysisId, dateFrom, dateTo } = req.query;
+  const { rows, total, page: p, limit: l } = listLlmLogs({
+    page: Number(page) || 1,
+    limit: Number(limit) || 20,
+    filters: { provider, model, requestType, userId, analysisId, dateFrom, dateTo },
+  });
+  res.json({
+    success: true,
+    logs: rows.map(rowToLlmLog),
+    pagination: { page: p, limit: l, total },
+  });
+});
+
+router.get('/llm-logs/summary', (_req, res) => {
+  res.json({ success: true, summary: getLlmUsageSummary() });
+});
+
+router.get('/llm-logs/:id', (req, res) => {
+  const row = getLlmLog(req.params.id);
+  if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: '로그를 찾을 수 없습니다.' });
+  res.json({ success: true, log: rowToLlmLog(row) });
 });
 
 export default router;

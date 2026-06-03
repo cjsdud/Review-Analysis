@@ -19,6 +19,7 @@ import AdminReportsPage from './pages/admin/AdminReportsPage.jsx';
 import AdminSettingsPage from './pages/admin/AdminSettingsPage.jsx';
 import AdminAnnouncementsPage from './pages/admin/AdminAnnouncementsPage.jsx';
 import AdminActionLogsPage from './pages/admin/AdminActionLogsPage.jsx';
+import AdminLlmLogsPage from './pages/admin/AdminLlmLogsPage.jsx';
 import { useAuth } from './auth/AuthContext.jsx';
 
 // / 진입 분기: 로그인 사용자는 분석 히스토리(앱 홈), 비로그인은 랜딩 페이지.
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="announcements" element={<AdminAnnouncementsPage />} />
           <Route path="action-logs" element={<AdminActionLogsPage />} />
+          <Route path="llm-logs" element={<AdminLlmLogsPage />} />
         </Route>
       </Route>
     </Routes>

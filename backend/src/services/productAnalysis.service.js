@@ -125,10 +125,23 @@ function maskedReviewForProduct(review, classification, productKey) {
 }
 
 // 플랜 정책 기반 mini 재분석 — Pro/Business 만 활성. 캐시 + token usage 로깅 포함.
+// 분석 단위 카운터(cacheHit, miss, miniReanalysis, openaiCalled, fallbackUsed) 를
+// 반환해 runAnalysis 가 한 줄 분석 summary 로그를 남길 수 있게 한다.
 async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId, analysisId }) {
+  const stats = {
+    candidateCount: 0,
+    cacheHitCount: 0,
+    cacheMissCount: 0,
+    miniReanalysisCount: 0,
+    openaiCalled: false,
+    fallbackUsed: false,
+    fallbackProvider: null,
+    model: null,
+  };
   const policy = selectLlmMode(planCode);
-  if (!policy.allowMiniReanalysis) return; // Free/Starter 는 단계 자체 OFF
-  // 후보 선별: shouldReanalyze 가 true 인 분류만.
+  stats.model = policy.precisionModel || null;
+  if (!policy.allowMiniReanalysis) return stats; // Free/Starter 는 단계 자체 OFF
+
   const candidates = [];
   for (const c of classifications) {
     const review = reviewMap.get(c.reviewId);
@@ -137,13 +150,15 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
       candidates.push({ classification: c, content });
     }
   }
-  if (!candidates.length) return;
-  // 비율 상한 (maxMiniReanalysisRatio) — 비용 폭주 방지. 0.2 면 전체의 20% 까지만.
+  stats.candidateCount = candidates.length;
+  if (!candidates.length) return stats;
+
   const cap = Math.max(1, Math.ceil(classifications.length * (policy.maxMiniReanalysisRatio || 0)));
   const targets = candidates.slice(0, cap);
   const model = policy.precisionModel || 'gpt-5.4-mini';
+  stats.model = model;
 
-  const reanalyze = []; // 캐시 miss 라 LLM 으로 보낼 항목만
+  const reanalyze = [];
   for (const t of targets) {
     const hash = makeReviewHash(t.content, PROMPT_VERSION);
     const cached = getCachedReviewAnalysis({
@@ -152,33 +167,44 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
     });
     if (cached) {
       mergeMiniResult(t.classification, cached);
+      stats.cacheHitCount++;
     } else {
       t.hash = hash;
       reanalyze.push(t);
+      stats.cacheMissCount++;
     }
   }
-  if (!reanalyze.length) return;
+  if (!reanalyze.length) return stats;
 
-  // LLM 호출 — mock 환경에서는 aiClient 가 mock 응답으로 fallback. 실 호출 시에는
-  // token usage 가 응답에 포함되지 않으면 0 으로 기록 (provider 응답 형식이 모델별
-  // 로 다를 수 있어 방어적).
   const reqType = 'review_reanalysis';
   try {
     const llmResults = await aiClient.classifyAmbiguousReviews(
       reanalyze.map((t) => ({ id: t.classification.reviewId, content: t.content })),
       FASHION_CATEGORIES,
     );
+    const provider = aiClient.aiMode;
     const usage = aiClient.lastUsage || {};
+    // mock/rule 응답으로 떨어졌으면 openaiCalled=false + fallback 로 표시.
+    stats.openaiCalled = provider === 'openai';
+    if (!stats.openaiCalled) {
+      stats.fallbackUsed = true;
+      stats.fallbackProvider = provider; // 'mock' 등
+    }
+    stats.miniReanalysisCount = reanalyze.length;
     recordLlmUsage({
-      userId, analysisId, provider: aiClient.aiMode, model,
-      promptVersion: PROMPT_VERSION, requestType: reqType,
-      usage, status: 'ok',
+      userId, analysisId, provider, model,
+      promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
+      requestType: reqType, usage, status: 'ok',
+      openaiCalled: stats.openaiCalled,
+      fallbackUsed: stats.fallbackUsed,
+      fallbackProvider: stats.fallbackProvider,
+      miniReanalysisCount: stats.miniReanalysisCount,
+      cacheMissCount: stats.cacheMissCount,
     });
     const byId = new Map((llmResults || []).map((r) => [r.reviewId, r]));
     for (const t of reanalyze) {
       const r = byId.get(t.classification.reviewId);
       if (!r || !Array.isArray(r.categories) || r.categories.length === 0) continue;
-      // nano 결과를 mini 결과로 덮어쓰되 schema 정규화.
       const newCategories = r.categories
         .filter((cat) => cat && cat.name)
         .map((cat) => ({
@@ -201,18 +227,22 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
       mergeMiniResult(t.classification, merged);
       saveReviewAnalysisCache({
         reviewHash: t.hash, promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
-        provider: aiClient.aiMode, model, result: merged, userId, analysisId,
+        provider, model, result: merged, userId, analysisId,
       });
     }
   } catch (e) {
-    // 재분석 실패는 전체 분석을 깨뜨리면 안 된다 — 기존 nano 결과 유지 + 에러 로깅.
+    stats.fallbackUsed = true;
+    stats.fallbackProvider = 'error';
     recordLlmUsage({
       userId, analysisId, provider: aiClient.aiMode, model,
-      promptVersion: PROMPT_VERSION, requestType: reqType,
-      status: 'error', error: e.message,
+      promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
+      requestType: reqType, status: 'error', error: e.message,
+      miniReanalysisCount: reanalyze.length, cacheMissCount: stats.cacheMissCount,
+      fallbackUsed: true, fallbackProvider: 'error',
     });
     console.warn('[reanalyze] mini 재분석 실패 — nano 결과 유지:', e.message);
   }
+  return stats;
 }
 
 // mini 결과 → 기존 classification 에 덮어쓰기. 빈 결과면 유지.
@@ -243,13 +273,54 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   //   - Free/Starter: policy.allowMiniReanalysis=false → 단계 자체 skip
   //   - Pro/Business: shouldReanalyze=true 인 항목 + maxMiniReanalysisRatio 이내만 호출
   // 캐시 hit 이면 LLM 호출 없이 result 사용, miss 면 호출 + 캐시 저장 + token usage 로깅.
-  await maybeMiniReanalyze({
+  const reanalyzeStats = await maybeMiniReanalyze({
     classifications,
     reviewMap,
     planCode: opts.planCode || 'free',
     userId: opts.userId || null,
     analysisId: opts.analysisId || null,
   });
+
+  // 분석 단위 요약 로그 — 관리자 콘솔 "AI 분석 로그" 화면이 한 줄로 분석 1건을
+  // 표시할 수 있도록 별도 row 로 한 번 더 기록한다 (request_type='analysis_summary').
+  // LLM 비호출(mock/rule 환경 + mini 재분석 OFF) 일 때도 기록 — 관리자가
+  // "이번 분석에 OpenAI 가 실제 호출됐는가" 를 한 눈에 보게.
+  recordLlmUsage({
+    userId: opts.userId || null,
+    analysisId: opts.analysisId || null,
+    provider: aiClient.aiMode,
+    model: reanalyzeStats.model || null,
+    promptVersion: PROMPT_VERSION,
+    analysisVersion: ANALYSIS_VERSION,
+    requestType: 'analysis_summary',
+    reviewCount: reviews.length,
+    cacheHitCount: reanalyzeStats.cacheHitCount,
+    cacheMissCount: reanalyzeStats.cacheMissCount,
+    miniReanalysisCount: reanalyzeStats.miniReanalysisCount,
+    openaiCalled: reanalyzeStats.openaiCalled,
+    fallbackUsed: reanalyzeStats.fallbackUsed,
+    fallbackProvider: reanalyzeStats.fallbackProvider,
+  });
+
+  // Render 콘솔 로그 — 운영 진단용. API key / 리뷰 원문 등 민감 정보는 절대 찍지 않는다.
+  const planCode = opts.planCode || 'free';
+  const policy = selectLlmMode(planCode);
+  console.info('[ReviewFit AI] provider=' + aiClient.aiMode);
+  console.info('[ReviewFit AI] plan=' + planCode + ' llmMode=' + policy.mode);
+  console.info('[ReviewFit AI] reviewModel=' + policy.reviewModel);
+  console.info('[ReviewFit AI] summaryModel=' + policy.summaryModel);
+  console.info('[ReviewFit AI] precisionModel=' + (policy.precisionModel || 'none'));
+  console.info('[ReviewFit AI] promptVersion=' + PROMPT_VERSION);
+  console.info('[ReviewFit AI] analysisVersion=' + ANALYSIS_VERSION);
+  console.info('[ReviewFit AI] reviewCount=' + reviews.length);
+  console.info(
+    '[ReviewFit AI] cacheHit=' + reanalyzeStats.cacheHitCount +
+    ' cacheMiss=' + reanalyzeStats.cacheMissCount,
+  );
+  console.info('[ReviewFit AI] miniReanalysisCount=' + reanalyzeStats.miniReanalysisCount);
+  console.info('[ReviewFit AI] openaiCalled=' + reanalyzeStats.openaiCalled);
+  console.info('[ReviewFit AI] fallbackUsed=' + reanalyzeStats.fallbackUsed +
+    (reanalyzeStats.fallbackProvider ? ' fallbackProvider=' + reanalyzeStats.fallbackProvider : ''));
 
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
 

@@ -19,6 +19,9 @@ export const adminApi = {
   patchAnnouncement: (id, body) => client.patch(`/admin/announcements/${id}`, body).then((r) => r.data),
   deleteAnnouncement: (id) => client.delete(`/admin/announcements/${id}`).then((r) => r.data),
   actionLogs:     (params = {}) => client.get('/admin/action-logs', { params }).then((r) => r.data),
+  llmLogs:        (params = {}) => client.get('/admin/llm-logs', { params }).then((r) => r.data),
+  llmLogDetail:   (id) => client.get(`/admin/llm-logs/${id}`).then((r) => r.data),
+  llmLogSummary:  () => client.get('/admin/llm-logs/summary').then((r) => r.data),
 };
 
 export async function getActiveAnnouncements() {

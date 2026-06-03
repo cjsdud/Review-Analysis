@@ -278,6 +278,8 @@ CREATE INDEX IF NOT EXISTS idx_review_cache_hash ON review_analysis_cache(review
 
 -- LLM 호출 단위 token usage / 비용 로깅.
 -- LLM_PROVIDER=mock 일 때는 0 token 으로 provider=mock 기록.
+-- review_count / cache_*_count / mini_reanalysis_count / openai_called /
+-- fallback_used 는 분석 단위 요약 (request_type='analysis_summary') 에 의미를 갖는다.
 CREATE TABLE IF NOT EXISTS llm_usage_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT,
@@ -285,11 +287,19 @@ CREATE TABLE IF NOT EXISTS llm_usage_logs (
   provider TEXT NOT NULL,
   model TEXT,
   prompt_version TEXT,
+  analysis_version TEXT,
   request_type TEXT NOT NULL,
   input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
   total_tokens INTEGER NOT NULL DEFAULT 0,
   estimated_cost_usd REAL,
+  review_count INTEGER,
+  cache_hit_count INTEGER NOT NULL DEFAULT 0,
+  cache_miss_count INTEGER NOT NULL DEFAULT 0,
+  mini_reanalysis_count INTEGER NOT NULL DEFAULT 0,
+  openai_called INTEGER NOT NULL DEFAULT 0,
+  fallback_used INTEGER NOT NULL DEFAULT 0,
+  fallback_provider TEXT,
   status TEXT NOT NULL DEFAULT 'ok',
   error_message TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
