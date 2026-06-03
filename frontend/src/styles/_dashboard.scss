@@ -1195,3 +1195,29 @@
     color: $danger;
   }
 }
+
+// 공통 페이지네이션 — 카드 리스트 / ProductsTable 하단에 사용.
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(15, 111, 220, 0.12);
+}
+.pagination__summary { font-size: 13px; }
+.pagination__page    { font-size: 13px; font-weight: 700; padding: 0 6px; }
+.pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 768px) {
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pagination__controls { justify-content: space-between; }
+  .pagination__controls .btn { flex: 1; }
+}

@@ -1,12 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SentimentBar from './SentimentBar.jsx';
 import ProductStatusBadge from './ProductStatusBadge.jsx';
+import Pagination from './Pagination.jsx';
 import { sortProducts, filterProducts, buildStatusFilters } from '../utils/productSort.js';
+import { paginateItems } from '../utils/pagination.js';
 
 // 대시보드 "상품별 문제 정리" — 카드 그리드 레이아웃.
 // 데스크톱: 좌측(상품명/상태/주요이슈 chip) + 우측(지표 그리드 + 감성바 + 상세 버튼).
 // 모바일: 1열 카드. 상품명은 word-break: keep-all + 2줄 line-clamp 로 세로 쪼개짐 방지.
-export default function ProductsTable({ products = [], onSelect }) {
+// page/pageSize/onPageChange 가 제어 prop 으로 들어오면 페이지네이션 활성.
+// 필터/정렬은 ProductsTable 내부에서 먼저 적용한 뒤 그 결과를 slice — 다른 페이지
+// 의 항목이 현재 페이지 필터 결과에 안 섞이게.
+export default function ProductsTable({ products = [], onSelect, page = 1, pageSize, onPageChange }) {
   const [sortBy, setSortBy] = useState('priority');
   const [statusFilter, setStatusFilter] = useState('전체');
   const [query, setQuery] = useState('');
@@ -16,6 +21,14 @@ export default function ProductsTable({ products = [], onSelect }) {
     const filtered = filterProducts(products, { status: statusFilter, query });
     return sortProducts(filtered, sortBy);
   }, [products, statusFilter, query, sortBy]);
+
+  // 필터/정렬/검색이 바뀌면 페이지를 1 로 되돌림 — 다른 페이지를 보던 사용자가
+  // 갑자기 빈 결과를 보지 않게.
+  useEffect(() => { onPageChange?.(1); }, [statusFilter, query, sortBy]);
+
+  // pageSize 가 주어지면 visible 결과를 slice. 미지정이면 전체 그대로.
+  const paged = pageSize ? paginateItems(visible, page, pageSize) : { items: visible, totalItems: visible.length, page: 1 };
+  const rendered = paged.items;
 
   if (!products.length) {
     return <div className="muted" style={{ padding: 16 }}>아직 분석된 상품이 없습니다.</div>;
@@ -63,11 +76,22 @@ export default function ProductsTable({ products = [], onSelect }) {
       {visible.length === 0 ? (
         <div className="muted" style={{ padding: 16 }}>조건에 맞는 상품이 없습니다.</div>
       ) : (
-        <ul className="product-card-list">
-          {visible.map((p) => (
-            <ProductRowCard key={p.productKey} product={p} onSelect={onSelect} />
-          ))}
-        </ul>
+        <>
+          <ul className="product-card-list">
+            {rendered.map((p) => (
+              <ProductRowCard key={p.productKey} product={p} onSelect={onSelect} />
+            ))}
+          </ul>
+          {pageSize && (
+            <Pagination
+              page={paged.page}
+              pageSize={pageSize}
+              totalItems={paged.totalItems}
+              onPageChange={onPageChange}
+              sectionLabel="상품별 문제 정리"
+            />
+          )}
+        </>
       )}
     </div>
   );

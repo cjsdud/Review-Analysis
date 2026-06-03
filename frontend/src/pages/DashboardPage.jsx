@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SummaryCards from '../components/SummaryCards.jsx';
 // CategoryChart는 ECharts를 포함해 무거우므로 lazy import — 대시보드 접근 시에만 로드
 const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
+import Pagination from '../components/Pagination.jsx';
+import { paginateItems } from '../utils/pagination.js';
 import TopFixTargets, { sortFixTargets } from '../components/TopFixTargets.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
 import ReviewExplorerModal from '../components/ReviewExplorerModal.jsx';
@@ -32,6 +34,11 @@ export default function DashboardPage() {
   const [chartType, setChartType] = useState('bar');
   const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
   const [reviewsModalCategory, setReviewsModalCategory] = useState('');
+  // 카드 리스트가 많아지면 대시보드가 너무 길어지므로 두 섹션 각각 독립 페이지.
+  const NEGATIVE_PRODUCTS_PAGE_SIZE = 5;
+  const PRODUCT_ISSUES_PAGE_SIZE = 6;
+  const [negativeProductsPage, setNegativeProductsPage] = useState(1);
+  const [productIssuesPage, setProductIssuesPage] = useState(1);
 
   useEffect(() => {
     (async () => {
@@ -147,6 +154,18 @@ export default function DashboardPage() {
 
   // 섹션 네비게이션 항목 — 페이지에 실제 렌더링되는 섹션만.
   const negativeRanking = summary.productRankingByNegative || [];
+  // 페이지 처리 — 원본 배열 보존 + slice 만. 데이터 길이가 바뀌면 page 자동 보정.
+  const pagedNegativeProducts = useMemo(
+    () => paginateItems(negativeRanking, negativeProductsPage, NEGATIVE_PRODUCTS_PAGE_SIZE),
+    [negativeRanking, negativeProductsPage],
+  );
+  const pagedProductIssues = useMemo(
+    () => paginateItems(products, productIssuesPage, PRODUCT_ISSUES_PAGE_SIZE),
+    [products, productIssuesPage],
+  );
+  // 분석이 바뀌어 리스트 길이가 달라지면 page 를 1 로 리셋.
+  useEffect(() => { setNegativeProductsPage(1); }, [negativeRanking.length]);
+  useEffect(() => { setProductIssuesPage(1); }, [products.length]);
   const navSections = [
     { id: 'sec-summary', label: '전체 요약' },
     products?.length > 0 ? { id: 'sec-top-products', label: '먼저 고칠 상품 TOP 3' } : null,
@@ -298,7 +317,9 @@ export default function DashboardPage() {
           subtitle="전체 만족도가 낮게 나타난 상품입니다. 리뷰가 5건 이상인 상품 중 부정 리뷰가 많은 순으로 정렬됩니다."
         >
           <ul className="negative-product-list">
-            {negativeRanking.map((p, i) => (
+            {pagedNegativeProducts.items.map((p, idx) => {
+              const i = pagedNegativeProducts.startIndex + idx; // 전체 rank 유지
+              return (
               <li key={p.productKey} className="negative-product-row">
                 <div className="negative-product-row__main">
                   <span className="negative-product-row__rank">{i + 1}</span>
@@ -338,8 +359,16 @@ export default function DashboardPage() {
                   </button>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
+          <Pagination
+            page={pagedNegativeProducts.page}
+            pageSize={NEGATIVE_PRODUCTS_PAGE_SIZE}
+            totalItems={pagedNegativeProducts.totalItems}
+            onPageChange={setNegativeProductsPage}
+            sectionLabel="부정 리뷰가 많은 상품"
+          />
         </SectionCard>
       )}
 
@@ -349,7 +378,13 @@ export default function DashboardPage() {
         title="상품별 문제 정리"
         subtitle="상품명을 클릭하면 근거 리뷰와 상세페이지 수정안을 볼 수 있습니다."
       >
-        <ProductsTable products={products} onSelect={goProduct} />
+        <ProductsTable
+          products={products}
+          onSelect={goProduct}
+          page={productIssuesPage}
+          pageSize={PRODUCT_ISSUES_PAGE_SIZE}
+          onPageChange={setProductIssuesPage}
+        />
       </SectionCard>
 
       {/* 차트 클릭 시 열리는 카테고리 사전 필터 리뷰 모달 */}
