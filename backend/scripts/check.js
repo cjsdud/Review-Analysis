@@ -590,6 +590,48 @@ await step('productAnalysis — aggregateSentiment 가 mixed 버킷 포함', asy
   assert(typeof summary.sentimentRatios.mixed === 'number');
 });
 
+await step('analysisModes — 카드별 사용 한도가 mode.minPlan 기준이라 서로 다른 숫자', async () => {
+  const m = await import('../../frontend/src/constants/analysisModes.js');
+  // 5 개 모드의 사용 한도 라인 (Business 사용자라도) 가 모두 다른 숫자여야 한다.
+  const businessUserCurrent = m.PLAN_LIMITS.business;
+  const lineSets = m.ANALYSIS_MODES.map((mode) => {
+    const limits = m.getLimitsForCard(mode); // currentFeatures 더 이상 영향 X
+    return { id: mode.id, limits, lines: m.formatPlanLimitLines(limits, mode) };
+  });
+  // (1) 각 mode 의 limits 가 그 mode.minPlan 의 PLAN_LIMITS 와 정확히 같다
+  for (const x of lineSets) {
+    const mode = m.ANALYSIS_MODES.find((mm) => mm.id === x.id);
+    assert.strictEqual(x.limits, m.PLAN_LIMITS[mode.minPlan],
+      `${x.id} 카드가 minPlan=${mode.minPlan} 한도를 안 씀`);
+  }
+  // (2) currentFeatures 가 들어와도 결과가 동일 (deprecated path 제거 회귀 가드)
+  for (const mode of m.ANALYSIS_MODES) {
+    const a = m.getLimitsForCard(mode);
+    // 새 시그니처는 currentFeatures 를 받지 않으므로 호출이 그대로 minPlan 만 반영해야 한다.
+    assert.strictEqual(a, m.PLAN_LIMITS[mode.minPlan]);
+  }
+  // (3) quick / standard / precision / advanced 4 카드의 월 리뷰 숫자는 서로 다르다.
+  // (batch 는 standard 와 같은 starter 기준이라 동일 — 의도된 동작)
+  const ids = ['quick', 'standard', 'precision', 'advanced'];
+  const counts = ids.map((id) => lineSets.find((x) => x.id === id).limits.monthlyReviewLimit);
+  assert.equal(new Set(counts).size, 4, `4 카드의 월 리뷰가 모두 달라야 함: ${counts.join(',')}`);
+  // (4) Business 사용자라도 quick 카드는 Free 한도(500) 가 나와야 한다
+  const quickLines = lineSets.find((x) => x.id === 'quick').lines;
+  assert(quickLines.some((l) => l.includes('500')), `quick 카드는 Free 500 한도: ${quickLines.join(' | ')}`);
+  // (5) advanced 카드는 Business 한도(50,000) 가 나와야 한다
+  const advLines = lineSets.find((x) => x.id === 'advanced').lines;
+  assert(advLines.some((l) => l.includes('50,000')), `advanced 카드는 Business 50,000 한도: ${advLines.join(' | ')}`);
+  // (6) batch 카드는 starter 한도 + "부터" 표기
+  const batchLines = lineSets.find((x) => x.id === 'batch').lines;
+  assert(batchLines.some((l) => l.includes('부터')), `batch 카드에 "부터" 표기: ${batchLines.join(' | ')}`);
+  // (7) 상단 "현재 플랜 요약" 은 사용자 plan 기준 — Business 면 50,000 이어야 한다
+  const summary = m.formatCurrentPlanSummary('business', businessUserCurrent);
+  assert(summary.some((l) => l.includes('50,000')), '현재 플랜 요약(Business)에 50,000');
+  // Free 면 500
+  const summaryFree = m.formatCurrentPlanSummary('free', null);
+  assert(summaryFree.some((l) => l.includes('500')), '현재 플랜 요약(Free)에 500');
+});
+
 await step('plans — frontend PLAN_LIMITS 와 backend PLAN_FEATURES 숫자 일치', async () => {
   const fe = await import('../../frontend/src/constants/analysisModes.js');
   const be = await import('../src/constants/plans.js');

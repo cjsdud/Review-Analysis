@@ -121,10 +121,19 @@ export function planLabel(planCode) {
   return PLAN_LABEL[normalizePlan(planCode)] || planCode;
 }
 
-// 카드에 표시할 한도 라인 — features 객체 또는 PLAN_LIMITS 항목 (둘 다 같은 키).
-export function formatPlanLimitLines(features) {
+const krw = (n) => n == null ? '—' : Number(n).toLocaleString('ko-KR');
+
+// 카드에 표시할 한도 라인 (3 줄). batch 처럼 "minPlan 부터 시작" 의미가 강한 모드는
+// 마지막 줄을 "완료 후 히스토리 확인" 으로 대체하고 숫자 뒤에 "부터" 를 붙인다.
+export function formatPlanLimitLines(features, mode = null) {
   if (!features) return [];
-  const krw = (n) => n == null ? '—' : Number(n).toLocaleString('ko-KR');
+  if (mode && mode.id === 'batch') {
+    return [
+      `월 리뷰 ${krw(features.monthlyReviewLimit)}건부터`,
+      `파일당 상품 ${krw(features.maxProductsPerFile)}개부터`,
+      `완료 후 히스토리 확인`,
+    ];
+  }
   return [
     `월 리뷰 ${krw(features.monthlyReviewLimit)}건`,
     `파일당 상품 ${krw(features.maxProductsPerFile)}개`,
@@ -132,10 +141,22 @@ export function formatPlanLimitLines(features) {
   ];
 }
 
-// 모드별 카드에 보여줄 한도 — 사용 가능한 카드는 "내 현재 한도"(currentFeatures),
-// 잠긴 카드는 "필요 플랜 기준 한도"(minPlan 의 PLAN_LIMITS) 를 표시.
-export function getLimitsForCard({ mode, userPlan, currentFeatures }) {
-  const allowed = canUseAnalysisMode(userPlan, mode.id);
-  if (allowed && currentFeatures) return currentFeatures;
+// 상단 "현재 플랜 한도 요약" 한 줄 — 사용자의 실제 plan 기준.
+export function formatCurrentPlanSummary(planCode, currentFeatures) {
+  const code = normalizePlan(planCode);
+  const f = currentFeatures || PLAN_LIMITS[code] || PLAN_LIMITS.free;
+  return [
+    `월 리뷰 ${krw(f.monthlyReviewLimit)}건`,
+    `파일당 상품 ${krw(f.maxProductsPerFile)}개`,
+    `CS 답글 ${krw(f.monthlyCsReplyLimit)}건`,
+    `보관 ${krw(f.dataRetentionDays)}일`,
+  ];
+}
+
+// 모드별 카드는 항상 "그 모드를 쓰려면 최소 어느 플랜이 필요한지" = minPlan 기준 한도만 표시.
+// 사용 가능 카드도 currentFeatures 로 덮어쓰지 않는다 — 그러면 Business 사용자가
+// 5 개 카드 모두 Business 한도(같은 숫자) 만 보게 됨.
+// 사용자 본인의 현재 한도는 selector 상단의 "현재 플랜 한도 요약" 영역이 따로 보여준다.
+export function getLimitsForCard(mode) {
   return PLAN_LIMITS[normalizePlan(mode.minPlan)] || PLAN_LIMITS.free;
 }
