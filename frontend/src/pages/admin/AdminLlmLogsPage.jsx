@@ -199,11 +199,16 @@ export default function AdminLlmLogsPage() {
                 {openId === l.id && (
                   <tr key={`${l.id}-detail`}>
                     <td colSpan={13} className="muted">
-                      <div style={{ fontSize: 12, padding: 8 }}>
-                        <div>promptVersion: <code>{l.promptVersion || '—'}</code></div>
-                        <div>analysisVersion: <code>{l.analysisVersion || '—'}</code></div>
+                      <div style={{ fontSize: 12, padding: 8, lineHeight: 1.6 }}>
+                        <div>promptVersion: <code>{l.promptVersion || '—'}</code> · analysisVersion: <code>{l.analysisVersion || '—'}</code></div>
                         <div>reviewCount: {formatNumber(l.reviewCount)} · miniReanalysis: {formatNumber(l.miniReanalysisCount)} · cacheMiss: {formatNumber(l.cacheMissCount)}</div>
-                        <div>status: <strong>{l.status}</strong>{l.errorMessage ? ` · ${l.errorMessage}` : ''}</div>
+                        <div>status: <strong>{l.status}</strong></div>
+                        {l.errorMessage && (
+                          <div style={{ color: '#b91c1c' }}>
+                            <strong>오류:</strong> <code>{l.errorMessage}</code>
+                            {' '}— OpenAI 가 실제 호출되지 않고 mock 응답으로 떨어졌습니다.
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>

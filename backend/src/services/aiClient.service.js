@@ -41,6 +41,31 @@ function resetLastUsage() {
   lastUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 }
 
+// 호출 단위 상태 — 가장 최근 tryLLM 의 결과.
+//   'idle'     : 아직 호출 안 됨
+//   'ok'       : 실제 LLM 이 의미 있는 결과를 줌
+//   'fallback' : 호출은 했지만 실패/파싱불가 → mock 응답으로 떨어짐 (예: openai 429)
+//   'skipped'  : aiMode=mock 또는 authDisabled 라서 호출 자체를 안 함
+// 분석 단위 누적 카운트도 함께 — runAnalysis 같은 한 트랜잭션이 끝났을 때
+// "정말 OpenAI 가 호출됐는지" 를 정확하게 보여주기 위해.
+let lastCallStatus = 'idle';
+let lastCallError = null;
+let sessionStats = { realCalls: 0, fallbacks: 0, skipped: 0, lastError: null };
+function setCallStatus(status, error = null) {
+  lastCallStatus = status;
+  lastCallError = error;
+  if (status === 'ok') sessionStats.realCalls++;
+  else if (status === 'fallback') {
+    sessionStats.fallbacks++;
+    if (error) sessionStats.lastError = error;
+  } else if (status === 'skipped') sessionStats.skipped++;
+}
+export function resetSessionStats() {
+  sessionStats = { realCalls: 0, fallbacks: 0, skipped: 0, lastError: null };
+  lastCallStatus = 'idle';
+  lastCallError = null;
+}
+
 const SYSTEM =
   '너는 한국 패션 이커머스 리뷰 분석 도우미다. 항상 지시한 JSON만 출력한다. 코드블록(```), 주석, 설명 문장을 덧붙이지 않는다.';
 
@@ -156,18 +181,28 @@ async function callClaude(prompt, system) {
 }
 
 // 실제 호출 → 파싱 → 검증. 어떤 단계든 실패하면 null 반환(호출부가 mock 사용).
-// 입력: prompt(string), pick(parsed→결과|null). 출력: 결과 또는 null.
+// 호출 결과는 lastCallStatus / sessionStats 에 정확히 기록되어 관리자 로그가
+// "openaiCalled=true 인데 token=0" 처럼 거짓말하지 않도록 한다.
 async function tryLLM(prompt, pick) {
-  if (aiMode === 'mock' || authDisabled) return null;
-  // 매 호출 직전에 lastUsage 리셋 — 직전 호출의 값이 남지 않도록.
+  if (aiMode === 'mock' || authDisabled) {
+    setCallStatus('skipped');
+    return null;
+  }
   resetLastUsage();
   try {
     const raw = await callLLM(prompt);
     const parsed = parseJsonSafe(raw, null);
     const result = pick(parsed);
-    return result ?? null;
+    if (result == null) {
+      // 응답은 받았지만 파싱/검증 실패 → fallback 으로 본다.
+      setCallStatus('fallback', `${aiMode} parse_failed`);
+      return null;
+    }
+    setCallStatus('ok');
+    return result;
   } catch (e) {
     console.warn(`[aiClient:${aiMode}] fallback (${e.message})`);
+    setCallStatus('fallback', `${aiMode} ${e.message}`);
     return null;
   }
 }
@@ -352,7 +387,8 @@ function buildReplyPrompt(issueSummary) {
   ].join('\n');
 }
 
-// default export 는 getter 로 lastUsage 를 노출 — 호출 측이 항상 최신 값을 본다.
+// default export 는 getter 로 lastUsage / lastCallStatus / sessionStats 를 노출 —
+// 호출 측이 항상 최신 값을 본다.
 // (let 으로 재할당되는 값은 import 후 ref 가 stale 될 수 있어 getter 로 wrap).
 export default {
   aiMode,
@@ -361,5 +397,9 @@ export default {
   generateProductImprovementReport,
   generateReplyTemplates,
   generateMonthlyReport,
-  get lastUsage() { return lastUsage; },
+  resetSessionStats,
+  get lastUsage()      { return lastUsage; },
+  get lastCallStatus() { return lastCallStatus; },
+  get lastCallError()  { return lastCallError; },
+  get sessionStats()   { return sessionStats; },
 };

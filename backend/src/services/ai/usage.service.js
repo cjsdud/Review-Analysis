@@ -13,12 +13,14 @@ function modelPrice(model) {
   if (Number.isFinite(envInput) && Number.isFinite(envOutput)) {
     return { input: envInput, output: envOutput };
   }
-  // 기본 추정 — 신규 nano/mini 가 정확히 잡히지 않으면 null 반환 후 비용 계산은 스킵.
+  // 기본 추정 단가 (1k token 당 USD). env 로 덮지 않은 모델은 여기서 잡힌다.
+  // 모르는 모델은 null → 비용 계산 스킵 (token 수만 기록).
   const defaults = {
-    'gpt-5.4-nano': { input: 0.00005, output: 0.0002 },
-    'gpt-5.4-mini': { input: 0.00015, output: 0.0006 },
-    'gpt-5.4':      { input: 0.0025,  output: 0.01 },
-    'gpt-4o-mini':  { input: 0.00015, output: 0.0006 },
+    'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+    'gpt-4o':      { input: 0.0025,  output: 0.01 },
+    'gpt-4.1-nano': { input: 0.0001, output: 0.0004 },
+    'gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
+    'gpt-4.1':      { input: 0.002,  output: 0.008 },
   };
   return defaults[model] || null;
 }

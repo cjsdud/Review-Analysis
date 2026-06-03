@@ -324,17 +324,17 @@ await step('plans — resolveLlmPolicy + env override + advancedReportModel 가�
   // Starter: standard 모드, 여전히 mini 재분석 OFF
   const starter = resolveLlmPolicy('starter');
   assert.equal(starter.llmMode, 'standard');
-  assert.equal(starter.summaryModel, 'gpt-5.4-mini');
+  assert.equal(starter.summaryModel, 'gpt-4o-mini');
   assert.equal(starter.allowMiniReanalysis, false);
   // Pro: mini 재분석 ON, advanced 는 여전히 차단
   const pro = resolveLlmPolicy('pro');
-  assert.equal(pro.precisionModel, 'gpt-5.4-mini');
+  assert.equal(pro.precisionModel, 'gpt-4o-mini');
   assert.equal(pro.advancedReportModel, null, 'Pro 는 advanced 차단');
   assert.equal(pro.allowMiniReanalysis, true);
   assert.equal(pro.maxMiniReanalysisRatio, 0.2);
   // Business: advanced 모델 사용 가능
   const business = resolveLlmPolicy('business');
-  assert.equal(business.advancedReportModel, 'gpt-5.4');
+  assert.equal(business.advancedReportModel, 'gpt-4o');
   assert.equal(business.maxMiniReanalysisRatio, 0.3);
   // env override — 환경변수가 있으면 우선
   process.env.OPENAI_REVIEW_MODEL = 'gpt-x-custom';
@@ -417,27 +417,57 @@ await step('ai/cache — review_analysis_cache hit / miss / promptVersion 변경
   assert.equal(
     cache.getCachedReviewAnalysis({
       reviewHash: hash, promptVersion: ai.PROMPT_VERSION,
-      analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+      analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-4o-mini',
     }),
     null,
   );
   // save
   cache.saveReviewAnalysisCache({
     reviewHash: hash, promptVersion: ai.PROMPT_VERSION, analysisVersion: ai.ANALYSIS_VERSION,
-    provider: 'openai', model: 'gpt-5.4-mini', result: { sentiment: 'positive' },
+    provider: 'openai', model: 'gpt-4o-mini', result: { sentiment: 'positive' },
   });
   // hit
   const hit = cache.getCachedReviewAnalysis({
     reviewHash: hash, promptVersion: ai.PROMPT_VERSION,
-    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-4o-mini',
   });
   assert.deepEqual(hit, { sentiment: 'positive' });
   // promptVersion 다르면 miss
   const miss = cache.getCachedReviewAnalysis({
     reviewHash: hash, promptVersion: 'different',
-    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-5.4-mini',
+    analysisVersion: ai.ANALYSIS_VERSION, model: 'gpt-4o-mini',
   });
   assert.equal(miss, null);
+});
+
+await step('plans — 기본 모델은 실재 OpenAI 모델 (gpt-4o-mini / gpt-4o)', async () => {
+  const { resolveLlmPolicy } = await import('../src/constants/plans.js');
+  const ok = (m) => /^gpt-(4o|4\.1)(-(mini|nano))?$/.test(m);
+  for (const code of ['free', 'starter', 'pro', 'business']) {
+    const p = resolveLlmPolicy(code);
+    assert(ok(p.reviewModel), `${code}.reviewModel 비실재 모델: ${p.reviewModel}`);
+    assert(ok(p.summaryModel), `${code}.summaryModel: ${p.summaryModel}`);
+    assert(ok(p.csReplyModel), `${code}.csReplyModel: ${p.csReplyModel}`);
+    if (p.precisionModel) assert(ok(p.precisionModel), `${code}.precisionModel: ${p.precisionModel}`);
+    if (p.advancedReportModel) assert(ok(p.advancedReportModel), `${code}.advanced: ${p.advancedReportModel}`);
+  }
+});
+
+await step('aiClient — sessionStats 가 ok/fallback/skipped 누적 + resetSessionStats', async () => {
+  // tryLLM 은 export 가 안 되어 있으므로 setCallStatus 동작을 간접적으로 검증.
+  // mock 모드(aiMode='mock')에서는 tryLLM 이 'skipped' 로 떨어지는 경로만 확인 가능.
+  const aiClient = (await import('../src/services/aiClient.service.js')).default;
+  aiClient.resetSessionStats();
+  assert.deepEqual(
+    { realCalls: aiClient.sessionStats.realCalls, fallbacks: aiClient.sessionStats.fallbacks, skipped: aiClient.sessionStats.skipped },
+    { realCalls: 0, fallbacks: 0, skipped: 0 },
+    'reset 직후 모든 카운터 0',
+  );
+  // mock 환경에서 generate 호출 — skipped 가 1 늘어야 한다.
+  await aiClient.generateIssueLabel('테스트', ['리뷰']);
+  assert(aiClient.sessionStats.skipped >= 1, 'mock 모드는 skipped 로 집계');
+  assert.equal(aiClient.sessionStats.realCalls, 0, '실 LLM 호출 0');
+  assert.equal(aiClient.lastCallStatus, 'skipped');
 });
 
 await step('aiClient — lastUsage 가 provider 응답에서 token 추출 (OpenAI/Gemini/Claude shape)', async () => {
@@ -470,12 +500,12 @@ await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', asy
   const usage = await import('../src/services/ai/usage.service.js');
   // 분석 단위 요약 행 1개 + OpenAI 호출 1개 + mock fallback 1개 기록
   usage.recordLlmUsage({
-    provider: 'mock', model: 'gpt-5.4-nano', requestType: 'analysis_summary',
+    provider: 'mock', model: 'gpt-4o-mini', requestType: 'analysis_summary',
     reviewCount: 100, cacheHitCount: 20, cacheMissCount: 5, miniReanalysisCount: 5,
     openaiCalled: false, fallbackUsed: true, fallbackProvider: 'mock',
   });
   usage.recordLlmUsage({
-    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'review_reanalysis',
+    provider: 'openai', model: 'gpt-4o-mini', requestType: 'review_reanalysis',
     usage: { inputTokens: 1000, outputTokens: 500 }, openaiCalled: true,
   });
   const list = usage.listLlmLogs({ page: 1, limit: 5 });
@@ -494,7 +524,7 @@ await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', asy
 await step('ai/usage — llm_usage_logs 기록 + 토큰/비용 계산', async () => {
   const usage = await import('../src/services/ai/usage.service.js');
   const id = usage.recordLlmUsage({
-    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'review_reanalysis',
+    provider: 'openai', model: 'gpt-4o-mini', requestType: 'review_reanalysis',
     usage: { inputTokens: 100, outputTokens: 50 },
   });
   assert(id, 'log row id 반환');
@@ -506,7 +536,7 @@ await step('ai/usage — llm_usage_logs 기록 + 토큰/비용 계산', async ()
   assert(row.estimated_cost_usd > 0, '비용 추정 채워짐');
   // 실패 케이스 — status=error 도 기록 가능
   const id2 = usage.recordLlmUsage({
-    provider: 'openai', model: 'gpt-5.4-mini', requestType: 'cs_reply',
+    provider: 'openai', model: 'gpt-4o-mini', requestType: 'cs_reply',
     status: 'error', error: 'timeout',
   });
   const row2 = db.prepare('SELECT * FROM llm_usage_logs WHERE id = ?').get(id2);

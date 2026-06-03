@@ -184,13 +184,17 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
     );
     const provider = aiClient.aiMode;
     const usage = aiClient.lastUsage || {};
-    // mock/rule 응답으로 떨어졌으면 openaiCalled=false + fallback 로 표시.
-    stats.openaiCalled = provider === 'openai';
-    if (!stats.openaiCalled) {
+    // 정확한 판정: provider=openai 이고 마지막 호출이 ok 여야만 진짜 호출.
+    // 429/timeout/parse_failed 면 fallback (호출은 시도 → mock 응답으로 떨어짐).
+    const callStatus = aiClient.lastCallStatus;
+    const callError = aiClient.lastCallError;
+    stats.openaiCalled = provider === 'openai' && callStatus === 'ok';
+    if (callStatus === 'fallback' || provider !== 'openai') {
       stats.fallbackUsed = true;
-      stats.fallbackProvider = provider; // 'mock' 등
+      stats.fallbackProvider = callStatus === 'fallback' ? 'mock' : provider;
     }
     stats.miniReanalysisCount = reanalyze.length;
+    stats.errorMessage = callError;
     recordLlmUsage({
       userId, analysisId, provider, model,
       promptVersion: PROMPT_VERSION, analysisVersion: ANALYSIS_VERSION,
@@ -200,6 +204,7 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
       fallbackProvider: stats.fallbackProvider,
       miniReanalysisCount: stats.miniReanalysisCount,
       cacheMissCount: stats.cacheMissCount,
+      error: callError || null,
     });
     const byId = new Map((llmResults || []).map((r) => [r.reviewId, r]));
     for (const t of reanalyze) {
@@ -263,6 +268,12 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   // 배치 단위 rating 신뢰도 — 한 점수에 몰리거나 텍스트와 충돌하면 false 가 되어
   // 이후 감성 판정에서 rating 보조 신호가 꺼진다.
   const ratingReliable = isRatingReliable(reviews);
+
+  // 이 분석 전체에 걸쳐 발생하는 LLM 호출의 ok/fallback 카운트를 정확히 집계하기 위해
+  // 세션 카운터를 리셋. classifyAll → buildIssueClusters → per-product report/reply →
+  // generateMonthlyReport 까지 누적된다.
+  if (typeof aiClient.resetSessionStats === 'function') aiClient.resetSessionStats();
+
   const classifications = await classifyAll(reviews, aiClient, { ratingReliable });
 
   if (corrections && corrections.length) {
@@ -281,28 +292,8 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     analysisId: opts.analysisId || null,
   });
 
-  // 분석 단위 요약 로그 — 관리자 콘솔 "AI 분석 로그" 화면이 한 줄로 분석 1건을
-  // 표시할 수 있도록 별도 row 로 한 번 더 기록한다 (request_type='analysis_summary').
-  // LLM 비호출(mock/rule 환경 + mini 재분석 OFF) 일 때도 기록 — 관리자가
-  // "이번 분석에 OpenAI 가 실제 호출됐는가" 를 한 눈에 보게.
-  recordLlmUsage({
-    userId: opts.userId || null,
-    analysisId: opts.analysisId || null,
-    provider: aiClient.aiMode,
-    model: reanalyzeStats.model || null,
-    promptVersion: PROMPT_VERSION,
-    analysisVersion: ANALYSIS_VERSION,
-    requestType: 'analysis_summary',
-    reviewCount: reviews.length,
-    cacheHitCount: reanalyzeStats.cacheHitCount,
-    cacheMissCount: reanalyzeStats.cacheMissCount,
-    miniReanalysisCount: reanalyzeStats.miniReanalysisCount,
-    openaiCalled: reanalyzeStats.openaiCalled,
-    fallbackUsed: reanalyzeStats.fallbackUsed,
-    fallbackProvider: reanalyzeStats.fallbackProvider,
-  });
-
-  // Render 콘솔 로그 — 운영 진단용. API key / 리뷰 원문 등 민감 정보는 절대 찍지 않는다.
+  // 운영 진단용 첫 줄 — 호출 *전* 환경/플랜만 출력. 호출 결과 (openaiCalled
+  // / fallbackUsed) 는 모든 LLM 호출이 끝난 뒤 sessionStats 로 정확히 찍는다.
   const planCode = opts.planCode || 'free';
   const policy = selectLlmMode(planCode);
   console.info('[ReviewFit AI] provider=' + aiClient.aiMode);
@@ -318,9 +309,6 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     ' cacheMiss=' + reanalyzeStats.cacheMissCount,
   );
   console.info('[ReviewFit AI] miniReanalysisCount=' + reanalyzeStats.miniReanalysisCount);
-  console.info('[ReviewFit AI] openaiCalled=' + reanalyzeStats.openaiCalled);
-  console.info('[ReviewFit AI] fallbackUsed=' + reanalyzeStats.fallbackUsed +
-    (reanalyzeStats.fallbackProvider ? ' fallbackProvider=' + reanalyzeStats.fallbackProvider : ''));
 
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
 
@@ -578,6 +566,34 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     frequentKeywordsTop10,
     reviewHighlights: buildReviewHighlights(reviews, classifications),
   };
+
+  // 모든 LLM 호출이 끝난 후 — 정확한 누적 통계로 analysis_summary row + 콘솔 한 줄.
+  const session = aiClient.sessionStats || { realCalls: 0, fallbacks: 0, lastError: null };
+  const realCallSucceeded = session.realCalls > 0;
+  const anyFallback = session.fallbacks > 0 || (aiClient.aiMode === 'openai' && !realCallSucceeded);
+  const summaryRow = {
+    userId: opts.userId || null,
+    analysisId: opts.analysisId || null,
+    provider: aiClient.aiMode,
+    model: reanalyzeStats.model || null,
+    promptVersion: PROMPT_VERSION,
+    analysisVersion: ANALYSIS_VERSION,
+    requestType: 'analysis_summary',
+    reviewCount: reviews.length,
+    cacheHitCount: reanalyzeStats.cacheHitCount,
+    cacheMissCount: reanalyzeStats.cacheMissCount,
+    miniReanalysisCount: reanalyzeStats.miniReanalysisCount,
+    openaiCalled: aiClient.aiMode === 'openai' && realCallSucceeded,
+    fallbackUsed: anyFallback,
+    fallbackProvider: anyFallback ? 'mock' : null,
+    error: session.lastError || null,
+  };
+  recordLlmUsage(summaryRow);
+  console.info('[ReviewFit AI] openaiCalled=' + summaryRow.openaiCalled +
+    ' realCalls=' + session.realCalls + ' fallbacks=' + session.fallbacks);
+  if (summaryRow.fallbackUsed) {
+    console.info('[ReviewFit AI] fallbackUsed=true reason=' + (session.lastError || 'unknown'));
+  }
 
   return { analysisId: nanoid(), summary, products, classifications };
 }

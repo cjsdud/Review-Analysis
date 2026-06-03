@@ -76,7 +76,12 @@ export function getPlanFeatures(code) {
 
 // 플랜별 LLM 사용 정책 — 모델 / mini 재분석 허용 / CS 답글 한도 / 모드.
 // 비용 통제 + 기능 가시성을 한곳에 모음. 실제 모델명은 env 가 있으면 env 우선.
-//   reviewModel        : 리뷰 1건 분류용 (가장 호출 빈도 높음 → nano 위주)
+//
+// 기본 모델은 OpenAI 의 폭넓게 출시된 저비용 모델로 둔다 (gpt-4o-mini = nano/mini 둘 다
+// 커버, gpt-4o = advanced). 운영에서 신모델(gpt-4.1-mini / gpt-5-nano 등) 로 갈아끼우려면
+// OPENAI_REVIEW_MODEL / OPENAI_PRECISION_MODEL / OPENAI_ADVANCED_MODEL env 로 override.
+//
+//   reviewModel        : 리뷰 1건 분류용 (가장 호출 빈도 높음 → 가장 싼 모델)
 //   summaryModel       : 전체/상품별 요약
 //   csReplyModel       : CS 답글 초안
 //   precisionModel     : 애매한 리뷰 mini 재분석 (null 이면 재분석 자체 OFF)
@@ -87,9 +92,9 @@ export function getPlanFeatures(code) {
 //   llmMode            : 'basic' | 'standard' | 'precision' | 'advanced'
 export const PLAN_LLM_POLICY = {
   free: {
-    reviewModel: 'gpt-5.4-nano',
-    summaryModel: 'gpt-5.4-nano',
-    csReplyModel: 'gpt-5.4-nano',
+    reviewModel: 'gpt-4o-mini',
+    summaryModel: 'gpt-4o-mini',
+    csReplyModel: 'gpt-4o-mini',
     precisionModel: null,
     advancedReportModel: null,
     allowMiniReanalysis: false,
@@ -98,9 +103,9 @@ export const PLAN_LLM_POLICY = {
     llmMode: 'basic',
   },
   starter: {
-    reviewModel: 'gpt-5.4-nano',
-    summaryModel: 'gpt-5.4-mini',
-    csReplyModel: 'gpt-5.4-mini',
+    reviewModel: 'gpt-4o-mini',
+    summaryModel: 'gpt-4o-mini',
+    csReplyModel: 'gpt-4o-mini',
     precisionModel: null,
     advancedReportModel: null,
     allowMiniReanalysis: false,
@@ -109,10 +114,10 @@ export const PLAN_LLM_POLICY = {
     llmMode: 'standard',
   },
   pro: {
-    reviewModel: 'gpt-5.4-nano',
-    summaryModel: 'gpt-5.4-mini',
-    csReplyModel: 'gpt-5.4-mini',
-    precisionModel: 'gpt-5.4-mini',
+    reviewModel: 'gpt-4o-mini',
+    summaryModel: 'gpt-4o-mini',
+    csReplyModel: 'gpt-4o-mini',
+    precisionModel: 'gpt-4o-mini',
     advancedReportModel: null,
     allowMiniReanalysis: true,
     maxMiniReanalysisRatio: 0.2,
@@ -120,11 +125,11 @@ export const PLAN_LLM_POLICY = {
     llmMode: 'precision',
   },
   business: {
-    reviewModel: 'gpt-5.4-nano',
-    summaryModel: 'gpt-5.4-mini',
-    csReplyModel: 'gpt-5.4-mini',
-    precisionModel: 'gpt-5.4-mini',
-    advancedReportModel: 'gpt-5.4',
+    reviewModel: 'gpt-4o-mini',
+    summaryModel: 'gpt-4o-mini',
+    csReplyModel: 'gpt-4o-mini',
+    precisionModel: 'gpt-4o-mini',
+    advancedReportModel: 'gpt-4o',
     allowMiniReanalysis: true,
     maxMiniReanalysisRatio: 0.3,
     maxCsRepliesPerMonth: 3000,
