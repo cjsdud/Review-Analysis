@@ -28,6 +28,19 @@ export const aiMode = SUPPORTED.includes(PROVIDER) && API_KEY ? PROVIDER : 'mock
 // 인증 실패(401/403)가 한 번 발생하면 이후 호출은 곧장 mock 으로 (불필요한 재시도/비용 방지)
 let authDisabled = false;
 
+// 마지막 LLM 호출의 token usage — recordLlmUsage 가 읽어 llm_usage_logs 에 저장한다.
+// provider 별 응답 schema 차이를 한 곳에서 흡수 (OpenAI=usage, Gemini=usageMetadata, Claude=usage).
+// mock/rule 호출이거나 응답에 usage 가 없으면 0 으로 리셋된다.
+export let lastUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+function setLastUsage(input, output) {
+  const i = Number(input) || 0;
+  const o = Number(output) || 0;
+  lastUsage = { inputTokens: i, outputTokens: o, totalTokens: i + o };
+}
+function resetLastUsage() {
+  lastUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+}
+
 const SYSTEM =
   '너는 한국 패션 이커머스 리뷰 분석 도우미다. 항상 지시한 JSON만 출력한다. 코드블록(```), 주석, 설명 문장을 덧붙이지 않는다.';
 
@@ -94,6 +107,7 @@ async function callOpenAI(prompt, system) {
     throw new Error(`openai ${res.status}`);
   }
   const data = await res.json();
+  setLastUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
   return data.choices?.[0]?.message?.content ?? '';
 }
 
@@ -112,6 +126,7 @@ async function callGemini(prompt, system) {
     throw new Error(`gemini ${res.status}`);
   }
   const data = await res.json();
+  setLastUsage(data?.usageMetadata?.promptTokenCount, data?.usageMetadata?.candidatesTokenCount);
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
@@ -136,6 +151,7 @@ async function callClaude(prompt, system) {
     throw new Error(`claude ${res.status}`);
   }
   const data = await res.json();
+  setLastUsage(data?.usage?.input_tokens, data?.usage?.output_tokens);
   return data.content?.[0]?.text ?? '';
 }
 
@@ -143,6 +159,8 @@ async function callClaude(prompt, system) {
 // 입력: prompt(string), pick(parsed→결과|null). 출력: 결과 또는 null.
 async function tryLLM(prompt, pick) {
   if (aiMode === 'mock' || authDisabled) return null;
+  // 매 호출 직전에 lastUsage 리셋 — 직전 호출의 값이 남지 않도록.
+  resetLastUsage();
   try {
     const raw = await callLLM(prompt);
     const parsed = parseJsonSafe(raw, null);
@@ -334,6 +352,8 @@ function buildReplyPrompt(issueSummary) {
   ].join('\n');
 }
 
+// default export 는 getter 로 lastUsage 를 노출 — 호출 측이 항상 최신 값을 본다.
+// (let 으로 재할당되는 값은 import 후 ref 가 stale 될 수 있어 getter 로 wrap).
 export default {
   aiMode,
   classifyAmbiguousReviews,
@@ -341,4 +361,5 @@ export default {
   generateProductImprovementReport,
   generateReplyTemplates,
   generateMonthlyReport,
+  get lastUsage() { return lastUsage; },
 };

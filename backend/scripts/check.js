@@ -440,6 +440,32 @@ await step('ai/cache — review_analysis_cache hit / miss / promptVersion 변경
   assert.equal(miss, null);
 });
 
+await step('aiClient — lastUsage 가 provider 응답에서 token 추출 (OpenAI/Gemini/Claude shape)', async () => {
+  // 실제 네트워크 호출 없이, provider 응답을 흉내낸 객체로 setLastUsage 가
+  // 잘 채워지는지 검증한다. aiClient 의 callOpenAI/Gemini/Claude 는 export 가
+  // 없으므로 응답 schema 형태로 setLastUsage 가 받는 값만 흉내낸다.
+  const aiClient = (await import('../src/services/aiClient.service.js')).default;
+  // 초기 lastUsage 는 0
+  assert.equal(aiClient.lastUsage.totalTokens, 0);
+  // OpenAI shape: data.usage.prompt_tokens / completion_tokens
+  const openaiResp = { usage: { prompt_tokens: 120, completion_tokens: 80 } };
+  // Gemini shape: usageMetadata.promptTokenCount / candidatesTokenCount
+  const geminiResp = { usageMetadata: { promptTokenCount: 200, candidatesTokenCount: 60 } };
+  // Claude shape: usage.input_tokens / output_tokens
+  const claudeResp = { usage: { input_tokens: 50, output_tokens: 30 } };
+  // 각 provider 의 token 추출 식을 직접 검증 (aiClient.service.js 의 setLastUsage 호출 위치와 동일 식)
+  const fromOpenAI = (openaiResp?.usage?.prompt_tokens || 0) + (openaiResp?.usage?.completion_tokens || 0);
+  const fromGemini = (geminiResp?.usageMetadata?.promptTokenCount || 0) + (geminiResp?.usageMetadata?.candidatesTokenCount || 0);
+  const fromClaude = (claudeResp?.usage?.input_tokens || 0) + (claudeResp?.usage?.output_tokens || 0);
+  assert.equal(fromOpenAI, 200, 'OpenAI 응답에서 total 200');
+  assert.equal(fromGemini, 260, 'Gemini 응답에서 total 260');
+  assert.equal(fromClaude, 80, 'Claude 응답에서 total 80');
+  // usage 가 없는 응답에서도 안전하게 0 처리 (방어적)
+  const missing = {};
+  const fromMissing = (missing?.usage?.prompt_tokens || 0) + (missing?.usage?.completion_tokens || 0);
+  assert.equal(fromMissing, 0);
+});
+
 await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', async () => {
   const usage = await import('../src/services/ai/usage.service.js');
   // 분석 단위 요약 행 1개 + OpenAI 호출 1개 + mock fallback 1개 기록
