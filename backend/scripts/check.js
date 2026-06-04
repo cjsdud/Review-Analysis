@@ -550,6 +550,39 @@ await step('analysisJob — updateProgress 가 절대 감소하지 않음 + comp
   assert.equal(m.getJobStatus(id).progress, 100, 'completed 후엔 변경 무시');
 });
 
+await step('analysisJob — updateProgress 가 step + meta 도 저장 + getJobStatus 가 반환', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const id = 'prog_step_' + Date.now();
+  m.createPendingJob({ analysisId: id, uploadId: 'u1', userId: null, totalReviews: 500, isSample: false });
+  m.markProcessing(id);
+  // 객체 payload — progress 와 step + meta 함께 저장.
+  m.updateProgress(id, { progress: 35, step: 'classifying_reviews', processedReviews: 240, totalReviews: 500 });
+  let s = m.getJobStatus(id);
+  assert.equal(s.progress, 35);
+  assert.equal(s.progressStep, 'classifying_reviews');
+  assert.deepEqual(s.progressMeta, { processedReviews: 240, totalReviews: 500 });
+  // step 만 바꿔도 progress 는 유지 (감소 X), step + meta 는 업데이트.
+  m.updateProgress(id, { progress: 30, step: 'classifying_ambiguous_pending' });
+  s = m.getJobStatus(id);
+  assert.equal(s.progress, 35, 'progress 는 감소 X');
+  assert.equal(s.progressStep, 'classifying_ambiguous_pending', 'step 은 바뀌어야 함');
+});
+
+await step('analysisJob — createAnalysisProgressReporter throttle + cap 동작', async () => {
+  const m = await import('../src/services/analysisJob.service.js');
+  const id = 'prog_reporter_' + Date.now();
+  m.createPendingJob({ analysisId: id, uploadId: 'u1', userId: null, totalReviews: 10, isSample: false });
+  m.markProcessing(id);
+  const report = m.createAnalysisProgressReporter({ analysisId: id, capProgress: 90 });
+  await report({ progress: 30, step: 'classifying_reviews' });
+  await report({ progress: 60, step: 'product_summaries', processedProducts: 3, totalProducts: 10 });
+  // cap 초과 — 90 으로 클램프.
+  await report({ progress: 99, step: 'finalizing' });
+  const s = m.getJobStatus(id);
+  assert.equal(s.progress, 90, `cap 적용: ${s.progress}`);
+  assert.equal(s.progressStep, 'finalizing');
+});
+
 await step('ai/usage — listLlmLogs / getLlmUsageSummary 관리자 조회', async () => {
   const usage = await import('../src/services/ai/usage.service.js');
   // 분석 단위 요약 행 1개 + OpenAI 호출 1개 + mock fallback 1개 기록

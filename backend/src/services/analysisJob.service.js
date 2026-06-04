@@ -73,13 +73,101 @@ export function markFailed(analysisId, errorMessage) {
 // 단계형 progress 업데이트 — runAnalysis 가 내부적으로 호출할 콜백.
 // 절대 감소하지 않음 (DB 현재 값보다 작으면 무시) — 단계 콜백 + 외부 markProcessing
 // 호출이 섞여도 progress 가 뒤로 가는 것처럼 보이지 않게.
-export function updateProgress(analysisId, progress) {
-  const p = Math.max(0, Math.min(100, Math.round(progress)));
+//
+// progress 외에 step / processedReviews / totalReviews / processedProducts /
+// totalProducts / processedLlmTasks / totalLlmTasks 같은 보조 정보를 함께 받아
+// progress_step / progress_meta 컬럼에 함께 저장한다. 사용자에게는
+// "분석 중 25%" 만 보이지 않고 "리뷰 반응을 분류하고 있어요 240/500" 같은
+// 단계 문구가 같이 표시된다.
+//
+// 호출자가 step 만 바꾸고 progress 는 그대로인 경우에도 (예: 같은 25% 에서 LLM
+// 진입) DB 업데이트를 한 번 더 해 줘 progress_updated_at 이 갱신되고,
+// 프론트가 다음 polling 때 새 step 문구를 받을 수 있게 한다.
+export function updateProgress(analysisId, progressOrPayload, maybeStep, maybeMeta) {
+  const payload = typeof progressOrPayload === 'object' && progressOrPayload !== null
+    ? progressOrPayload
+    : { progress: progressOrPayload, step: maybeStep, meta: maybeMeta };
+  const p = Math.max(0, Math.min(100, Math.round(Number(payload.progress) || 0)));
   const row = db.prepare('SELECT progress, status FROM analysis_jobs WHERE id = ?').get(analysisId);
   if (!row) return;
   if (row.status === STATUS.COMPLETED || row.status === STATUS.FAILED) return;
-  if ((row.progress ?? 0) >= p) return;
-  setStatus(analysisId, { progress: p });
+  const fields = { progress_updated_at: new Date().toISOString() };
+  if (p > (row.progress ?? 0)) fields.progress = p;
+  if (payload.step) fields.progress_step = String(payload.step).slice(0, 64);
+  // meta — 명시적 키만 추려 저장 (제3자 입력 안전).
+  const meta = pickMeta(payload);
+  if (meta) fields.progress_meta = JSON.stringify(meta);
+  setStatus(analysisId, fields);
+}
+
+function pickMeta(payload) {
+  const out = {};
+  for (const k of ['processedReviews', 'totalReviews', 'processedProducts', 'totalProducts', 'processedLlmTasks', 'totalLlmTasks']) {
+    if (payload[k] != null && Number.isFinite(Number(payload[k]))) out[k] = Number(payload[k]);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+// 중앙 progress reporter — 호출자(runAnalysis / classifyAll / maybeMiniReanalyze)는
+// payload({progress, step, processed*, total*}) 만 넘기고 throttle / DB 저장은 여기서.
+//
+// throttle 규칙:
+//   - progress 가 실제로 증가한 경우       → 즉시 저장
+//   - step 만 바뀐 경우                    → 즉시 저장 (사용자가 새 문구를 보길 원함)
+//   - 같은 progress + 같은 step + 5s 이내  → skip (DB 부담 방지)
+//
+// DB 업데이트 실패해도 분석 전체는 깨지지 않는다 — 안에서 try/catch.
+export function createAnalysisProgressReporter({ analysisId, capProgress = 95 }) {
+  const state = { lastProgress: 0, lastStep: null, lastPersistedAt: 0 };
+  return async function report(payload = {}) {
+    try {
+      const next = Math.max(state.lastProgress, Math.min(capProgress, Math.round(Number(payload.progress) || 0)));
+      const step = payload.step || payload.progressStep || null;
+      const now = Date.now();
+      const progressGrew = next > state.lastProgress;
+      const stepChanged = step && step !== state.lastStep;
+      const tooSoon = now - state.lastPersistedAt < 5000;
+      if (!progressGrew && !stepChanged && tooSoon) return;
+      state.lastProgress = next;
+      if (step) state.lastStep = step;
+      state.lastPersistedAt = now;
+      updateProgress(analysisId, { ...payload, progress: next, step });
+      console.info(`[ReviewFit Progress] id=${analysisId} progress=${next} step=${step || '-'}`
+        + (payload.processedReviews != null ? ` reviews=${payload.processedReviews}/${payload.totalReviews ?? '?'}` : '')
+        + (payload.processedProducts != null ? ` products=${payload.processedProducts}/${payload.totalProducts ?? '?'}` : '')
+        + (payload.processedLlmTasks != null ? ` llm=${payload.processedLlmTasks}/${payload.totalLlmTasks ?? '?'}` : ''),
+      );
+    } catch (e) {
+      console.warn(`[ReviewFit Progress] persist failed id=${analysisId}: ${e.message}`);
+    }
+  };
+}
+
+// heartbeat — 실제 progress 가 멈춰 있어도 8초마다 1%씩 올려 사용자에게 "분석이
+// 멈췄다" 느낌을 주지 않게 한다. capProgress(기본 92) 까지만 올리고 실제 reporter
+// 가 먼저 도달했으면 더 올리지 않는다.
+//
+// 사용:
+//   const stop = startProgressHeartbeat(analysisId);
+//   try { ... } finally { stop(); }
+export function startProgressHeartbeat(analysisId, { capProgress = 92, intervalMs = 8000 } = {}) {
+  const timer = setInterval(() => {
+    try {
+      const row = db.prepare('SELECT progress, status FROM analysis_jobs WHERE id = ?').get(analysisId);
+      if (!row) return;
+      if (row.status === STATUS.COMPLETED || row.status === STATUS.FAILED) {
+        clearInterval(timer);
+        return;
+      }
+      const cur = row.progress ?? 0;
+      if (cur >= capProgress) return;
+      // 실제 진행이 늦는 단계에서만 +1. 너무 빠르게 올라가지 않게 한다.
+      setStatus(analysisId, { progress: cur + 1, progress_updated_at: new Date().toISOString() });
+    } catch (e) {
+      console.warn(`[ReviewFit Progress] heartbeat failed id=${analysisId}: ${e.message}`);
+    }
+  }, intervalMs);
+  return () => clearInterval(timer);
 }
 
 // 백그라운드 분석 실행 — 업로드 라우트가 setImmediate 로 한 번 호출하고 forget.
@@ -95,29 +183,30 @@ export async function runAnalysisJob({
   isSample,
   analysisMode = null,
 }) {
+  // 중앙 reporter — runAnalysis 내부 단계 + LLM task 단위 progress 를 한 곳에서 throttle/저장.
+  // capProgress=95 — 마지막 DB 저장 + markCompleted(100%) 를 위한 헤드룸 5%.
+  const reportProgress = createAnalysisProgressReporter({ analysisId, capProgress: 95 });
+  // 긴 LLM 호출 동안 progress 가 멈춘 것처럼 보이지 않도록 heartbeat 추가.
+  // 실제 reporter 가 더 빠르게 진행하면 heartbeat 는 영향 없음 (DB 의 현재 progress 기준).
+  const stopHeartbeat = startProgressHeartbeat(analysisId);
   try {
     markProcessing(analysisId);
+    await reportProgress({ progress: 8, step: 'job_started', totalReviews: reviews.length });
     // runAnalysis 가 자체 단계별 progress (10/25/45/55/60/60~85/92) 를 onProgress 로
-    // 보내므로 여기서는 시작점만 찍고 따로 20% 를 강제하지 않는다.
+    // 보낸다. 추가로 classifyAll / maybeMiniReanalyze / 상품 루프 / LLM task 진행률을
+    // 같은 reporter 로 통일. 캡 95 까지 허용 — DB 저장 후 markCompleted 가 100% 로 마감.
     const { summary, products, classifications } = await runAnalysis(
       reviews,
       corrections,
       {
         planCode, userId, analysisId, analysisMode,
-        // runAnalysis 내부 단계 — 25%(분류 시작) → 45% (분류 완료) → 55% (mini)
-        // → 60% (clusters) → 60~85% (상품 루프) → 92% (요약 끝).
-        // 여기서 80% 까지만 허용해 후속 DB 저장 후 markCompleted(100%) 가 자연스럽게 잇도록.
-        onProgress: async ({ progress }) => {
-          // 80% 상한 — 그 뒤 DB 저장이 남아 있으므로 markCompleted 가 100% 로 마감.
-          const capped = Math.min(80, progress);
-          updateProgress(analysisId, capped);
-        },
+        onProgress: reportProgress,
       },
     );
     // 과거 사용자 분류 수정 이력 반영 — user_corrections 테이블 참조.
     applyHistoricalCorrectionsLocal(products);
 
-    updateProgress(analysisId, 80);
+    await reportProgress({ progress: 95, step: 'saving_report' });
 
     summary.isSample = Boolean(isSample);
 
@@ -138,6 +227,8 @@ export async function runAnalysisJob({
     tx();
 
     markCompleted(analysisId, JSON.stringify(summary));
+    // completed 도 step 으로 명시 — UI 가 100% + "분석이 완료됐어요" 함께 표시.
+    setStatus(analysisId, { progress_step: 'completed', progress_updated_at: new Date().toISOString() });
 
     if (userId) recordUsage(userId, 'analysis_created', { analysisId, uploadId });
     // 분석 완료 후 임시 파싱 데이터 제거
@@ -145,13 +236,16 @@ export async function runAnalysisJob({
   } catch (e) {
     console.error('[analysisJob] failed', analysisId, e);
     markFailed(analysisId, e.message);
+  } finally {
+    stopHeartbeat();
   }
 }
 
 // 단일 row → API 응답 shape.
 export function getJobStatus(analysisId) {
   const row = db.prepare(
-    `SELECT id, status, progress, total_reviews, error_message,
+    `SELECT id, status, progress, progress_step, progress_meta, progress_updated_at,
+            total_reviews, error_message,
             created_at, started_at, completed_at, failed_at, user_id, analysis_mode
      FROM analysis_jobs WHERE id = ?`,
   ).get(analysisId);
@@ -160,10 +254,15 @@ export function getJobStatus(analysisId) {
   const status = row.status === STATUS.LEGACY_DONE ? STATUS.COMPLETED
     : row.status === STATUS.LEGACY_ERROR ? STATUS.FAILED
     : row.status;
+  let progressMeta = null;
+  try { progressMeta = row.progress_meta ? JSON.parse(row.progress_meta) : null; } catch { progressMeta = null; }
   return {
     id: row.id,
     status,
     progress: row.progress ?? (status === STATUS.COMPLETED ? 100 : 0),
+    progressStep: row.progress_step || (status === STATUS.COMPLETED ? 'completed' : null),
+    progressMeta,
+    progressUpdatedAt: row.progress_updated_at || null,
     totalReviews: row.total_reviews,
     errorMessage: row.error_message,
     createdAt: row.created_at,

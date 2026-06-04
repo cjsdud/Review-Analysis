@@ -5,6 +5,7 @@ import SectionCard from '../components/SectionCard.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { getAnalyses } from '../api/analysisApi.js';
+import { progressStepLabel, progressMetaText } from '../utils/progressSteps.js';
 
 function formatDate(s) {
   if (!s) return '—';
@@ -155,6 +156,18 @@ export default function AnalysisHistoryPage() {
                       {formatDate(it.createdAt)}
                       {it.source ? ` · ${it.source}` : ''}
                     </div>
+                    {/* 진행 중 카드 — 단계 문구 + 처리 카운트 보조 표시 (LLM/API 같은 내부 표현은 사용 안 함) */}
+                    {isRunning && (() => {
+                      const stepLabel = progressStepLabel(it.progressStep);
+                      const metaText = progressMetaText(it.progressMeta);
+                      if (!stepLabel && !metaText) return null;
+                      return (
+                        <div className="history-card__progress-step muted" style={{ fontSize: 12, marginTop: 2 }}>
+                          {stepLabel}
+                          {metaText ? ` · ${metaText}` : ''}
+                        </div>
+                      );
+                    })()}
                     {isFailed && it.errorMessage && (
                       <div className="muted" style={{ fontSize: 12, color: '#b91c1c' }}>
                         실패 사유: {it.errorMessage}

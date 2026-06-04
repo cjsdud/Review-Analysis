@@ -855,16 +855,45 @@ export function splitAspectAndIssue(categories = []) {
 
 // 전체 리뷰 분류 + 애매한 부정 리뷰만 LLM(또는 mock)에 위임.
 // ratingReliable 미지정 시 입력 배치로 자동 판정 — 호출 측 부담을 줄임.
+//
+// opts.onProgress({ progress, step, processedReviews, totalReviews }) 가 주어지면
+// 룰 분류 진행 + LLM ambiguous 호출 전/후로 progress 를 보고한다. opts.progressRange
+// = [start, end] 로 25~45 같은 외부 구간을 지정 (runAnalysis 가 사용).
 export async function classifyAll(reviews, aiClient, opts = {}) {
   const ratingReliable = opts.ratingReliable !== undefined
     ? Boolean(opts.ratingReliable)
     : isRatingReliable(reviews);
   const classifyOpts = { ratingReliable };
-  const classifications = reviews.map((r) => classifyReview(r, classifyOpts));
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  const [pStart, pEnd] = Array.isArray(opts.progressRange) ? opts.progressRange : [25, 45];
+  // 룰 기반 분류는 동기 빠른 연산 — 너무 자주 reporter 를 호출하지 않게 큰 batch 단위로만 보고.
+  const batchSize = Math.max(50, Math.ceil(reviews.length / 8));
+  const classifications = [];
+  for (let i = 0; i < reviews.length; i++) {
+    classifications.push(classifyReview(reviews[i], classifyOpts));
+    if (onProgress && (i + 1 === reviews.length || (i + 1) % batchSize === 0)) {
+      const ratio = (i + 1) / Math.max(1, reviews.length);
+      // 룰 분류 단계는 외부 구간의 앞쪽 60% 만 차지 (LLM 호출 단계에 헤드룸을 남김).
+      const progress = pStart + (pEnd - pStart) * ratio * 0.6;
+      await onProgress({
+        progress, step: 'classifying_reviews',
+        processedReviews: i + 1, totalReviews: reviews.length,
+      });
+    }
+  }
   const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
   const ambiguous = classifications.filter((c) => c.ambiguous);
   if (ambiguous.length > 0 && aiClient) {
+    // LLM bulk 호출 직전 progress — 사용자에게 "리뷰 맥락을 확인하고 있어요" 단계를 즉시 표시.
+    // 이 호출 전에는 25% 가 멈춰 보이던 구간이 바로 이 지점.
+    if (onProgress) {
+      const progress = pStart + (pEnd - pStart) * 0.65;
+      await onProgress({
+        progress, step: 'classifying_ambiguous_pending',
+        processedReviews: classifications.length, totalReviews: reviews.length,
+      });
+    }
     try {
       const llmResults = await aiClient.classifyAmbiguousReviews(
         ambiguous.map((c) => ({ id: c.reviewId, content: reviewMap.get(c.reviewId)?.content })),
@@ -895,6 +924,13 @@ export async function classifyAll(reviews, aiClient, opts = {}) {
       }
     } catch (e) {
       console.warn('[classify] LLM fallback:', e.message);
+    }
+    if (onProgress) {
+      const progress = pStart + (pEnd - pStart) * 0.9;
+      await onProgress({
+        progress, step: 'classifying_ambiguous_done',
+        processedReviews: classifications.length, totalReviews: reviews.length,
+      });
     }
   }
 

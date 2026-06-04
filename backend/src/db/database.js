@@ -101,6 +101,13 @@ ensureColumn('analysis_jobs', 'failed_at', 'failed_at TEXT');
 // 히스토리/리포트 라벨 + effectivePolicy 계산에 사용.
 ensureColumn('analysis_jobs', 'analysis_mode', 'analysis_mode TEXT');
 
+// 진행률 세부 — 25% 같은 단계에서 오래 멈춘 것처럼 보이지 않게 단계 이름 + 처리된 카운트를
+// 함께 저장한다. 모두 nullable. progress_meta 는 JSON 으로 processedReviews/totalReviews/
+// processedProducts/totalProducts/processedLlmTasks/totalLlmTasks 를 자유롭게 담는다.
+ensureColumn('analysis_jobs', 'progress_step', 'progress_step TEXT');
+ensureColumn('analysis_jobs', 'progress_meta', 'progress_meta TEXT');
+ensureColumn('analysis_jobs', 'progress_updated_at', 'progress_updated_at TEXT');
+
 // llm_usage_logs 확장 컬럼 (이전 마이그레이션엔 없었음 — idempotent 추가).
 // 관리자 콘솔 "AI 분석 로그" 화면이 한 row 로 분석 단위 요약을 보여줄 수 있게 한다.
 ensureColumn('llm_usage_logs', 'analysis_version', 'analysis_version TEXT');
@@ -230,7 +237,8 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
   const rows = db
     .prepare(
       `SELECT j.id, j.upload_id, j.status, j.summary, j.created_at, j.is_sample,
-              j.progress, j.total_reviews, j.error_message,
+              j.progress, j.progress_step, j.progress_meta, j.progress_updated_at,
+              j.total_reviews, j.error_message,
               j.started_at, j.completed_at, j.failed_at, j.analysis_mode,
               u.original_name AS original_name, u.source AS source,
               (SELECT COUNT(*) FROM product_analyses p WHERE p.analysis_id = j.id) AS product_count
@@ -264,6 +272,8 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
     const normalizedStatus = r.status === 'done' ? 'completed'
       : r.status === 'error' ? 'failed'
       : r.status;
+    let progressMeta = null;
+    try { progressMeta = r.progress_meta ? JSON.parse(r.progress_meta) : null; } catch { progressMeta = null; }
     return {
       id: r.id,
       uploadId: r.upload_id,
@@ -272,6 +282,10 @@ export function listAnalyses({ limit = 20, userId = null, includeAnonymous = fal
       originalName: r.original_name || null,
       status: normalizedStatus,
       progress: r.progress ?? (normalizedStatus === 'completed' ? 100 : 0),
+      // 단계 이름 — "분석 중 25%" 만 보이지 않도록 progressStep 도 함께 전달.
+      progressStep: r.progress_step || (normalizedStatus === 'completed' ? 'completed' : null),
+      progressMeta,
+      progressUpdatedAt: r.progress_updated_at || null,
       analysisMode: r.analysis_mode || null,
       totalReviews: r.total_reviews ?? summary.totalReviews ?? null,
       productCount: r.product_count ?? summary.productCount ?? null,

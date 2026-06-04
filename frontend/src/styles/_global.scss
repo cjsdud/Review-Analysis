@@ -316,3 +316,18 @@ h4 {
     transform: rotate(360deg);
   }
 }
+
+// 분석 진행 안내 박스 — progress bar
+.state-box__progress { max-width: 360px; margin: 14px auto 0; }
+.state-box__progress-track {
+  background: rgba(15, 111, 220, 0.10);
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.state-box__progress-fill {
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  height: 100%;
+  border-radius: 999px;
+  transition: width 400ms ease-out;
+}

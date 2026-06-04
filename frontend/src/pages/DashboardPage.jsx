@@ -21,6 +21,7 @@ import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getAnalysisStatus, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
 import PeriodComparisonSection from '../components/PeriodComparisonSection.jsx';
+import { progressStepLabel, progressMetaText } from '../utils/progressSteps.js';
 
 export default function DashboardPage() {
   const { analysisId } = useParams();
@@ -87,8 +88,15 @@ export default function DashboardPage() {
           setProducts(ps);
           setJobState(null);
         } else {
-          // 진행 중 — progress / errorMessage 만 갱신 (전체 화면 유지)
-          setJobState((prev) => ({ ...prev, status: s.status, progress: s.progress, errorMessage: s.errorMessage }));
+          // 진행 중 — progress / step / meta / errorMessage 만 갱신 (전체 화면 유지)
+          setJobState((prev) => ({
+            ...prev,
+            status: s.status,
+            progress: s.progress,
+            progressStep: s.progressStep,
+            progressMeta: s.progressMeta,
+            errorMessage: s.errorMessage,
+          }));
         }
       } catch (e) {
         if (!cancelled) console.warn('[dashboard] poll error', e.message);
@@ -132,17 +140,30 @@ export default function DashboardPage() {
   if (accessKind) return <AccessError kind={accessKind} />;
   if (jobState && jobState.status !== 'completed' && jobState.status !== 'done') {
     const isFailed = jobState.status === 'failed' || jobState.status === 'error';
+    const stepLabel = progressStepLabel(jobState.progressStep);
+    const metaText = progressMetaText(jobState.progressMeta);
+    const pct = Math.max(0, Math.min(99, Math.round(Number(jobState.progress) || 0)));
     return (
       <div className="state-box">
         <div className="state-box__icon">{isFailed ? '⚠️' : '⏳'}</div>
         <div className="state-box__title">
-          {isFailed ? '리뷰 분석에 실패했습니다.' : '리뷰 분석 중입니다.'}
+          {isFailed ? '리뷰 분석에 실패했습니다.' : `리뷰 분석 중입니다 · ${pct}%`}
         </div>
         <div className="state-box__desc">
           {isFailed
             ? (jobState.errorMessage || '잠시 후 다시 시도해 주세요.')
-            : '분석이 완료되면 자동으로 리포트가 표시됩니다.'}
+            : (stepLabel || '분석이 완료되면 자동으로 리포트가 표시됩니다.')}
+          {!isFailed && metaText && (
+            <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{metaText}</div>
+          )}
         </div>
+        {!isFailed && (
+          <div className="state-box__progress" aria-hidden="true" style={{ marginTop: 14 }}>
+            <div className="state-box__progress-track">
+              <div className="state-box__progress-fill" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
         <div className="page-actions" style={{ justifyContent: 'center', marginTop: 12 }}>
           <button className="btn btn--primary" onClick={() => navigate('/history')}>분석 히스토리로 이동</button>
         </div>

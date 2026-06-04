@@ -342,16 +342,20 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
 
   // progress reporter — 단계별로 호출자(runAnalysisJob) 에 비율(0~99)을 전달.
   // 같은 값 / 더 작은 값은 무시 → 절대 감소하지 않음. 호출 실패는 silently skip.
+  //
+  // payload({progress, step, processedReviews, totalReviews, processedProducts,
+  //  totalProducts, processedLlmTasks, totalLlmTasks}) 형태도 받는다 — 외부의
+  //  createAnalysisProgressReporter 가 이 값을 그대로 DB 에 저장한다.
   let lastProgress = 5;
-  async function reportProgress(p, step) {
-    const safe = Math.max(lastProgress, Math.min(99, Math.round(p)));
-    if (safe === lastProgress) return;
+  async function reportProgress(p, step, extra = {}) {
+    const payload = typeof p === 'object' && p !== null ? p : { progress: p, step };
+    const safe = Math.max(lastProgress, Math.min(99, Math.round(Number(payload.progress) || 0)));
     lastProgress = safe;
     if (typeof opts.onProgress === 'function') {
-      try { await opts.onProgress({ progress: safe, step }); } catch { /* ignore */ }
+      try { await opts.onProgress({ ...extra, ...payload, progress: safe }); } catch { /* ignore */ }
     }
   }
-  await reportProgress(10, 'preprocessing');
+  await reportProgress(10, 'preprocessing_reviews');
 
   // 분석 방식 결정 — opts.analysisMode 가 없으면 플랜 기본값. plan 정책 + mode →
   // effectivePolicy 로 합쳐 이번 분석에서 어떤 LLM 단계가 실제로 켜질지 정한다.
@@ -369,9 +373,16 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   // generateMonthlyReport 까지 누적된다.
   if (typeof aiClient.resetSessionStats === 'function') aiClient.resetSessionStats();
 
-  await reportProgress(25, 'classification_started');
-  const classifications = await classifyAll(reviews, aiClient, { ratingReliable });
-  await reportProgress(45, 'classification_done');
+  await reportProgress(25, 'classifying_reviews');
+  // classifyAll 에 onProgress 를 전달해 25~45 구간에서 실제 진행을 보고하게 한다.
+  // 룰 분류 진행 → LLM ambiguous 호출 전("classifying_ambiguous_pending") → 호출 후
+  // 까지 progress 가 움직여 사용자가 "25% 에서 멈췄다" 고 느끼지 않게 된다.
+  const classifications = await classifyAll(reviews, aiClient, {
+    ratingReliable,
+    onProgress: reportProgress,
+    progressRange: [25, 45],
+  });
+  await reportProgress(45, 'classification_done', { totalReviews: reviews.length });
 
   if (corrections && corrections.length) {
     applyReviewCorrections(reviews, classifications, corrections);
@@ -383,15 +394,23 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   // 캐시 hit 이면 LLM 호출 없이 result 사용, miss 면 호출 + 캐시 저장 + token usage 로깅.
   // mini 재분석은 effectivePolicy.allowMiniReanalysis 가 true 일 때만. plan policy
   // 가 허용해도 사용자가 quick/standard/batch 를 골랐으면 false 가 되어 OFF.
-  const reanalyzeStats = effectivePolicy.allowMiniReanalysis
-    ? await maybeMiniReanalyze({
-        classifications,
-        reviewMap,
-        planCode,
-        userId: opts.userId || null,
-        analysisId: opts.analysisId || null,
-      })
-    : { cacheHitCount: 0, cacheMissCount: 0, miniReanalysisCount: 0, openaiCalled: false, fallbackUsed: false, fallbackProvider: null, model: null };
+  // mini 재분석은 Pro/Business 만 단일 bulk LLM 호출 — 호출 자체가 오래 걸리는
+  // 구간이므로 호출 직전/직후에 progress 를 명시적으로 보고해 50%대에서 멈춰
+  // 보이지 않게 한다.
+  let reanalyzeStats;
+  if (effectivePolicy.allowMiniReanalysis) {
+    await reportProgress(48, 'ai_reanalysis_pending');
+    reanalyzeStats = await maybeMiniReanalyze({
+      classifications,
+      reviewMap,
+      planCode,
+      userId: opts.userId || null,
+      analysisId: opts.analysisId || null,
+    });
+    await reportProgress(54, 'ai_reanalysis_done');
+  } else {
+    reanalyzeStats = { cacheHitCount: 0, cacheMissCount: 0, miniReanalysisCount: 0, openaiCalled: false, fallbackUsed: false, fallbackProvider: null, model: null };
+  }
 
   // 운영 진단용 첫 줄 — 호출 *전* 환경/플랜/모드만 출력. 호출 결과는 끝나고 sessionStats 로.
   const policy = planPolicy;
@@ -410,7 +429,7 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
   );
   console.info('[ReviewFit AI] miniReanalysisCount=' + reanalyzeStats.miniReanalysisCount);
 
-  await reportProgress(55, 'mini_reanalysis_done');
+  await reportProgress(56, 'building_issue_clusters');
   const clusters = await buildIssueClusters(classifications, reviewMap, aiClient);
   await reportProgress(60, 'clusters_built');
 
@@ -560,12 +579,15 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       ratingReliable,
     });
     productIdx++;
-    // 상품 루프 진행률 — 5 상품마다 또는 마지막에 보고. 60% + 0~25% × ratio.
-    if (productIdx % 5 === 0 || productIdx === productCount) {
-      await reportProgress(60 + (productIdx / productCount) * 25, 'product_summaries');
-    }
+    // 상품 루프 진행률 — 매 상품마다 보고 (DB throttle 은 reporter 가 5s 단위로 처리).
+    // 60% + 0~25% × ratio. processedProducts/totalProducts 함께 보고 — UI 에서 "3/10 상품 완료" 표시.
+    await reportProgress(
+      60 + (productIdx / productCount) * 25,
+      productIdx === productCount ? 'product_summaries_done' : 'product_summaries',
+      { processedProducts: productIdx, totalProducts: productCount },
+    );
   }
-  await reportProgress(85, 'overall_summary_started');
+  await reportProgress(85, 'building_overall_summary');
 
   // 7) 전체 요약 + 카테고리 분포
   const totalReviews = reviews.length;
@@ -624,7 +646,7 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
         { requestType: 'report_summary', role: 'summary', userId: opts.userId || null, analysisId: opts.analysisId || null },
       )
     : { summary: '리뷰 반응 기본 흐름을 정리했어요. 더 자세한 요약은 기본 분석 이상에서 제공됩니다.' };
-  await reportProgress(92, 'finalizing');
+  await reportProgress(90, 'building_period_comparison');
 
   // 전체 키워드 TOP 10 — 모든 리뷰 기준으로 한 번 더 추출 (상품별과 별도 집계라 합산이 아닌 전역 매칭)
   const positiveKeywordsTop10All = extractPositiveKeywords(reviews, classifications);
@@ -745,6 +767,7 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       message: '기간별 리뷰 변화 분석 중 일시적인 문제가 있었어요.',
     };
   }
+  await reportProgress(94, 'finalizing');
 
   // 모든 LLM 호출이 끝난 후 — 정확한 누적 통계로 analysis_summary row + 콘솔 한 줄.
   const session = aiClient.sessionStats || { realCalls: 0, fallbacks: 0, lastError: null };
