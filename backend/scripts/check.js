@@ -976,6 +976,59 @@ await step('analysisJob — legacy status (done/error) 노멀라이즈해서 반
   assert.equal(s.status, 'completed', '"done" → "completed" 정규화');
 });
 
+await step('reviewClassification — 실제 사례 회귀: rating=2 + "비싸긴해도 돈값" → positive (negative 아님)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 'P1', productName: 'P', rating: 2,
+    content: '이건 완전 멋지 전투용 바지임 내가 비긴 바지가 4벌이 있음 나는 바지를 거의 비긴에서만 사는데 비긴이 비싸긴해도 돈값을 함 가격이 비쌈',
+  });
+  assert.equal(r.sentiment, 'positive', `negative 가 아니라 positive 여야 함 (실제: ${r.sentiment})`);
+  // 가격 issue 가 있다면 severity=low (medium 으로 떨어지면 안 됨)
+  const priceIssues = (r.categories || []).filter((c) => c.name === '가격/가성비' && c.isActionableIssue);
+  for (const pi of priceIssues) {
+    assert.equal(pi.severity, 'low', `가격 issue severity 는 low 여야 함 (실제: ${pi.severity})`);
+  }
+  // hasPriceConcession 유틸 자체도 검증
+  assert.equal(m.hasPriceConcession('비싸긴해도 돈값을 함'), true);
+  assert.equal(m.hasPriceConcession('비싸지만 만족합니다'), true);
+  assert.equal(m.hasPriceConcession('가성비 별로'), false);
+});
+
+await step('reviewClassification — 사이즈 추천 방향: "3사이즈갈걸" → 작게 나옴(=upsize 추천)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 'P2', productName: 'P',
+    content: '한여름말고는 입기 좋을거같아요 아 근데 제가 바지32정도 입는데 2사이즈는 너무딱맞네요 크게 3사이즈갈걸 그랬나봐요',
+  });
+  const sizeLabels = (r.categories || []).filter((c) => c.name === '사이즈').map((c) => c.issue);
+  // "전반적으로 작게 나옴" = 제품이 작게 나온다 → 사용자에게 "한 치수 업" 안내
+  assert(sizeLabels.includes('전반적으로 작게 나옴'),
+    `'전반적으로 작게 나옴' 라벨 필요 (실제: ${sizeLabels.join(',')})`);
+  assert(!sizeLabels.includes('전반적으로 크게 나옴'),
+    `반대 방향 라벨 '전반적으로 크게 나옴' 이 같이 있으면 안 됨`);
+  // 액션도 반드시 upsize 방향
+  const action = (r.categories || []).find((c) => c.issue === '전반적으로 작게 나옴')?.action || '';
+  assert(/한 치수 업|업 추천|크게/.test(action), `액션이 upsize 방향이어야 함: "${action}"`);
+  assert(!/한 치수 다운|다운 추천|작게 사세요/.test(action),
+    `액션에 downsize 표현이 들어가면 안 됨: "${action}"`);
+});
+
+await step('reviewClassification — 사이즈 추천 방향: "작게 갈 걸" → 크게 나옴(=downsize 추천)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  const r = m.classifyReview({
+    id: 'P3', productName: 'P',
+    content: '허리가 너무 크고 품도 넉넉해서 한 치수 작게 갈 걸 그랬어요',
+  });
+  const sizeLabels = (r.categories || []).filter((c) => c.name === '사이즈').map((c) => c.issue);
+  assert(sizeLabels.includes('전반적으로 크게 나옴'),
+    `'전반적으로 크게 나옴' 라벨 필요 (실제: ${sizeLabels.join(',')})`);
+  assert(!sizeLabels.includes('전반적으로 작게 나옴'),
+    `반대 방향 라벨 '전반적으로 작게 나옴' 이 같이 있으면 안 됨`);
+  // 부위별 라벨도 반대 방향이면 안 됨 — "허리가 작게 나옴" 이 나오면 실패.
+  assert(!sizeLabels.includes('허리가 작게 나옴'),
+    `'허리가 작게 나옴' 은 반대 방향이라 잘못`);
+});
+
 await step('reviewClassification — 실제 의류 리뷰 8케이스 (mentionedAspect vs improvementIssue)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const cases = [

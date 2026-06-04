@@ -51,6 +51,11 @@ const POS_TERMS = [
   '도톰', '두께감 좋',
   // 구어/슬랭 — 실제 리뷰에서 빈번
   '오집니', '오지네', '오져요', '대박', '가성비 오',
+  // 충성도/가치 인정 — "별점이 낮아도 본문이 이만큼 강하게 긍정이면 sentiment 보호"
+  // 의 핵심 신호.
+  '돈값', '값어치',
+  '계속 사', '계속 산', '여기서만 사', '여기서만 산',
+  '완전 멋', '완전 좋', '완전 만족', '완전 추천',
 ];
 // NEG_TERMS: 부정 신호 어휘. '별로' 는 '색상별로/조금별로' 같은 합성어로 오탐이 잦아
 // 안전한 표면형(별로요/별로네/별로다/이 별로/가 별로/는 별로/은 별로)만 등록한다.
@@ -345,8 +350,11 @@ function matchClause(clause) {
     for (let i = results.length - 1; i >= 0; i--) {
       const r = results[i];
       if (r.category !== '사이즈') continue;
-      if (dropSmall && r.label === '전반적으로 작게 나옴') results.splice(i, 1);
-      else if (dropLarge && r.label === '전반적으로 크게 나옴') results.splice(i, 1);
+      const label = r.label || '';
+      // 전반적 + 부위별 (허리/어깨/소매/기장/목 부분 등) "작게 나옴" / "크게 나옴" 모두 정리.
+      // 사용자가 "작게 갈 걸" (BUY_DOWN) 이면 → 제품이 크게 나온다는 뜻 → "작게 나옴" 라벨은 모두 제거.
+      if (dropSmall && /작게 나옴|작음$|짧음$|좁음$|타이트함$/.test(label)) results.splice(i, 1);
+      else if (dropLarge && /크게 나옴|큼$|김$|넓음$/.test(label)) results.splice(i, 1);
     }
   }
 
@@ -418,10 +426,33 @@ const CLEAR_SATISFACTION_PHRASES = [
   '예뻐', '이뻐', '예쁘', '이쁘',
   '좋아요', '좋습니', '좋네',
   '편해', '편안', '깔끔',
-  // "딱이다/딱이에요/딱입니다" 류 — 강한 만족 표현으로 인식해야
-  // "살짝 작긴하지만 이너로 딱입니다" 가 mixed 가 아닌 positive 로 가도록.
+  // "딱이다/딱이에요/딱입니다" 류
   '딱이', '딱입', '딱이에', '딱이다',
+  // 충성도/반복구매/돈값 표현 — 별점이 낮아도 본문이 이만큼 강하게 긍정이면 sentiment 보호.
+  '돈값', '값어치',
+  '계속 사', '계속 사게', '여기서만 사', '여기서만 삼',
+  '거의 만 사', '여기 만 사', '비긴에서만', // 브랜드 충성도 (사례에서 발견)
+  '완전 멋', '완전 좋', '완전 만족',
+  '벌이 있', '벌 있', // "바지가 4벌이 있음" 같은 보유 = 만족 신호
 ];
+
+// 가격 양보 구조 — "비싸긴해도 돈값" 류. 본문에 있으면 가격 issue 는 severity=low 로 강등 +
+// 전체 sentiment 는 negative 로 떨어지지 않게 보호.
+const PRICE_CONCESSION_PATTERNS = [
+  '비싸긴해도 돈값', '비싸긴 해도 돈값', '비싸도 돈값', '비싸지만 돈값',
+  '비싸긴해도 값어치', '비싸긴 해도 값어치', '비싸도 값어치',
+  '비싸지만 만족', '비싸도 만족', '비싸긴해도 만족', '비싸긴 해도 만족',
+  '비싸지만 좋', '비싸도 좋', '비싸긴해도 좋', '비싸긴 해도 좋',
+  '비싸지만 퀄리티', '비싸지만 품질', '비싸도 퀄리티', '비싸도 품질',
+  '비싸지만 재구매', '비싸지만 계속', '비싸도 재구매', '비싸도 계속',
+  '비싸긴 한데 그래도', '비싸긴한데 그래도',
+  '가격은 있지만 재구매', '가격은 좀 있지만 재구매',
+  '가격은 있지만 만족', '가격은 좀 있지만 만족',
+];
+export function hasPriceConcession(text) {
+  if (!text) return false;
+  return PRICE_CONCESSION_PATTERNS.some((p) => text.includes(p));
+}
 // "괜찮", "납득" 등 수용/타협 표현 — sentiment 를 mid 쪽으로 끌어올림
 const ACCEPTANCE_PHRASES = [
   '괜찮', '납득', '이해되', '이해 되', '그래도 만족', '그래도 괜찮',
@@ -595,6 +626,13 @@ export function combineRatingAndTextSentiment(rating, sig, opts = {}) {
   // 1) rating 사용 불가 — 텍스트만 사용
   if (usedRating == null) return textOnly();
 
+  // 2 - pre) 별점이 2점이어도 본문이 강한 만족 + 강한 부정 0 + 명확한 긍정 점수
+  //    가 있으면 텍스트가 이긴다. rating=1 은 더 강한 불만 신호라 이 override 대상이
+  //    아니다. 예: rating=2 + "비싸긴해도 돈값을 함 / 거의 비긴에서만 사는데" → positive.
+  if (rating === 2 && sig.strongNegativeCount === 0 && sig.hasClearSatisfaction && sig.positiveScore >= 1) {
+    return 'positive';
+  }
+
   // 2) Hard guard: 평점 4~5 + 강한 불만 없음 + 만족 표현 있음 → positive 보호
   if (rating >= 4 && sig.strongNegativeCount === 0 && sig.hasClearSatisfaction) {
     return 'positive';
@@ -743,6 +781,19 @@ export function classifyReview(review, opts = {}) {
     isActionableIssue: m.isActionableIssue !== false,
     severity: m.severity || 'medium',
   }));
+
+  // 가격 양보 구조 감지 — "비싸긴해도 돈값" 류가 있으면 가격 issue 의 severity 를
+  // low 로 강등하고 polarity 를 mixed/aspect 로 떨궈 차트에서 "가격 만족도 낮음" 으로
+  // 표시되지 않게 한다. 실제 셀러 액션도 약하게.
+  if (hasPriceConcession(text)) {
+    for (const c of categories) {
+      if (c.name === '가격/가성비') {
+        c.severity = 'low';
+        c.issuePolarity = 'mixed';
+        c.isActionableIssue = true; // low severity issue 는 유지 (스펙 PART 2)
+      }
+    }
+  }
 
   const ambiguous = categories.length === 0 && sentiment === 'negative';
   const { mentionedAspects, improvementIssues } = splitAspectAndIssue(categories);
