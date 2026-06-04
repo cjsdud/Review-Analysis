@@ -427,6 +427,54 @@ export async function generateMonthlyReport(overallSummary) {
   return llm || mockMonthly(overallSummary);
 }
 
+// 기간별 리뷰 변화 요약 — Pro/Business 만 호출. mock/실패 시 rule 기반 fallback.
+// 입력: { currentLabel, previousLabel, deltas, improvedIssues, worsenedIssues, dataQuality }
+// 반환: { summary: string }
+export async function generatePeriodComparisonSummary(input) {
+  const prompt = [
+    '너는 패션 셀러 컨설턴트다. 아래 기간별 리뷰 변화 데이터로 셀러용 변화 요약을 2~3문장으로 작성한다.',
+    '',
+    '== 표현 원칙 ==',
+    '- "개선되었습니다 / 악화되었습니다" 같은 단정형 표현 금지.',
+    '- "줄어든 것으로 보입니다 / 늘어난 것으로 보입니다" 처럼 조심스럽게 표현하라.',
+    '- 인과관계로 단정하지 마라.',
+    '- 리뷰 수가 적으면 "참고용" 이라고 명시하라.',
+    '- 셀러가 바로 확인할 수 있는 다음 액션(상세페이지·사이즈표·안내 문구 점검 등) 으로 끝맺어라.',
+    '- 과장된 표현 금지.',
+    '',
+    '반드시 JSON {"summary":"..."} 만 출력 (다른 텍스트 금지).',
+    JSON.stringify(input),
+  ].join('\n');
+  const llm = await tryLLM(prompt, (parsed) => {
+    const summary = typeof parsed?.summary === 'string' && parsed.summary.trim() ? parsed.summary.trim() : null;
+    return summary ? { summary } : null;
+  }, { role: 'summary' });
+  return llm || mockPeriodSummary(input);
+}
+
+function mockPeriodSummary({ currentLabel = '최근 기간', previousLabel = '이전 기간', deltas = {}, improvedIssues = [], worsenedIssues = [], dataQuality = {} } = {}) {
+  const parts = [];
+  const posDelta = deltas.positiveRatioDelta || 0;
+  const negDelta = deltas.negativeRatioDelta || 0;
+  if (Math.abs(posDelta) < 0.02 && Math.abs(negDelta) < 0.02) {
+    parts.push(`${currentLabel}은 ${previousLabel}과 비교해 긍정·부정 비율 변화가 크지 않은 것으로 보입니다.`);
+  } else {
+    const posPhrase = posDelta > 0.02 ? '긍정 반응이 늘어난 것으로 보이고'
+      : posDelta < -0.02 ? '긍정 반응이 줄어든 것으로 보이고' : '긍정 반응은 비슷한 수준이고';
+    const negPhrase = negDelta > 0.02 ? '부정 반응은 늘어난 것으로 보입니다.'
+      : negDelta < -0.02 ? '부정 반응은 줄어든 것으로 보입니다.' : '부정 반응은 비슷한 수준입니다.';
+    parts.push(`${currentLabel}은 ${previousLabel}보다 ${posPhrase}, ${negPhrase}`);
+  }
+  if (improvedIssues[0]) {
+    parts.push(`특히 ${improvedIssues[0].categoryLabel} 관련 의견이 줄어든 것으로 보입니다.`);
+  }
+  if (worsenedIssues[0]) {
+    parts.push(`반면 ${worsenedIssues[0].categoryLabel} 관련 의견은 늘어난 것으로 보이니, 상세페이지의 관련 안내를 한번 점검해 보세요.`);
+  }
+  if (dataQuality?.cautionMessage) parts.push(dataQuality.cautionMessage);
+  return { summary: parts.join(' ') };
+}
+
 // ===================================================================
 // Mock 헬퍼 (실제 응답과 동일한 형태 유지)
 // ===================================================================
@@ -579,6 +627,7 @@ export default {
   generateProductImprovementReport,
   generateReplyTemplates,
   generateMonthlyReport,
+  generatePeriodComparisonSummary,
   resetSessionStats,
   modelForRole,
   get lastUsage()      { return lastUsage; },

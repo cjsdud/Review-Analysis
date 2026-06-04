@@ -56,3 +56,14 @@ export async function saveCorrection(analysisId, payload) {
   const { data } = await client.post(`/analysis/${analysisId}/corrections`, payload);
   return data;
 }
+
+// 기간별 리뷰 변화 — Pro 이상에서만 200(available) 가능. Free/Starter 는 locked shape.
+// mode: 'recent_30_vs_previous_30' | 'recent_90_vs_previous_90' | 'custom' | 'monthly_trend' | 'weekly_trend'
+// custom 일 때만 currentStart/currentEnd/previousStart/previousEnd 사용 (YYYY-MM-DD).
+export async function getPeriodComparison(analysisId, params = {}) {
+  const { data } = await client.get(`/analysis/${analysisId}/period-comparison`, {
+    params,
+    validateStatus: (s) => s >= 200 && s < 300,
+  });
+  return data;
+}

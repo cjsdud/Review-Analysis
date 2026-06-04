@@ -5,7 +5,7 @@ const FIELD_INFO = {
   rating: { label: '별점', req: true, desc: '긍정/부정 리뷰 구분에 사용합니다. 보통 1~5점.' },
   productName: { label: '상품명', req: false, desc: '어떤 상품의 리뷰인지 구분합니다.' },
   optionName: { label: '옵션', req: false, desc: '사이즈·색상 옵션별 이슈 분석에 사용합니다.' },
-  createdAt: { label: '작성일', req: false, desc: '월간 트렌드/리포트 기간 분석에 사용합니다.' },
+  createdAt: { label: '작성일', req: false, desc: '작성일 컬럼을 매핑하면 기간별 리뷰 변화와 개선 추이를 확인할 수 있어요.' },
   title: { label: '리뷰 제목', req: false, desc: '제목이 있는 경우 분석 정확도가 약간 올라갑니다.' },
   replyText: { label: '판매자 답글', req: false, desc: '기존 답글이 있으면 함께 보관합니다.' },
   reviewId: { label: '리뷰 번호', req: false, desc: '플랫폼에서 부여한 리뷰 ID (있으면 추적용으로 사용).' },

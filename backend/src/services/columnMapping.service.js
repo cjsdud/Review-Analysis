@@ -48,14 +48,19 @@ export const FIELD_CANDIDATES = {
     // 'text' 단독은 의미가 너무 모호해 일부러 제외 — 'review text' 는 위 항목으로 커버됨.
   ],
   createdAt: [
-    // ko
-    '작성일', '등록일', '리뷰작성일', '작성일자', '등록일자', '날짜', '일자',
+    // ko — "작성일" 계열 + 리뷰 날짜 의미가 있는 컬럼명 전부 흡수.
+    // 기간별 리뷰 변화 분석에 사용되므로 후보를 폭넓게 둔다.
+    '작성일', '등록일', '리뷰작성일', '리뷰 작성일', '작성일자', '등록일자',
+    '리뷰등록일', '리뷰 등록일', '작성 날짜', '작성날짜',
+    '게시일', '게시일자', '날짜', '일자',
     // en
     'date', 'review date', 'reviewdate', 'review_date',
     'created at', 'createdat', 'created_at',
     'created date', 'createddate', 'created_date',
     'written date', 'writtendate', 'written_date',
     'registered at', 'registeredat', 'registered_at',
+    'review created at', 'reviewcreatedat', 'review_created_at',
+    'review_registered_at', 'reviewregisteredat',
   ],
   replyText: [
     // ko

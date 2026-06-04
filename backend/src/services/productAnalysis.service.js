@@ -30,6 +30,8 @@ import {
   buildReviewTrends,
 } from './keywordAnalysis.service.js';
 import { buildReviewHighlights } from './reviewHighlights.service.js';
+import { buildPeriodComparisonAnalysis, buildRuleBasedPeriodSummary } from './periodComparison.service.js';
+import { getPlanFeatures } from '../constants/plans.js';
 
 // 분석 의미가 있는 카테고리만 추림 (포괄 라벨 '기타' 제외, 긍정/중립 제외).
 const meaningfulCategories = (c) =>
@@ -690,6 +692,59 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
     frequentKeywordsTop10,
     reviewHighlights: buildReviewHighlights(reviews, classifications),
   };
+
+  // 기간별 리뷰 변화 분석 — Pro 이상에서만 데이터 생성. Free/Starter 는 locked shape 으로 저장하여
+  // 프론트가 동일 키로 잠금 UI 를 띄울 수 있게 한다. 작성일 데이터가 부족하면 unavailable.
+  // products 는 위 루프에서 만들어진 그대로 사용 (reviews 안에 createdAt 보존).
+  try {
+    const planFeatures = getPlanFeatures(planCode);
+    const allowed = planFeatures.periodComparison === true;
+    const periodComparison = buildPeriodComparisonAnalysis(products, {
+      planCode,
+      periodComparisonAllowed: allowed,
+      // 기본 recent30 — custom 은 별도 API 엔드포인트에서 동적 계산.
+    });
+    // Pro/Business 만 LLM 요약 시도. mock/실패 시 rule fallback. 실패해도 분석 전체는 통과.
+    if (allowed && periodComparison.available) {
+      try {
+        const llmInput = {
+          currentLabel: periodComparison.currentPeriod?.label,
+          previousLabel: periodComparison.previousPeriod?.label,
+          deltas: periodComparison.deltas,
+          improvedIssues: periodComparison.improvedIssues,
+          worsenedIssues: periodComparison.worsenedIssues,
+          dataQuality: periodComparison.dataQuality,
+        };
+        const llmSummary = await callWithUsage(
+          () => aiClient.generatePeriodComparisonSummary(llmInput),
+          {
+            requestType: 'period_comparison_summary',
+            role: 'summary',
+            userId: opts.userId || null,
+            analysisId: opts.analysisId || null,
+          },
+        );
+        if (llmSummary && llmSummary.summary) {
+          periodComparison.summary = llmSummary.summary;
+        } else {
+          periodComparison.summary = buildRuleBasedPeriodSummary(periodComparison);
+        }
+      } catch (e) {
+        console.warn('[periodComparison] llm summary failed — using rule fallback', e?.message);
+        periodComparison.summary = buildRuleBasedPeriodSummary(periodComparison);
+      }
+    }
+    summary.periodComparison = periodComparison;
+  } catch (e) {
+    // 기간 비교 계산이 어떤 이유로든 실패해도 기존 분석은 깨지지 않게.
+    console.warn('[periodComparison] build failed', e?.message);
+    summary.periodComparison = {
+      available: false,
+      locked: false,
+      reason: 'build_failed',
+      message: '기간별 리뷰 변화 분석 중 일시적인 문제가 있었어요.',
+    };
+  }
 
   // 모든 LLM 호출이 끝난 후 — 정확한 누적 통계로 analysis_summary row + 콘솔 한 줄.
   const session = aiClient.sessionStats || { realCalls: 0, fallbacks: 0, lastError: null };

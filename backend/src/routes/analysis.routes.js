@@ -17,6 +17,8 @@ import { buildAnalysisCsv, buildAnalysisWorkbook } from '../services/export.serv
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { checkCanCreateAnalysis, getUserSubscription, recordUsage } from '../services/billing.service.js';
 import { serializeReviewForList, sentimentOf } from '../services/reviewHighlights.service.js';
+import { buildPeriodComparisonAnalysis, buildRuleBasedPeriodSummary, PERIOD_MODES } from '../services/periodComparison.service.js';
+import { getPlanFeatures, normalizePlan } from '../constants/plans.js';
 
 const router = Router();
 
@@ -416,6 +418,80 @@ router.get('/:id/reviews', requireAuth, (req, res) => {
   const total = filtered.length;
   const items = filtered.slice(offset, offset + limit);
   res.json({ items, total, limit, offset });
+});
+
+// GET /api/analysis/:id/period-comparison — 기간별 리뷰 반응 변화.
+//
+// Pro 이상 전용. 기본은 recent_30_vs_previous_30, 다른 모드는 query 로:
+//   ?mode=recent_30_vs_previous_30 | recent_90_vs_previous_90 | custom | monthly_trend | weekly_trend
+//   ?currentStart=YYYY-MM-DD&currentEnd=YYYY-MM-DD&previousStart=...&previousEnd=...  (custom 전용)
+//
+// 응답: periodComparison shape (locked / unavailable / available 중 하나).
+router.get('/:id/period-comparison', requireAuth, async (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
+
+  const job = db.prepare('SELECT user_id, status FROM analysis_jobs WHERE id = ?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: '분석 결과를 찾을 수 없습니다.' });
+  if (job.status !== 'completed' && job.status !== 'done') {
+    return res.status(202).json({
+      available: false,
+      locked: false,
+      reason: 'analysis_in_progress',
+      message: '리뷰 분석이 완료되면 기간별 변화도 함께 확인할 수 있어요.',
+    });
+  }
+
+  // 사용자 플랜 확인 — DB 의 subscriptions 를 매번 다시 조회 (관리자 직접 변경 즉시 반영).
+  const userId = req.user?.id || null;
+  const sub = userId ? getUserSubscription(userId) : null;
+  const planCode = normalizePlan(sub?.plan_code || 'free');
+  const features = getPlanFeatures(planCode);
+  const allowed = features.periodComparison === true;
+  if (!allowed) {
+    return res.status(200).json({
+      available: false,
+      locked: true,
+      requiredPlan: 'pro',
+      reason: 'plan_locked',
+      message: '기간별 리뷰 변화 분석은 Pro 이상에서 사용할 수 있어요.',
+    });
+  }
+
+  // products 로드.
+  const productRows = db
+    .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
+    .all(req.params.id);
+  const products = productRows.map((r) => JSON.parse(r.data));
+
+  // mode + custom 인자 파싱.
+  const q = req.query || {};
+  const requestedMode = String(q.mode || PERIOD_MODES.RECENT_30_VS_PREVIOUS_30);
+  const validModes = Object.values(PERIOD_MODES);
+  const mode = validModes.includes(requestedMode) ? requestedMode : PERIOD_MODES.RECENT_30_VS_PREVIOUS_30;
+  const customOpts = mode === PERIOD_MODES.CUSTOM
+    ? {
+        currentStart: String(q.currentStart || ''),
+        currentEnd: String(q.currentEnd || ''),
+        previousStart: String(q.previousStart || ''),
+        previousEnd: String(q.previousEnd || ''),
+      }
+    : {};
+
+  // 동적 계산 — 매 요청마다 fresh.
+  const comparison = buildPeriodComparisonAnalysis(products, {
+    planCode,
+    periodComparisonAllowed: true,
+    mode,
+    ...customOpts,
+  });
+
+  // 요약은 기본으로 rule 기반이 들어와 있다 — custom/주차/월별 모드에선 LLM 재호출 비용을
+  // 피하기 위해 rule 기반 그대로 사용. 기본 recent30 요약은 analysis 저장 시 LLM 결과가
+  // summary 안에 박혀 있다 (대시보드 첫 진입 응답).
+  if (comparison.available && !comparison.summary) {
+    comparison.summary = buildRuleBasedPeriodSummary(comparison);
+  }
+  res.json(comparison);
 });
 
 // GET /api/analysis/:id/export.csv — CSV 다운로드 (fallback / 단순 통합본)

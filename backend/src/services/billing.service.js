@@ -178,6 +178,8 @@ export function buildMeContext(user) {
       printWatermark: features.printWatermark,
       canViewAllRelatedReviews: features.canViewAllRelatedReviews,
       canUsePrecisionAnalysis: features.canUsePrecisionAnalysis,
+      // 기간별 리뷰 반응 변화 — Pro 이상.
+      periodComparison: features.periodComparison === true,
       llmMode: features.llmMode,
     },
     // 플랜의 LLM 정책 — 관리자가 플랜을 바꾸면 다음 /api/me 호출부터 곧장 새 값으로

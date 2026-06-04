@@ -28,6 +28,8 @@ export const PLAN_FEATURES = {
     printWatermark: true,
     canViewAllRelatedReviews: false,
     canUsePrecisionAnalysis: false,
+    // 기간별 리뷰 변화 분석 — Pro 이상 전용.
+    periodComparison: false,
     llmMode: 'basic',
   },
   starter: {
@@ -43,6 +45,7 @@ export const PLAN_FEATURES = {
     printWatermark: false,
     canViewAllRelatedReviews: true,
     canUsePrecisionAnalysis: false,
+    periodComparison: false,
     llmMode: 'basic',
   },
   pro: {
@@ -58,6 +61,7 @@ export const PLAN_FEATURES = {
     printWatermark: false,
     canViewAllRelatedReviews: true,
     canUsePrecisionAnalysis: true,
+    periodComparison: true,
     llmMode: 'precision',
   },
   business: {
@@ -73,6 +77,7 @@ export const PLAN_FEATURES = {
     printWatermark: false,
     canViewAllRelatedReviews: true,
     canUsePrecisionAnalysis: true,
+    periodComparison: true,
     llmMode: 'advanced',
   },
 };

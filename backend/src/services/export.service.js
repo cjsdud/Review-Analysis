@@ -268,6 +268,84 @@ function buildReplySheet(wb, products) {
   return ws;
 }
 
+// ─── 기간별 리뷰 변화 시트 ───
+// summary.periodComparison 가 available=true 일 때만 시트를 추가한다 (Pro 이상 + 작성일 데이터 충분).
+// 잠금/날짜 부족 상태에서는 시트를 생성하지 않아 Free/Starter export 에는 비교 데이터가 노출되지 않는다.
+function buildPeriodComparisonSheets(wb, summary) {
+  const pc = summary?.periodComparison;
+  if (!pc || !pc.available) return;
+
+  // 1) 요약 시트.
+  const cur = pc.currentPeriod || {};
+  const prev = pc.previousPeriod || {};
+  const d = pc.deltas || {};
+  const rows1 = [
+    ['항목', '내용'],
+    ['비교 기준', cur.label && prev.label ? `${cur.label} vs ${prev.label}` : '기간 비교'],
+    ['현재 기간', `${cur.startDate || ''} ~ ${cur.endDate || ''}`],
+    ['이전 기간', `${prev.startDate || ''} ~ ${prev.endDate || ''}`],
+    ['현재 기간 리뷰 수', cur.totalReviews ?? 0],
+    ['이전 기간 리뷰 수', prev.totalReviews ?? 0],
+    ['긍정 비율 변화', d.positiveRatioDelta != null ? pcptLabel(d.positiveRatioDelta) : ''],
+    ['부정 비율 변화', d.negativeRatioDelta != null ? pcptLabel(d.negativeRatioDelta) : ''],
+    ['중립 비율 변화', d.neutralRatioDelta != null ? pcptLabel(d.neutralRatioDelta) : ''],
+    ['복합 반응 비율 변화', d.mixedRatioDelta != null ? pcptLabel(d.mixedRatioDelta) : ''],
+    ['가장 줄어든 이슈', (pc.improvedIssues?.[0]?.categoryLabel) || '—'],
+    ['새로 늘어난 이슈', (pc.worsenedIssues?.[0]?.categoryLabel) || '—'],
+    ['요약', pc.summary || ''],
+    ['해석 안내', pc.dataQuality?.cautionMessage || '비교 기간이 충분한 경우의 결과입니다. 변화는 인과관계가 아닌 흐름으로 봐주세요.'],
+  ];
+  const ws1 = wb.addWorksheet('기간별 변화 요약');
+  fillSheet(ws1, rows1, [22, 70]);
+
+  // 2) 이슈 변화 시트.
+  const rows2 = [['이슈 분류', '현재 건수', '이전 건수', '변화', '구분']];
+  for (const r of (pc.improvedIssues || [])) rows2.push([r.categoryLabel, r.currentCount, r.previousCount, r.countDelta, '줄어든 이슈']);
+  for (const r of (pc.worsenedIssues || [])) rows2.push([r.categoryLabel, r.currentCount, r.previousCount, r.countDelta, '늘어난 이슈']);
+  for (const r of (pc.newIssues || [])) rows2.push([r.categoryLabel, r.currentCount, r.previousCount, r.countDelta, '새로 나타난 이슈']);
+  for (const r of (pc.resolvedIssues || [])) rows2.push([r.categoryLabel, r.currentCount, r.previousCount, r.countDelta, '해소된 이슈']);
+  if (rows2.length === 1) rows2.push(['', '', '', '', '두 기간 사이 두드러진 이슈 변화가 없습니다.']);
+  const ws2 = wb.addWorksheet('이슈 변화');
+  fillSheet(ws2, rows2, [20, 12, 12, 10, 22]);
+
+  // 3) 상품별 변화 시트.
+  const rows3 = [['상품명', '현재 리뷰 수', '이전 리뷰 수', '현재 부정 비율', '이전 부정 비율', '부정 비율 변화', '구분']];
+  for (const r of (pc.improvedProducts || [])) {
+    rows3.push([r.productName, r.currentTotalReviews, r.previousTotalReviews, pctLabel(r.currentNegativeRatio), pctLabel(r.previousNegativeRatio), pcptLabel(r.negativeRatioDelta), '개선 흐름']);
+  }
+  for (const r of (pc.worsenedProducts || [])) {
+    rows3.push([r.productName, r.currentTotalReviews, r.previousTotalReviews, pctLabel(r.currentNegativeRatio), pctLabel(r.previousNegativeRatio), pcptLabel(r.negativeRatioDelta), '주의 필요']);
+  }
+  if (rows3.length === 1) rows3.push(['', '', '', '', '', '', '두 기간 사이 두드러진 상품 변화가 없습니다.']);
+  const ws3 = wb.addWorksheet('상품별 변화');
+  fillSheet(ws3, rows3, [28, 12, 12, 14, 14, 14, 14]);
+
+  // 4) 월별 추이 시트.
+  const rows4 = [['기간', '리뷰 수', '긍정 비율', '중립 비율', '부정 비율', '복합 반응 비율']];
+  for (const t of (pc.trend?.monthly || [])) {
+    rows4.push([t.period, t.totalReviews, pctLabel(t.positiveRatio), pctLabel(t.neutralRatio), pctLabel(t.negativeRatio), pctLabel(t.mixedRatio)]);
+  }
+  if (rows4.length === 1) rows4.push(['', '', '', '', '', '작성일 데이터가 부족해 월별 추이를 표시할 수 없습니다.']);
+  const ws4 = wb.addWorksheet('월별 추이');
+  fillSheet(ws4, rows4, [12, 10, 12, 12, 12, 14]);
+
+  // 5) 주별 추이 시트.
+  const rows5 = [['기간', '리뷰 수', '긍정 비율', '중립 비율', '부정 비율', '복합 반응 비율']];
+  for (const t of (pc.trend?.weekly || [])) {
+    rows5.push([t.period, t.totalReviews, pctLabel(t.positiveRatio), pctLabel(t.neutralRatio), pctLabel(t.negativeRatio), pctLabel(t.mixedRatio)]);
+  }
+  if (rows5.length === 1) rows5.push(['', '', '', '', '', '작성일 데이터가 부족해 주별 추이를 표시할 수 없습니다.']);
+  const ws5 = wb.addWorksheet('주별 추이');
+  fillSheet(ws5, rows5, [12, 10, 12, 12, 12, 14]);
+}
+
+// %p (포인트) 라벨 — 0.07 → "+7%p" / -0.05 → "-5%p" / 0 → "0%p"
+function pcptLabel(d) {
+  if (d == null || !Number.isFinite(d)) return '';
+  const sign = d > 0 ? '+' : d < 0 ? '-' : '';
+  return `${sign}${Math.abs(Math.round(d * 100))}%p`;
+}
+
 export async function buildAnalysisWorkbook(products, summary, meta = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = '리뷰핏';
@@ -275,6 +353,8 @@ export async function buildAnalysisWorkbook(products, summary, meta = {}) {
   buildSummarySheet(wb, products, summary, meta);
   buildProductSummarySheet(wb, products);
   buildIssueSheet(wb, products);
+  // 기간별 변화 시트 — Pro 이상 + 작성일 데이터 충분할 때만 추가됨.
+  buildPeriodComparisonSheets(wb, summary);
   buildReviewSheet(wb, products);
   buildReplySheet(wb, products);
   // 노드 버퍼로 반환 (라우트에서 그대로 전송)

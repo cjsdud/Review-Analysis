@@ -20,6 +20,7 @@ import PlanGatedExport, { PrintWatermark } from '../components/PlanGatedExport.j
 import AccessError, { errorKind } from '../components/AccessError.jsx';
 import { normalizeIssueCategory } from '../utils/issueFilters.js';
 import { getAnalysis, getAnalysisStatus, getProducts, exportXlsxUrl } from '../api/analysisApi.js';
+import PeriodComparisonSection from '../components/PeriodComparisonSection.jsx';
 
 export default function DashboardPage() {
   const { analysisId } = useParams();
@@ -166,10 +167,15 @@ export default function DashboardPage() {
   // 분석이 바뀌어 리스트 길이가 달라지면 page 를 1 로 리셋.
   useEffect(() => { setNegativeProductsPage(1); }, [negativeRanking.length]);
   useEffect(() => { setProductIssuesPage(1); }, [products.length]);
+  // 기간별 변화 섹션 — 백엔드가 summary.periodComparison 을 항상 채워 보낸다.
+  // locked/missing_review_dates/available 어떤 케이스에서도 카드를 렌더링한다 (잠금/빈 상태/정상 본문 분기).
+  const periodComparisonInitial = summary?.periodComparison || null;
+  const showPeriodSection = !!periodComparisonInitial;
   const navSections = [
     { id: 'sec-summary', label: '전체 요약' },
     products?.length > 0 ? { id: 'sec-top-products', label: '먼저 고칠 상품 TOP 3' } : null,
     summary.reviewHighlights ? { id: 'sec-review-reaction', label: '전체 리뷰 반응' } : null,
+    showPeriodSection ? { id: 'sec-period-comparison', label: '기간별 변화' } : null,
     { id: 'sec-issue-breakdown', label: '반복 이슈' },
     negativeRanking.length > 0 ? { id: 'sec-negative-products', label: '부정 많은 상품' } : null,
     { id: 'sec-product-table', label: '상품별 정리' },
@@ -268,6 +274,13 @@ export default function DashboardPage() {
             <ReviewHighlightsSection highlights={summary.reviewHighlights} analysisId={analysisId} />
           </div>
         </section>
+      )}
+
+      {/* 기간별 리뷰 반응 변화 — Pro 이상 전용. summary.periodComparison 의 locked/available/reason
+          에 따라 잠금 카드 / 작성일 안내 / 정상 본문 중 하나를 자동 분기. 직접 기간 비교(custom)
+          나 90일/월별/주별 모드는 컴포넌트 내부에서 GET /period-comparison?mode=... 호출. */}
+      {showPeriodSection && (
+        <PeriodComparisonSection analysisId={analysisId} initial={periodComparisonInitial} />
       )}
 
       {/* 반복 이슈 — 별도 섹션. (기존엔 dash-grid 우측에 "부정 리뷰가 많은 상품"
@@ -410,6 +423,8 @@ export default function DashboardPage() {
 // 리뷰까지 포함해 "현재 화면 일부" 가 아닌 "리포트 전체" 가 인쇄되도록.
 function PrintOnlyReport({ summary, products }) {
   if (!summary) return null;
+  const pc = summary.periodComparison;
+  const pcAvailable = pc && pc.available;
   return (
     <section className="print-only print-report">
       <h2>리뷰핏 분석 리포트 (전체)</h2>
@@ -417,6 +432,64 @@ function PrintOnlyReport({ summary, products }) {
         리뷰 {summary.totalReviews}건 · 상품 {summary.productCount}개 ·
         긍정 {summary.sentimentCounts?.positive ?? 0} · 중립 {summary.sentimentCounts?.neutral ?? 0} · 부정 {summary.sentimentCounts?.negative ?? 0}
       </p>
+
+      {/* 기간별 리뷰 반응 변화 — 사용 가능한 경우에만 출력. 잠금/날짜 부족 시 인쇄에서는 생략. */}
+      {pcAvailable && (
+        <section style={{ marginTop: 16, pageBreakInside: 'avoid' }}>
+          <h3>기간별 리뷰 반응 변화</h3>
+          <p style={{ fontSize: 12, color: '#555', margin: '4px 0 8px' }}>
+            {pc.currentPeriod?.label} ({pc.currentPeriod?.startDate} ~ {pc.currentPeriod?.endDate})
+            {' vs '}
+            {pc.previousPeriod?.label} ({pc.previousPeriod?.startDate} ~ {pc.previousPeriod?.endDate})
+          </p>
+          {pc.summary && <p style={{ fontSize: 12, margin: '4px 0 8px' }}>{pc.summary}</p>}
+          <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+            <li>
+              긍정 비율: {Math.round((pc.previousPeriod?.sentimentRatios?.positive || 0) * 100)}%
+              {' → '}{Math.round((pc.currentPeriod?.sentimentRatios?.positive || 0) * 100)}%
+              ({Math.round((pc.deltas?.positiveRatioDelta || 0) * 100)}%p)
+            </li>
+            <li>
+              부정 비율: {Math.round((pc.previousPeriod?.sentimentRatios?.negative || 0) * 100)}%
+              {' → '}{Math.round((pc.currentPeriod?.sentimentRatios?.negative || 0) * 100)}%
+              ({Math.round((pc.deltas?.negativeRatioDelta || 0) * 100)}%p)
+            </li>
+          </ul>
+          {(pc.improvedIssues || []).length > 0 && (
+            <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>줄어든 이슈</h4>
+              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                {pc.improvedIssues.slice(0, 5).map((r) => (
+                  <li key={r.category}>{r.categoryLabel}: {r.previousCount}건 → {r.currentCount}건 ({r.countDelta}건)</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {(pc.worsenedIssues || []).length > 0 && (
+            <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>새로 늘어난 이슈</h4>
+              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                {pc.worsenedIssues.slice(0, 5).map((r) => (
+                  <li key={r.category}>{r.categoryLabel}: {r.previousCount}건 → {r.currentCount}건 (+{r.countDelta}건)</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {(pc.worsenedProducts || []).length > 0 && (
+            <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>주의가 필요한 상품</h4>
+              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                {pc.worsenedProducts.slice(0, 5).map((r) => (
+                  <li key={r.productKey}>
+                    {r.productName}: 부정 {Math.round((r.previousNegativeRatio || 0) * 100)}%
+                    {' → '}{Math.round((r.currentNegativeRatio || 0) * 100)}%
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
 
       {(products || []).map((p) => (
         <article key={p.productKey} style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>

@@ -3965,6 +3965,132 @@ await step('aiClient (mock)', async () => {
   assert(Array.isArray(t) && t.length === 5, '답글 템플릿 mock 실패 (5 tones 기대)');
 });
 
+await step('dateUtils — normalizeReviewDate 다양한 포맷', async () => {
+  const { normalizeReviewDate } = await import('../src/utils/dateUtils.js');
+  assert.equal(normalizeReviewDate('2026-05-30'),  '2026-05-30');
+  assert.equal(normalizeReviewDate('2026.05.30'),  '2026-05-30');
+  assert.equal(normalizeReviewDate('2026/05/30'),  '2026-05-30');
+  assert.equal(normalizeReviewDate('2026-05-30 13:20:55'), '2026-05-30');
+  assert.equal(normalizeReviewDate('2026. 5. 30.'), '2026-05-30');
+  assert.equal(normalizeReviewDate('25.05.30'),    '2025-05-30');
+  assert.equal(normalizeReviewDate('2026년 5월 30일'), '2026-05-30');
+  assert.equal(normalizeReviewDate('20260530'),    '2026-05-30');
+  // 잘못된 날짜
+  assert.equal(normalizeReviewDate('2026-02-30'),  null);
+  assert.equal(normalizeReviewDate(''),            null);
+  assert.equal(normalizeReviewDate(null),          null);
+  assert.equal(normalizeReviewDate('-_-'),         null);
+  // Excel serial — 2026-05-30 의 직렬값 ≈ 46169
+  const out = normalizeReviewDate(46169);
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(out || ''), `serial 변환 실패: ${out}`);
+});
+
+await step('plans — periodComparison flag (Free/Starter 차단, Pro/Business 허용)', async () => {
+  const { getPlanFeatures } = await import('../src/constants/plans.js');
+  assert.equal(getPlanFeatures('free').periodComparison,     false);
+  assert.equal(getPlanFeatures('starter').periodComparison,  false);
+  assert.equal(getPlanFeatures('pro').periodComparison,      true);
+  assert.equal(getPlanFeatures('business').periodComparison, true);
+});
+
+await step('periodComparison — Pro 이상 + 충분한 데이터: recent30 비교 결과 생성', async () => {
+  const { buildPeriodComparisonAnalysis } = await import('../src/services/periodComparison.service.js');
+  // 가상 products[] — 각 review 에 createdAt, sentiment, improvementIssues 만 채움.
+  function mkRev(id, date, sentiment, issues = []) {
+    return {
+      id, createdAt: date, sentiment,
+      productKey: 'P1', productName: '티셔츠',
+      improvementIssues: issues.map((c) => ({ category: c, categoryLabel: c })),
+      detectedIssues: [],
+    };
+  }
+  // 최근 30일 = 12 건 (긍정 9, 부정 2, 중립 1, 사이즈 이슈 1건)
+  // 이전 30일 = 12 건 (긍정 6, 부정 5, 중립 1, 사이즈 이슈 5건)
+  // → 사이즈 이슈가 줄어든 것으로 잡혀야 한다.
+  const recent = [];
+  for (let i = 0; i < 9; i++)  recent.push(mkRev(`r${i}`,  `2026-05-${10 + i}`, 'positive'));
+  for (let i = 0; i < 2; i++)  recent.push(mkRev(`rn${i}`, `2026-05-${15 + i}`, 'negative', ['size_fit']));
+  recent.push(mkRev('rnu', '2026-05-20', 'neutral'));
+  const prev = [];
+  for (let i = 0; i < 6; i++)  prev.push(mkRev(`p${i}`,  `2026-04-${5 + i}`, 'positive'));
+  for (let i = 0; i < 5; i++)  prev.push(mkRev(`pn${i}`, `2026-04-${15 + i}`, 'negative', ['size_fit']));
+  prev.push(mkRev('pnu', '2026-04-20', 'neutral'));
+  const products = [{ productKey: 'P1', productName: '티셔츠', reviews: [...recent, ...prev] }];
+
+  const out = buildPeriodComparisonAnalysis(products, { planCode: 'pro' });
+  assert.equal(out.available, true, `available=true 기대, 실제: ${JSON.stringify(out)}`);
+  assert(out.currentPeriod.totalReviews >= 10);
+  assert(out.previousPeriod.totalReviews >= 10);
+  // 긍정 비율 증가 → positiveRatioDelta > 0
+  assert(out.deltas.positiveRatioDelta > 0,    `positiveRatioDelta=${out.deltas.positiveRatioDelta}`);
+  // 부정 비율 감소 → negativeRatioDelta < 0
+  assert(out.deltas.negativeRatioDelta < 0,    `negativeRatioDelta=${out.deltas.negativeRatioDelta}`);
+  // 사이즈 이슈가 줄어든 이슈 TOP 에 있어야 한다.
+  const sizeImproved = (out.improvedIssues || []).find((r) => r.category === 'size_fit');
+  assert(sizeImproved && sizeImproved.countDelta < 0, `improvedIssues 에 size_fit 없음`);
+});
+
+await step('periodComparison — Free/Starter 잠금', async () => {
+  const { buildPeriodComparisonAnalysis } = await import('../src/services/periodComparison.service.js');
+  const out = buildPeriodComparisonAnalysis([], { planCode: 'free' });
+  assert.equal(out.available, false);
+  assert.equal(out.locked, true);
+  assert.equal(out.requiredPlan, 'pro');
+  const out2 = buildPeriodComparisonAnalysis([], { planCode: 'starter' });
+  assert.equal(out2.locked, true);
+});
+
+await step('periodComparison — 작성일 데이터 없으면 unavailable', async () => {
+  const { buildPeriodComparisonAnalysis } = await import('../src/services/periodComparison.service.js');
+  const products = [{
+    productKey: 'P1', productName: '티셔츠',
+    reviews: Array.from({ length: 20 }, (_, i) => ({
+      id: `r${i}`, sentiment: 'positive',
+      // createdAt 의도적으로 비움 → 기간 비교 불가
+      productKey: 'P1', productName: '티셔츠',
+      improvementIssues: [],
+    })),
+  }];
+  const out = buildPeriodComparisonAnalysis(products, { planCode: 'pro' });
+  assert.equal(out.available, false, `날짜 없는 데이터는 available=false 기대: ${JSON.stringify(out)}`);
+  assert.equal(out.locked, false, '잠금 상태는 아니어야 함');
+  assert.equal(out.reason, 'missing_review_dates');
+});
+
+await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것으로 보입니다" 톤', async () => {
+  const { buildRuleBasedPeriodSummary } = await import('../src/services/periodComparison.service.js');
+  const summary = buildRuleBasedPeriodSummary({
+    currentPeriod: { label: '최근 30일' },
+    previousPeriod: { label: '이전 30일' },
+    deltas: { positiveRatioDelta: 0.08, negativeRatioDelta: -0.05 },
+    improvedIssues: [{ categoryLabel: '사이즈/핏', countDelta: -10 }],
+    worsenedIssues: [{ categoryLabel: '색상/화면 차이', countDelta: 7 }],
+    dataQuality: { cautionMessage: null },
+  });
+  // 단정형 금지 — "개선되었습니다" 같은 표현이 나오면 안 된다.
+  assert(!/개선되었습니다|악화되었습니다/.test(summary), `단정형 표현 노출: ${summary}`);
+  // "줄어든/늘어난 것으로 보입니다" 톤 포함
+  assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
+});
+
+await step('columnMapping — 영문 reviewDate / createdAt / registered_at 자동 추천', async () => {
+  // 실제 파일처럼 content/rating 컬럼이 함께 있는 상황에서 reviewDate 가 createdAt 으로 잡혀야 한다.
+  // (header 가 'reviewDate' 단독이면 우선순위가 더 높은 content 가 'review' 부분 일치로 가져갈 수 있음 —
+  //  실제 운영에서는 그런 케이스가 거의 없으므로 테스트도 현실적 시나리오로.)
+  const { autoMapColumns } = await import('../src/services/columnMapping.service.js');
+  const rows = [{ content: '잘 맞아요 너무 좋아요', rating: 5, reviewDate: '2026-05-30' }];
+  const r1 = autoMapColumns(['content', 'rating', 'reviewDate'], rows, 'custom');
+  assert.equal(r1.createdAt?.column, 'reviewDate', `reviewDate 자동 매핑 실패: ${JSON.stringify(r1.createdAt)}`);
+
+  const rows2 = [{ content: '잘 맞아요', rating: 5, registered_at: '2026/05/30' }];
+  const r2 = autoMapColumns(['content', 'rating', 'registered_at'], rows2, 'custom');
+  assert.equal(r2.createdAt?.column, 'registered_at', 'registered_at 자동 매핑 실패');
+
+  const rows3 = [{ '리뷰 내용': '잘 맞아요', '별점': 5, '리뷰 등록일': '2026.05.30' }];
+  const r3 = autoMapColumns(['리뷰 내용', '별점', '리뷰 등록일'], rows3, 'custom');
+  assert.equal(r3.createdAt?.column, '리뷰 등록일', '리뷰 등록일 자동 매핑 실패');
+});
+
 if (failures.length) {
   console.error(`\n[check] 실패 ${failures.length}건: ${failures.join(', ')}`);
   process.exit(1);
