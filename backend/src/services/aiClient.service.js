@@ -3,6 +3,7 @@
 // 키가 없거나 호출/파싱이 실패하면 항상 mock 응답으로 안전하게 fallback 한다.
 // 모든 provider 응답은 JSON으로 파싱하며, 파싱/검증 실패 시 mock 기본값을 반환한다.
 import { buildReplyTemplates } from './replyTemplates.service.js';
+import { normalizeCategoryKey, categoryLabelFor } from './ai/sizeDirection.js';
 
 // ---------- provider / key / model 해석 ----------
 const PROVIDER = (process.env.LLM_PROVIDER || process.env.AI_PROVIDER || 'mock').toLowerCase();
@@ -281,44 +282,60 @@ function normalizeClassifyResult(x) {
   const mentionedAspects = Array.isArray(x.mentionedAspects)
     ? x.mentionedAspects
         .filter((a) => a && (a.category || a.categoryLabel))
-        .map((a) => ({
-          category: a.category || a.categoryLabel,
-          categoryLabel: a.categoryLabel || a.category,
-          sentiment: ['positive', 'neutral', 'negative', 'mixed'].includes(a.sentiment) ? a.sentiment : 'neutral',
-        }))
+        .map((a) => {
+          const key = normalizeCategoryKey(a.category || a.categoryLabel);
+          return {
+            category: key,
+            categoryLabel: a.categoryLabel || categoryLabelFor(key),
+            sentiment: ['positive', 'neutral', 'negative', 'mixed'].includes(a.sentiment) ? a.sentiment : 'neutral',
+          };
+        })
     : [];
   let improvementIssues = Array.isArray(x.improvementIssues)
     ? x.improvementIssues
         .filter((i) => i && (i.issueLabel || i.category))
-        .map((i) => ({
-          category: i.category || i.categoryLabel || '기타',
-          categoryLabel: i.categoryLabel || i.category || '기타',
-          issueLabel: i.issueLabel || `${i.category || ''} 관련 의견`,
-          severity: ['low', 'medium', 'high'].includes(i.severity) ? i.severity : 'medium',
-          evidence: (i.evidence || '').slice(0, 140),
-          confidence: typeof i.confidence === 'number' ? i.confidence : (confidence ?? 0.7),
-        }))
+        .map((i) => {
+          const key = normalizeCategoryKey(i.category || i.categoryLabel);
+          return {
+            category: key,
+            categoryLabel: i.categoryLabel || categoryLabelFor(key),
+            issueLabel: i.issueLabel || `${i.category || ''} 관련 의견`,
+            severity: ['low', 'medium', 'high'].includes(i.severity) ? i.severity : 'medium',
+            evidence: (i.evidence || '').slice(0, 140),
+            confidence: typeof i.confidence === 'number' ? i.confidence : (confidence ?? 0.7),
+          };
+        })
     : [];
-  // 구 schema fallback — `categories: [{name, issue, confidence}]` 만 줬을 때
-  // improvementIssues 로 흡수. (mentionedAspects 로는 절대 넣지 않음)
+  // 구 schema fallback
   if (improvementIssues.length === 0 && Array.isArray(x.categories)) {
     improvementIssues = x.categories
       .filter((c) => c && c.name)
-      .map((c) => ({
-        category: c.name,
-        categoryLabel: c.name,
-        issueLabel: c.issue || `${c.name} 관련 의견`,
-        severity: ['low', 'medium', 'high'].includes(c.severity) ? c.severity : 'medium',
-        evidence: '',
-        confidence: typeof c.confidence === 'number' ? c.confidence : 0.7,
-      }));
+      .map((c) => {
+        const key = normalizeCategoryKey(c.name);
+        return {
+          category: key,
+          categoryLabel: categoryLabelFor(key),
+          issueLabel: c.issue || `${c.name} 관련 의견`,
+          severity: ['low', 'medium', 'high'].includes(c.severity) ? c.severity : 'medium',
+          evidence: '',
+          confidence: typeof c.confidence === 'number' ? c.confidence : 0.7,
+        };
+      });
   }
+  // recommendedActions — 문자열 배열로 정규화. 1~3 문장 정도, 빈/긴 항목은 제거.
+  const recommendedActions = Array.isArray(x.recommendedActions)
+    ? x.recommendedActions
+        .map((a) => String(a || '').trim())
+        .filter((a) => a.length > 0 && a.length <= 300)
+        .slice(0, 5)
+    : [];
   return {
     reviewId: id,
     sentiment,
     confidence,
     mentionedAspects,
     improvementIssues,
+    recommendedActions,
     needsReply: x.needsReply === true,
   };
 }
@@ -468,18 +485,39 @@ function mockProductReport(productSummary) {
 // 위해 LLM 지시를 강하게 둔다 (스펙 PART 3 의 원칙 그대로).
 function buildClassifyPrompt(reviews, categories) {
   return [
-    '너는 패션 리뷰 분석기다. 한국 의류 리뷰에서 "언급된 항목" 과 "실제 개선이 필요한 문제" 를 구분한다.',
-    `카테고리(name 후보): ${categories.join(', ')}`,
+    '너는 패션 리뷰 분석기다. 한국 의류 리뷰에서 "언급된 항목" 과 "실제 개선이 필요한 문제" 를 구분하고,',
+    '셀러가 상세페이지/사이즈표에서 바로 수정할 수 있는 추천 조치(recommendedActions)도 함께 만든다.',
+    `카테고리 키(영어 슬러그): price | size_fit | color | material | quality | comfort | durability | delivery | other`,
+    `카테고리 라벨(한국어): 가격/가성비 | 사이즈/핏 | 색상/화면 차이 | 소재/두께 | 마감/불량 | 착용감 | 세탁/내구성 | 배송/포장 | 기타`,
     '',
-    '아래 원칙을 반드시 지킨다:',
-    '1) 상품 속성이 언급되었다고 해서 improvementIssues 에 넣지 마라.',
-    '2) 칭찬 맥락이면 mentionedAspects 에만 넣어라.',
-    '3) improvementIssues 는 실제 불만/아쉬움/불편/결함/기대와의 차이가 있을 때만.',
-    '4) "핏이 예뻐요" / "색감 좋아요" / "재질 좋아요" / "배송 빨라요" / "가성비 좋아요" 는 improvementIssues 가 아니다.',
-    '5) 긍정 리뷰 안에서도 낮은 severity 의 개선 이슈는 가능하다.',
-    '6) improvementIssues 가 있다고 무조건 sentiment=negative 로 분류하지 마라.',
-    '7) severity 는 low / medium / high 셋 중 하나.',
-    '8) sentiment 는 positive / neutral / negative / mixed 중 하나.',
+    '== 필수 원칙 ==',
+    '1) 상품 속성이 언급되었다고 해서 improvementIssues 에 넣지 마라. 칭찬 맥락이면 mentionedAspects 에만.',
+    '2) improvementIssues 는 실제 불만/아쉬움/불편/결함/기대와의 차이가 있을 때만.',
+    '3) "핏이 예뻐요" / "색감 좋아요" / "재질 좋아요" / "배송 빨라요" / "가성비 좋아요" 는 improvementIssues 가 아니다.',
+    '4) improvementIssues 가 있다고 무조건 sentiment=negative 로 분류하지 마라.',
+    '5) severity 는 low / medium / high. sentiment 는 positive / neutral / negative / mixed.',
+    '',
+    '== 별점 vs 본문 ==',
+    '6) 별점과 본문이 충돌하면 본문 의미를 우선한다.',
+    '7) rating 1~2 라도 본문이 강한 만족/재구매/충성도 표현이면 negative 로 고정하지 않는다.',
+    '8) rating 4~5 라도 본문이 불량/환불/못 입음 같은 강한 부정이면 negative.',
+    '',
+    '== 가격 양보 표현 ==',
+    '9) "비싸긴해도 돈값을 함" / "비싸지만 만족" / "가격은 있지만 재구매" / "비싸도 좋" 류는',
+    '   sentiment=positive 또는 mixed + improvementIssues 에 price low (severity=low) 1건.',
+    '   절대 sentiment=negative 로 고정하지 마라.',
+    '',
+    '== 사이즈 방향 + 추천 조치 ==',
+    '10) "너무 딱 맞다 / 작다 / 타이트 / 크게 갈 걸 / 한 치수 크게 / 사이즈 업 / 3사이즈 갈 걸" 은',
+    '    upsize 방향 — recommendedActions 에 "한 치수 크게 / 여유핏 / 큰 사이즈" 방향만.',
+    '11) "너무 크다 / 헐렁 / 작게 갈 걸 / 한 치수 작게 / 사이즈 다운" 은',
+    '    downsize 방향 — recommendedActions 에 "한 치수 작게 / 정핏" 방향만.',
+    '12) "3사이즈 갈 걸" 리뷰에 절대 "한 치수 다운 / 작게 선택" 추천을 넣지 마라 (방향 반대).',
+    '13) "작게 갈 걸" 리뷰에 절대 "한 치수 크게 / 업" 추천을 넣지 마라.',
+    '',
+    '== recommendedActions ==',
+    '14) evidence 와 같은 방향, 셀러가 상세페이지/사이즈표/상품 설명에서 바로 수정 가능한 1~3문장.',
+    '15) "반드시 개선하겠습니다" 같은 확정 약속 금지 — "참고하겠습니다 / 안내하세요 / 보강하세요" 톤.',
     '',
     '반드시 아래 JSON 객체만 출력한다 (다른 텍스트 금지):',
     JSON.stringify({
@@ -487,8 +525,9 @@ function buildClassifyPrompt(reviews, categories) {
         reviewId: 'string',
         sentiment: 'positive|neutral|negative|mixed',
         confidence: 0.0,
-        mentionedAspects: [{ category: 'string', categoryLabel: 'string', sentiment: 'positive|neutral|negative|mixed' }],
-        improvementIssues: [{ category: 'string', categoryLabel: 'string', issueLabel: 'string', severity: 'low|medium|high', evidence: 'string', confidence: 0.0 }],
+        mentionedAspects: [{ category: 'price|size_fit|...', categoryLabel: 'string', sentiment: 'positive|neutral|negative|mixed' }],
+        improvementIssues: [{ category: 'price|size_fit|...', categoryLabel: 'string', issueLabel: 'string', severity: 'low|medium|high', evidence: 'string', confidence: 0.0 }],
+        recommendedActions: ['string'],
         needsReply: false,
       }],
     }),

@@ -6,6 +6,7 @@
 //   4) 사이즈 방향(buy-down/buy-up, 강한 large/small 토큰)으로 충돌 해소
 //   5) 완화(조금/살짝)·강조(너무/완전) 표현으로 severity 결정
 import { safeStr } from '../utils/textUtils.js';
+import { hasWeakPositiveSignal } from './ai/sizeDirection.js';
 import {
   FASHION_CATEGORIES,
   SUBISSUE_RULES,
@@ -795,7 +796,14 @@ export function classifyReview(review, opts = {}) {
     }
   }
 
-  const ambiguous = categories.length === 0 && sentiment === 'negative';
+  // 약한 긍정 보정 — "입기 좋을 거 같아요" 같은 표현이 있고 improvementIssue 도 있으면
+  // sentiment 가 neutral 이라도 mixed 로 끌어올린다. 강한 negative 일 땐 건드리지 않음.
+  let adjustedSentiment = sentiment;
+  if (adjustedSentiment === 'neutral' && categories.length > 0 && hasWeakPositiveSignal(text)) {
+    adjustedSentiment = 'mixed';
+  }
+
+  const ambiguous = categories.length === 0 && adjustedSentiment === 'negative';
   const { mentionedAspects, improvementIssues } = splitAspectAndIssue(categories);
 
   return {
@@ -803,7 +811,7 @@ export function classifyReview(review, opts = {}) {
     productName: review.productName,
     rating: review.rating,
     ratingReliable: opts.ratingReliable !== false,
-    sentiment,
+    sentiment: adjustedSentiment,
     ambiguous,
     categories,
     // 위 categories 를 두 축으로 분리 — 다운스트림에서 "반복 이슈 차트"는

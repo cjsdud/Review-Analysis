@@ -16,6 +16,7 @@ import {
 } from './ai/index.js';
 import { getCachedReviewAnalysis, saveReviewAnalysisCache } from './ai/cache.service.js';
 import { recordLlmUsage } from './ai/usage.service.js';
+import { sanitizeSizeRecommendationActions } from './ai/sizeDirection.js';
 import {
   computeEffectivePolicy,
   defaultAnalysisModeFor,
@@ -264,6 +265,12 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
         isActionableIssue: true,
         severity: ['low', 'medium', 'high'].includes(iss.severity) ? iss.severity : 'medium',
       }));
+      // LLM 의 recommendedActions 는 사이즈 방향이 evidence 와 반대인 경우 위험.
+      // 최종 guard 로 방향과 맞지 않는 문장은 제거하고 dedupe.
+      const sanitizedActions = sanitizeSizeRecommendationActions({
+        actions: Array.isArray(r.recommendedActions) ? r.recommendedActions : [],
+        text: t.content,
+      });
       const merged = {
         sentiment: r.sentiment || null,
         confidence: typeof r.confidence === 'number' ? r.confidence : null,
@@ -280,6 +287,7 @@ async function maybeMiniReanalyze({ classifications, reviewMap, planCode, userId
           severity: iss.severity || 'medium',
           evidence: iss.evidence || '',
         })),
+        recommendedActions: sanitizedActions,
         needsReply: r.needsReply === true,
       };
       mergeMiniResult(t.classification, merged);
@@ -317,6 +325,9 @@ function mergeMiniResult(classification, merged) {
   classification.categories = Array.isArray(merged.categories) ? merged.categories : [];
   classification.mentionedAspects = merged.mentionedAspects || [];
   classification.improvementIssues = merged.improvementIssues || [];
+  if (Array.isArray(merged.recommendedActions)) {
+    classification.recommendedActions = merged.recommendedActions;
+  }
   classification.needsReply = merged.needsReply === true;
   classification.ambiguous = false;
 }

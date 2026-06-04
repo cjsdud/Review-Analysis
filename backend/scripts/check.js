@@ -976,6 +976,72 @@ await step('analysisJob — legacy status (done/error) 노멀라이즈해서 반
   assert.equal(s.status, 'completed', '"done" → "completed" 정규화');
 });
 
+await step('ai/sizeDirection — detectSizeDirection + sanitize guard', async () => {
+  const m = await import('../src/services/ai/sizeDirection.js');
+  // upsize 신호
+  assert.equal(m.detectSizeDirection('2사이즈는 너무딱맞네요 크게 3사이즈갈걸'), 'upsize');
+  assert.equal(m.detectSizeDirection('한 치수 크게 사세요'), 'upsize');
+  assert.equal(m.detectSizeDirection('너무 딱 맞아요'), 'upsize');
+  // downsize 신호
+  assert.equal(m.detectSizeDirection('허리가 너무 크고 한 치수 작게 갈 걸'), 'downsize');
+  assert.equal(m.detectSizeDirection('헐렁해요 사이즈 다운 추천'), 'downsize');
+  // 방향 없음
+  assert.equal(m.detectSizeDirection('정사이즈입니다 잘 맞아요'), 'unknown');
+
+  // sanitize guard — upsize 리뷰에 "한 치수 다운" 액션이 있으면 제거
+  const upsizeActions = m.sanitizeSizeRecommendationActions({
+    actions: [
+      '평균 실측 사이즈와 "정핏 원하면 한 치수 다운" 가이드를 명확히 표기하세요.',
+      '여유 있는 핏을 원하면 한 치수 크게 선택하세요.',
+    ],
+    text: '2사이즈가 너무딱맞고 크게 3사이즈갈걸',
+  });
+  assert(!upsizeActions.some((a) => /한\s*치수\s*다운/.test(a)),
+    `upsize 리뷰인데 "한 치수 다운" 액션이 남음: ${upsizeActions.join(' | ')}`);
+  assert(upsizeActions.some((a) => /크게/.test(a)), '올바른 upsize 액션 누락');
+
+  // sanitize guard — downsize 리뷰에 "한 치수 크게" 가 남아 있으면 제거
+  const downsizeActions = m.sanitizeSizeRecommendationActions({
+    actions: [
+      '한 치수 크게 선택하도록 안내하세요.',
+      '오버핏 여부를 명확히 표기하세요.',
+    ],
+    text: '허리가 너무 크고 한 치수 작게 갈 걸',
+  });
+  assert(!downsizeActions.some((a) => /한\s*치수\s*크/.test(a)),
+    `downsize 리뷰인데 "한 치수 크게" 액션이 남음: ${downsizeActions.join(' | ')}`);
+  assert(downsizeActions.some((a) => /작게/.test(a)), '올바른 downsize 액션 누락');
+});
+
+await step('ai/sizeDirection — normalizeCategoryKey + categoryLabelFor', async () => {
+  const m = await import('../src/services/ai/sizeDirection.js');
+  // 한글 → 영어 슬러그
+  assert.equal(m.normalizeCategoryKey('가격/가성비'), 'price');
+  assert.equal(m.normalizeCategoryKey('가격'), 'price');
+  assert.equal(m.normalizeCategoryKey('가성비'), 'price');
+  assert.equal(m.normalizeCategoryKey('사이즈'), 'size_fit');
+  assert.equal(m.normalizeCategoryKey('소재/두께'), 'material');
+  assert.equal(m.normalizeCategoryKey('마감/불량'), 'quality');
+  // 영어 슬러그는 그대로
+  assert.equal(m.normalizeCategoryKey('price'), 'price');
+  assert.equal(m.normalizeCategoryKey('size_fit'), 'size_fit');
+  // 라벨 매핑
+  assert.equal(m.categoryLabelFor('price'), '가격/가성비');
+  assert.equal(m.categoryLabelFor('size_fit'), '사이즈/핏');
+  assert.equal(m.categoryLabelFor('가격/가성비'), '가격/가성비');
+});
+
+await step('reviewClassification — weak positive + issue → mixed (T2 보정)', async () => {
+  const m = await import('../src/services/reviewClassification.service.js');
+  // T2 — 입기 좋을거같아요 + 사이즈 이슈 → mixed (neutral 아니라)
+  const r = m.classifyReview({
+    id: 'T2', productName: 'P',
+    content: '한여름말고는 입기 좋을거같아요 아 근데 제가 바지32정도 입는데 2사이즈는 너무딱맞네요 크게 3사이즈갈걸 그랬나봐요',
+  });
+  assert(['mixed', 'positive'].includes(r.sentiment),
+    `T2 는 mixed/positive 여야 함 (neutral 아님). 실제: ${r.sentiment}`);
+});
+
 await step('reviewClassification — 실제 사례 회귀: rating=2 + "비싸긴해도 돈값" → positive (negative 아님)', async () => {
   const m = await import('../src/services/reviewClassification.service.js');
   const r = m.classifyReview({
