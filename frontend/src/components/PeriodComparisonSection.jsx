@@ -14,6 +14,7 @@ import { getPeriodComparison } from '../api/analysisApi.js';
 
 // ECharts 는 무거우므로 lazy.
 const PeriodTrendChart = lazy(() => import('./PeriodTrendChart.jsx'));
+const PeriodIssueChangeChart = lazy(() => import('./PeriodIssueChangeChart.jsx'));
 
 const MODES = [
   { id: 'recent_30_vs_previous_30', label: '최근 30일 vs 이전 30일' },
@@ -221,6 +222,17 @@ function PeriodComparisonBody({ data, mode }) {
           <div>{data.dataQuality.cautionMessage}</div>
         </div>
       )}
+
+      {/* 이슈 변화 한눈에 보기 — 양방향 horizontal bar */}
+      <div className="period-issue-chart">
+        <div className="period-issue-chart__title">이슈 변화 한눈에 보기</div>
+        <div className="period-issue-chart__subtitle muted">
+          이전 기간과 비교해 어떤 개선 이슈가 늘거나 줄었는지 확인할 수 있습니다.
+        </div>
+        <Suspense fallback={<div className="muted" style={{ padding: 30, textAlign: 'center' }}>차트를 불러오고 있어요…</div>}>
+          <PeriodIssueChangeChart data={data.issueChangeChartData} />
+        </Suspense>
+      </div>
 
       {/* 이슈 변화 리스트 */}
       <div className="period-grid">

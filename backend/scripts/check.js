@@ -4057,6 +4057,62 @@ await step('periodComparison — 작성일 데이터 없으면 unavailable', asy
   assert.equal(out.reason, 'missing_review_dates');
 });
 
+await step('periodComparison — issueChangeChartData (Top 8 + 절댓값 정렬 + changeType)', async () => {
+  const { buildPeriodComparisonAnalysis, ISSUE_CHANGE_CHART_TOP_N } = await import('../src/services/periodComparison.service.js');
+
+  // 두 기간에 다양한 변화 패턴 — improved / worsened / new / resolved 가 모두 발생하도록 구성.
+  function mkRev(id, date, sentiment, issues = []) {
+    return {
+      id, createdAt: date, sentiment,
+      productKey: 'P1', productName: '티셔츠',
+      improvementIssues: issues.map((c) => ({ category: c, categoryLabel: c })),
+      detectedIssues: [],
+    };
+  }
+  // 최근 30일: size_fit 2건, color 8건 (color 가 +7 worsened 또는 new),
+  //            material 0건 (이전에 5건 있다가 사라짐 → resolved),
+  //            quality 1건 (이전 0 → new)
+  const recent = [];
+  for (let i = 0; i < 2;  i++) recent.push(mkRev(`rs${i}`, `2026-05-${10 + i}`, 'negative', ['size_fit']));
+  for (let i = 0; i < 8;  i++) recent.push(mkRev(`rc${i}`, `2026-05-${15 + i}`, 'negative', ['color']));
+  recent.push(mkRev('rq1', '2026-05-20', 'negative', ['quality']));
+  // 패딩: 긍정 리뷰로 totalReviews >= 10 충족.
+  for (let i = 0; i < 5; i++) recent.push(mkRev(`rp${i}`, `2026-05-${5 + i}`, 'positive'));
+
+  // 이전 30일: size_fit 9건 (→ -7 improved), color 1건 (→ +7 worsened),
+  //            material 5건 (→ -5 resolved). quality 는 0 (→ +1 new).
+  const prev = [];
+  for (let i = 0; i < 9;  i++) prev.push(mkRev(`ps${i}`, `2026-04-${5 + i}`, 'negative', ['size_fit']));
+  prev.push(mkRev('pc1', '2026-04-15', 'negative', ['color']));
+  for (let i = 0; i < 5;  i++) prev.push(mkRev(`pm${i}`, `2026-04-${18 + i}`, 'negative', ['material']));
+  for (let i = 0; i < 5; i++) prev.push(mkRev(`pp${i}`, `2026-04-${1 + i}`, 'positive'));
+
+  const products = [{ productKey: 'P1', productName: '티셔츠', reviews: [...recent, ...prev] }];
+  const out = buildPeriodComparisonAnalysis(products, { planCode: 'pro' });
+  assert.equal(out.available, true);
+  const chart = out.issueChangeChartData;
+  assert(Array.isArray(chart), 'issueChangeChartData 가 배열이 아님');
+  assert(chart.length <= ISSUE_CHANGE_CHART_TOP_N, `Top N(${ISSUE_CHANGE_CHART_TOP_N}) 초과: ${chart.length}`);
+
+  // size_fit: -7 (improved), color: +7 (worsened), material: -5 (resolved), quality: +1 (new)
+  const bySize     = chart.find((r) => r.category === 'size_fit');
+  const byColor    = chart.find((r) => r.category === 'color');
+  const byMaterial = chart.find((r) => r.category === 'material');
+  const byQuality  = chart.find((r) => r.category === 'quality');
+  assert(bySize     && bySize.deltaCount     === -7 && bySize.changeType     === 'improved', `size_fit row: ${JSON.stringify(bySize)}`);
+  assert(byColor    && byColor.deltaCount    ===  7 && byColor.changeType    === 'worsened', `color row: ${JSON.stringify(byColor)}`);
+  assert(byMaterial && byMaterial.deltaCount === -5 && byMaterial.changeType === 'resolved', `material row: ${JSON.stringify(byMaterial)}`);
+  assert(byQuality  && byQuality.deltaCount  ===  1 && byQuality.changeType  === 'new',      `quality row: ${JSON.stringify(byQuality)}`);
+
+  // 정렬 — 절댓값 큰 순. 첫 두 항목은 size_fit / color (둘 다 |Δ|=7, 정렬 안정성은 묻지 않음).
+  assert(Math.abs(chart[0].deltaCount) >= Math.abs(chart[chart.length - 1].deltaCount), '절댓값 정렬 깨짐');
+  // categoryLabel 이 한국어로 채워져야 한다.
+  assert(bySize.categoryLabel && /사이즈/.test(bySize.categoryLabel), `categoryLabel: ${bySize.categoryLabel}`);
+
+  // deltaCount 0 인 항목이 끼면 안 된다.
+  assert(chart.every((r) => r.deltaCount !== 0), 'deltaCount=0 항목이 포함됨');
+});
+
 await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것으로 보입니다" 톤', async () => {
   const { buildRuleBasedPeriodSummary } = await import('../src/services/periodComparison.service.js');
   const summary = buildRuleBasedPeriodSummary({

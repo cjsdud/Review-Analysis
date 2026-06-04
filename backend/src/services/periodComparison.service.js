@@ -146,6 +146,50 @@ function periodShape(label, startDate, endDate, agg) {
   };
 }
 
+// 이슈 변화 차트용 통합 데이터 — improvedIssues / worsenedIssues / newIssues / resolvedIssues
+// 를 하나의 정렬된 배열로 합친다. 화면에서는 양방향 horizontal bar 차트로 렌더링한다.
+//
+// 규칙:
+//   - currentCount === 0 && previousCount === 0 항목 제외 (의미 없음)
+//   - deltaCount === 0 항목 제외 (변화 없음)
+//   - changeType:
+//       previousCount === 0 && currentCount > 0 → 'new'
+//       previousCount > 0 && currentCount === 0 → 'resolved'
+//       deltaCount > 0  → 'worsened'
+//       deltaCount < 0  → 'improved'
+//   - 절댓값 큰 순으로 정렬, Top 8 만 반환.
+export const ISSUE_CHANGE_CHART_TOP_N = 8;
+
+function buildIssueChangeChartData(curAgg, prevAgg) {
+  const allKeys = new Set([
+    ...curAgg.issueByCategory.keys(),
+    ...prevAgg.issueByCategory.keys(),
+  ]);
+  const rows = [];
+  for (const k of allKeys) {
+    const currentCount = curAgg.issueByCategory.get(k) || 0;
+    const previousCount = prevAgg.issueByCategory.get(k) || 0;
+    if (currentCount === 0 && previousCount === 0) continue;
+    const deltaCount = currentCount - previousCount;
+    if (deltaCount === 0) continue;
+    let changeType;
+    if (previousCount === 0 && currentCount > 0) changeType = 'new';
+    else if (previousCount > 0 && currentCount === 0) changeType = 'resolved';
+    else if (deltaCount > 0) changeType = 'worsened';
+    else changeType = 'improved';
+    rows.push({
+      category: k,
+      categoryLabel: categoryLabelFor(k),
+      previousCount,
+      currentCount,
+      deltaCount,
+      changeType,
+    });
+  }
+  rows.sort((a, b) => Math.abs(b.deltaCount) - Math.abs(a.deltaCount));
+  return rows.slice(0, ISSUE_CHANGE_CHART_TOP_N);
+}
+
 // 이슈 변화 — 두 기간의 categoryKey 카운트 차이를 비교.
 function buildIssueDeltas(curAgg, prevAgg) {
   const allKeys = new Set([
@@ -522,6 +566,8 @@ export function buildPeriodComparisonAnalysis(products, options = {}) {
     worsenedIssues: issueDeltas.worsened,
     newIssues: issueDeltas.newIssues,
     resolvedIssues: issueDeltas.resolved,
+    // 이슈 변화 한눈에 보기 (양방향 horizontal bar 차트) — improved/worsened/new/resolved 통합 + Top 8.
+    issueChangeChartData: buildIssueChangeChartData(curAgg, prevAgg),
     improvedProducts: productDeltas.improved,
     worsenedProducts: productDeltas.worsened,
     trend: { monthly, weekly },
