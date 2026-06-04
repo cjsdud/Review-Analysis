@@ -113,6 +113,21 @@ export default function DashboardPage() {
     setReviewsModalOpen(true);
   }
 
+  // ── Rules of Hooks: 모든 hook 은 early return 보다 먼저. ──
+  // summary 가 아직 로드 전이어도 안전한 기본값으로 useMemo/useEffect 가 일관되게 실행되도록.
+  const negativeRanking = summary?.productRankingByNegative || [];
+  const pagedNegativeProducts = useMemo(
+    () => paginateItems(negativeRanking, negativeProductsPage, NEGATIVE_PRODUCTS_PAGE_SIZE),
+    [negativeRanking, negativeProductsPage],
+  );
+  const pagedProductIssues = useMemo(
+    () => paginateItems(products, productIssuesPage, PRODUCT_ISSUES_PAGE_SIZE),
+    [products, productIssuesPage],
+  );
+  // 분석이 바뀌어 리스트 길이가 달라지면 page 를 1 로 리셋.
+  useEffect(() => { setNegativeProductsPage(1); }, [negativeRanking.length]);
+  useEffect(() => { setProductIssuesPage(1); }, [products.length]);
+
   if (loading) return <LoadingState title="리포트를 준비하고 있어요" />;
   if (accessKind) return <AccessError kind={accessKind} />;
   if (jobState && jobState.status !== 'completed' && jobState.status !== 'done') {
@@ -154,19 +169,6 @@ export default function DashboardPage() {
     );
 
   // 섹션 네비게이션 항목 — 페이지에 실제 렌더링되는 섹션만.
-  const negativeRanking = summary.productRankingByNegative || [];
-  // 페이지 처리 — 원본 배열 보존 + slice 만. 데이터 길이가 바뀌면 page 자동 보정.
-  const pagedNegativeProducts = useMemo(
-    () => paginateItems(negativeRanking, negativeProductsPage, NEGATIVE_PRODUCTS_PAGE_SIZE),
-    [negativeRanking, negativeProductsPage],
-  );
-  const pagedProductIssues = useMemo(
-    () => paginateItems(products, productIssuesPage, PRODUCT_ISSUES_PAGE_SIZE),
-    [products, productIssuesPage],
-  );
-  // 분석이 바뀌어 리스트 길이가 달라지면 page 를 1 로 리셋.
-  useEffect(() => { setNegativeProductsPage(1); }, [negativeRanking.length]);
-  useEffect(() => { setProductIssuesPage(1); }, [products.length]);
   // 기간별 변화 섹션 — 백엔드가 summary.periodComparison 을 항상 채워 보낸다.
   // locked/missing_review_dates/available 어떤 케이스에서도 카드를 렌더링한다 (잠금/빈 상태/정상 본문 분기).
   const periodComparisonInitial = summary?.periodComparison || null;
@@ -180,7 +182,6 @@ export default function DashboardPage() {
     negativeRanking.length > 0 ? { id: 'sec-negative-products', label: '부정 많은 상품' } : null,
     { id: 'sec-product-table', label: '상품별 정리' },
   ].filter(Boolean);
-
 
   return (
     <div>
