@@ -4,15 +4,7 @@ import FileUploader from '../components/FileUploader.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import Stepper from '../components/Stepper.jsx';
 import PageHeader from '../components/PageHeader.jsx';
-import SectionCard from '../components/SectionCard.jsx';
 import { uploadFile, uploadSample } from '../api/uploadApi.js';
-
-const SOURCES = [
-  { value: 'smartstore', label: '스마트스토어', icon: '🟢' },
-  { value: 'cafe24', label: '카페24', icon: '🟠' },
-  { value: 'coupang', label: '쿠팡', icon: '🟣' },
-  { value: 'custom', label: '자사몰/기타', icon: '🛒' },
-];
 
 const REQUIRED_COLUMNS = [
   { name: '상품명', req: '필수', desc: '어떤 상품의 리뷰인지 구분합니다.' },
@@ -25,7 +17,6 @@ const REQUIRED_COLUMNS = [
 export default function UploadPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [source, setSource] = useState('smartstore');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -33,7 +24,7 @@ export default function UploadPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await uploadFile(file, source);
+      const res = await uploadFile(file);
       navigate(`/mapping/${res.uploadId}`);
     } catch (e) {
       setError(e.message);
@@ -110,22 +101,6 @@ export default function UploadPage() {
               </span>
             </div>
           </div>
-
-          {/* 플랫폼 선택 */}
-          <SectionCard title="어디서 받은 리뷰인가요?" subtitle="플랫폼마다 컬럼명이 달라도 다음 단계에서 자동으로 맞춰 드립니다.">
-            <div className="platform-picker">
-              {SOURCES.map((s) => (
-                <button
-                  key={s.value}
-                  className={`platform-picker__opt${source === s.value ? ' is-active' : ''}`}
-                  onClick={() => setSource(s.value)}
-                >
-                  <span className="ico">{s.icon}</span>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </SectionCard>
 
           {/* 업로더 */}
           <div className="mt-4">
