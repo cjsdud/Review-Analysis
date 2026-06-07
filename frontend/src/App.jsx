@@ -10,6 +10,8 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
 import SampleReportPage from './pages/SampleReportPage.jsx';
+import TermsPage from './pages/TermsPage.jsx';
+import PrivacyPage from './pages/PrivacyPage.jsx';
 import ProtectedRoute from './auth/ProtectedRoute.jsx';
 import AdminRoute from './auth/AdminRoute.jsx';
 import AdminLayout from './pages/admin/AdminLayout.jsx';
@@ -38,6 +40,9 @@ export default function App() {
       <Route path="/signup" element={<LoginPage initialMode="register" />} />
       {/* 공개 샘플 리포트 — 비로그인 접근 가능. 정적 데이터만 사용. */}
       <Route path="/demo/sample-report" element={<SampleReportPage />} />
+      {/* 법적 페이지 — 비로그인 사용자도 접근 가능. Layout 의 user.role 참조를 피하기 위해 별도 라우트. */}
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route element={<Layout />}>
         <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
         <Route path="/mapping/:uploadId" element={<ProtectedRoute><ColumnMappingPage /></ProtectedRoute>} />

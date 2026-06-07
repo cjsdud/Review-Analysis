@@ -4172,6 +4172,158 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== Legal Pages & Account Delete 회귀 =====
+//
+// 분석 삭제 / 계정 탈퇴는 본인 데이터만, 진행 중 분석은 차단, 마지막 admin 차단.
+
+await step('dataLifecycle.deleteAnalysisCascade — 본인 분석 삭제 + 종속 row 정리', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { deleteAnalysisCascade } = await import('../src/services/dataLifecycle.service.js');
+  const { nanoid } = await import('nanoid');
+  const uid = 'user_del_' + Date.now();
+  const upid = 'up_del_' + Date.now();
+  const aid = 'an_del_' + Date.now();
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(uid, `${uid}@x.com`, 'h', 'user');
+  db.prepare('INSERT INTO upload_files (id, original_name, user_id, source) VALUES (?,?,?,?)')
+    .run(upid, 'x.csv', uid, 'custom');
+  db.prepare("INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?,?,?,?,?)")
+    .run(aid, upid, 'completed', '{}', uid);
+  db.prepare('INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id) VALUES (?,?,?,?,?,?)')
+    .run(nanoid(), aid, 'P1', 'P1', '{}', uid);
+  db.prepare('INSERT INTO review_classifications (id, analysis_id, review_pk, sentiment, categories, user_id) VALUES (?,?,?,?,?,?)')
+    .run(nanoid(), aid, 'rp1', 'neutral', '[]', uid);
+
+  const res = deleteAnalysisCascade(aid, uid);
+  assert.equal(res.ok, true, `삭제 성공해야 함: ${JSON.stringify(res)}`);
+  assert.equal(res.counts.analysis_jobs, 1);
+  assert.equal(res.counts.product_analyses, 1);
+  assert.equal(res.counts.review_classifications, 1);
+  // 후속 조회 — 결과 없음.
+  assert.equal(db.prepare('SELECT id FROM analysis_jobs WHERE id = ?').get(aid), undefined);
+  assert.equal(db.prepare('SELECT id FROM product_analyses WHERE analysis_id = ?').get(aid), undefined);
+});
+
+await step('dataLifecycle.deleteAnalysisCascade — 다른 user 의 분석 삭제 시도 → FORBIDDEN', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { deleteAnalysisCascade } = await import('../src/services/dataLifecycle.service.js');
+  const uidOwner = 'owner_' + Date.now();
+  const uidOther = 'other_' + Date.now();
+  const aid = 'an_owner_' + Date.now();
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(uidOwner, `${uidOwner}@x.com`, 'h', 'user');
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(uidOther, `${uidOther}@x.com`, 'h', 'user');
+  db.prepare("INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?,?,?,?,?)")
+    .run(aid, null, 'completed', '{}', uidOwner);
+  const res = deleteAnalysisCascade(aid, uidOther);
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'FORBIDDEN');
+  // 실제로 삭제되지 않았어야 함.
+  assert(db.prepare('SELECT id FROM analysis_jobs WHERE id = ?').get(aid), '소유자 분석 그대로 유지');
+});
+
+await step('dataLifecycle.deleteAnalysisCascade — 진행 중(processing) 분석 → IN_PROGRESS 409', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { deleteAnalysisCascade } = await import('../src/services/dataLifecycle.service.js');
+  const uid = 'user_proc_' + Date.now();
+  const aid = 'an_proc_' + Date.now();
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(uid, `${uid}@x.com`, 'h', 'user');
+  db.prepare("INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?,?,?,?,?)")
+    .run(aid, null, 'processing', '{}', uid);
+  const res = deleteAnalysisCascade(aid, uid);
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'IN_PROGRESS');
+});
+
+await step('dataLifecycle.deleteUserAccountCascade — 본인 데이터 일괄 삭제 + 다른 사용자 보존', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { deleteUserAccountCascade } = await import('../src/services/dataLifecycle.service.js');
+  const uid = 'acct_del_' + Date.now();
+  const otherUid = 'acct_other_' + Date.now();
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(uid, `${uid}@x.com`, 'h', 'user');
+  db.prepare('INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)')
+    .run(otherUid, `${otherUid}@x.com`, 'h', 'user');
+  // 본인 데이터
+  const upid = 'up_acct_' + Date.now();
+  const aid = 'an_acct_' + Date.now();
+  db.prepare('INSERT INTO upload_files (id, original_name, user_id, source) VALUES (?,?,?,?)').run(upid, 'a.csv', uid, 'custom');
+  db.prepare("INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id) VALUES (?,?,?,?,?)").run(aid, upid, 'completed', '{}', uid);
+  db.prepare("INSERT INTO usage_events (id, user_id, event_type, amount) VALUES (?,?,?,?)").run('ue_'+aid, uid, 'analysis_created', 1);
+  // 다른 사용자 데이터
+  const otherUp = 'up_other_' + Date.now();
+  db.prepare('INSERT INTO upload_files (id, original_name, user_id, source) VALUES (?,?,?,?)').run(otherUp, 'b.csv', otherUid, 'custom');
+
+  const res = deleteUserAccountCascade(uid);
+  assert.equal(res.ok, true, `삭제 성공해야 함: ${JSON.stringify(res)}`);
+  assert.equal(res.counts.users, 1);
+  // 본인 데이터는 모두 삭제.
+  assert.equal(db.prepare('SELECT id FROM users WHERE id = ?').get(uid), undefined);
+  assert.equal(db.prepare('SELECT id FROM analysis_jobs WHERE id = ?').get(aid), undefined);
+  assert.equal(db.prepare('SELECT id FROM upload_files WHERE id = ?').get(upid), undefined);
+  assert.equal(db.prepare('SELECT id FROM usage_events WHERE user_id = ?').get(uid), undefined);
+  // 다른 사용자 데이터는 그대로.
+  assert(db.prepare('SELECT id FROM users WHERE id = ?').get(otherUid), '다른 user 보존');
+  assert(db.prepare('SELECT id FROM upload_files WHERE id = ?').get(otherUp), '다른 user 의 upload 보존');
+});
+
+await step('dataLifecycle.deleteUserAccountCascade — 마지막 admin 은 차단 (LAST_ADMIN_PROTECTED)', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { deleteUserAccountCascade } = await import('../src/services/dataLifecycle.service.js');
+  // 기존 admin 모두 강등 후 단 1명만 admin 으로 만든다 — last admin 상황 재현.
+  db.prepare("UPDATE users SET role = 'user'").run();
+  const uid = 'last_admin_' + Date.now();
+  db.prepare("INSERT INTO users (id, email, password_hash, role) VALUES (?,?,?,?)").run(uid, `${uid}@x.com`, 'h', 'admin');
+  const res = deleteUserAccountCascade(uid);
+  assert.equal(res.ok, false);
+  assert(/LAST_ADMIN_PROTECTED/.test(res.error || ''), `마지막 admin 차단: ${res.error}`);
+  // 사용자는 여전히 존재.
+  assert(db.prepare('SELECT id FROM users WHERE id = ?').get(uid), '마지막 admin 은 삭제되지 않음');
+});
+
+await step('legal routes — TermsPage / PrivacyPage 가 App.jsx 에 라우트 등록', async () => {
+  const fs = await import('node:fs');
+  // frontend 파일 경로는 backend/scripts 기준 상대.
+  const src = fs.readFileSync(new URL('../../frontend/src/App.jsx', import.meta.url), 'utf-8');
+  assert(/path="\/terms"/.test(src), '/terms 라우트 등록');
+  assert(/path="\/privacy"/.test(src), '/privacy 라우트 등록');
+  assert(/import TermsPage/.test(src), 'TermsPage import');
+  assert(/import PrivacyPage/.test(src), 'PrivacyPage import');
+});
+
+await step('legal routes — TermsPage / PrivacyPage 파일에 자동 크롤링/OAuth/매출 보장 표현 없음', async () => {
+  const fs = await import('node:fs');
+  for (const rel of ['TermsPage', 'PrivacyPage']) {
+    const src = fs.readFileSync(new URL(`../../frontend/src/pages/${rel}.jsx`, import.meta.url), 'utf-8');
+    // 금지 표현
+    const banned = [/자동\s*크롤링/, /OAuth\s*연동/, /매출\s*상승\s*보장/, /정확도\s*보장/, /실시간\s*모니터링/];
+    for (const re of banned) {
+      assert(!re.test(src), `${rel} 에 금지 표현 발견: ${re}`);
+    }
+  }
+});
+
+await step('analysis.routes — DELETE /api/analysis/:id 라우트 등록 + 권한 가드', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/analysis.routes.js', import.meta.url), 'utf-8');
+  assert(/router\.delete\(\s*['"]\/:id['"]/.test(src), 'DELETE /:id 라우트');
+  assert(/assertAnalysisOwnership/.test(src), 'ownership 가드 사용');
+  assert(/deleteAnalysisCascade/.test(src), 'cascade 서비스 호출');
+  // IN_PROGRESS 409 응답
+  assert(/IN_PROGRESS[\s\S]*409/.test(src), '진행 중 분석은 409');
+});
+
+await step('auth.routes — DELETE /api/me/account 라우트 등록 + requireAuth + clearAuthCookie', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/auth.routes.js', import.meta.url), 'utf-8');
+  assert(/router\.delete\(\s*['"]\/me\/account['"]/.test(src), 'DELETE /me/account 라우트');
+  assert(/requireAuth/.test(src), 'requireAuth 적용');
+  assert(/deleteUserAccountCascade/.test(src), 'cascade 서비스 호출');
+  assert(/clearAuthCookie/.test(src), '삭제 후 쿠키 만료');
+});
+
 // ===== CS Reply Tone Pipeline 회귀 =====
 //
 // 분석 시점에 5톤 일괄 생성 → 1톤(polite)만 미리 생성으로 바뀜. 나머지 4톤은

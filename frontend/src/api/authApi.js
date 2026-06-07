@@ -27,3 +27,10 @@ export async function getPlans() {
   const { data } = await client.get('/billing/plans');
   return data;
 }
+
+// 계정 탈퇴 — 본인 데이터 일괄 삭제. 성공 시 백엔드가 쿠키도 만료시키고,
+// 호출 측은 AuthContext 를 null 로 갱신해 즉시 로그아웃 상태로.
+export async function deleteAccount() {
+  const { data } = await client.delete('/me/account', opts);
+  return data;
+}

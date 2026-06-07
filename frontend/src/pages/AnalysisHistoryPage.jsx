@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
-import { getAnalyses } from '../api/analysisApi.js';
+import { getAnalyses, deleteAnalysis } from '../api/analysisApi.js';
 import { progressStepLabel, progressMetaText } from '../utils/progressSteps.js';
 
 function formatDate(s) {
@@ -55,6 +55,24 @@ export default function AnalysisHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const pollRef = useRef(null);
+  const [deletingId, setDeletingId] = useState('');
+
+  // 분석 결과 삭제 — confirm 후 본인 분석만. processing/pending 은 백엔드가 409 로 차단.
+  async function onDelete(it) {
+    if (deletingId) return;
+    const ok = window.confirm('이 분석 결과를 삭제할까요? 삭제 후에는 복구할 수 없습니다.');
+    if (!ok) return;
+    setDeletingId(it.id);
+    try {
+      await deleteAnalysis(it.id);
+      setItems((prev) => prev.filter((x) => x.id !== it.id));
+    } catch (e) {
+      const msg = e?.message || '삭제 중 일시적인 문제가 있었어요. 잠시 후 다시 시도해 주세요.';
+      window.alert(msg);
+    } finally {
+      setDeletingId('');
+    }
+  }
 
   // 첫 로드 + 진행 중 row 가 있으면 5초마다 폴링 — 완료/실패가 자연스럽게 갱신.
   async function load() {
@@ -182,25 +200,39 @@ export default function AnalysisHistoryPage() {
                     )}
                     <StatusBadge status={it.status} progress={it.progress} />
                   </div>
-                  {isReady ? (
-                    <button
-                      className="btn btn--ghost btn--sm"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/${it.id}`); }}
-                    >
-                      리포트 보기 →
-                    </button>
-                  ) : isFailed ? (
-                    <button
-                      className="btn btn--ghost btn--sm"
-                      onClick={(e) => { e.stopPropagation(); navigate('/upload'); }}
-                    >
-                      다시 분석
-                    </button>
-                  ) : (
-                    <button className="btn btn--ghost btn--sm" disabled>
-                      분석 중…
-                    </button>
-                  )}
+                  <div className="history-card__actions">
+                    {isReady ? (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/${it.id}`); }}
+                      >
+                        리포트 보기 →
+                      </button>
+                    ) : isFailed ? (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={(e) => { e.stopPropagation(); navigate('/upload'); }}
+                      >
+                        다시 분석
+                      </button>
+                    ) : (
+                      <button className="btn btn--ghost btn--sm" disabled>
+                        분석 중…
+                      </button>
+                    )}
+                    {/* 삭제 — 본인 분석만 동작. 진행 중이면 백엔드가 409 로 차단해 alert 로 안내. */}
+                    {!isRunning && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm history-card__delete"
+                        onClick={(e) => { e.stopPropagation(); onDelete(it); }}
+                        disabled={deletingId === it.id}
+                        title="이 분석 결과 삭제"
+                      >
+                        {deletingId === it.id ? '삭제 중…' : '삭제'}
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}

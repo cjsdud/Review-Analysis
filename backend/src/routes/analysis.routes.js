@@ -19,6 +19,7 @@ import { checkCanCreateAnalysis, getUserSubscription, recordUsage } from '../ser
 import { serializeReviewForList, sentimentOf } from '../services/reviewHighlights.service.js';
 import { buildPeriodComparisonAnalysis, buildRuleBasedPeriodSummary, PERIOD_MODES } from '../services/periodComparison.service.js';
 import { getPlanFeatures, normalizePlan } from '../constants/plans.js';
+import { deleteAnalysisCascade } from '../services/dataLifecycle.service.js';
 
 const router = Router();
 
@@ -590,6 +591,32 @@ router.post('/:id/corrections', requireAuth, (req, res) => {
     req.user?.id || null,
   );
   res.json({ ok: true, correctionId: id, corrected: payload.corrected });
+});
+
+// DELETE /api/analysis/:id — 본인 분석 결과를 cascade 삭제.
+// 권한:
+//   - requireAuth (로그인 필수)
+//   - 본인 소유가 아니면 403 (assertAnalysisOwnership)
+//   - processing/pending 상태(IN_PROGRESS)는 409 — 진행 중 분석은 background job 이 row 를 다시 쓸 수 있어 차단.
+// 응답:
+//   200 { ok:true, message, counts:{...} }
+//   404 / 403 / 409 / 401
+router.delete('/:id', requireAuth, (req, res) => {
+  if (!assertAnalysisOwnership(req, res)) return;
+  const userId = req.user?.id || null;
+  const result = deleteAnalysisCascade(req.params.id, userId);
+  if (!result.ok) {
+    if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'NOT_FOUND', message: '분석 결과를 찾을 수 없습니다.' });
+    if (result.error === 'FORBIDDEN') return res.status(403).json({ error: 'FORBIDDEN', message: '이 분석에 접근할 권한이 없습니다.' });
+    if (result.error === 'IN_PROGRESS') {
+      return res.status(409).json({
+        error: 'IN_PROGRESS',
+        message: '분석이 진행 중인 항목은 삭제할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+      });
+    }
+    return res.status(500).json({ error: 'DELETE_FAILED', message: '분석 결과 삭제 중 일시적인 문제가 있었어요.' });
+  }
+  res.json({ ok: true, message: '분석 결과가 삭제되었습니다.', counts: result.counts });
 });
 
 // GET /api/analysis/:id/corrections — 저장된 수정 목록 (검토/추후 반영용)

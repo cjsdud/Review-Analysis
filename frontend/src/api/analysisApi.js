@@ -45,6 +45,12 @@ export function exportXlsxUrl(analysisId, productKey) {
   return productKey ? `${base}?productKey=${encodeURIComponent(productKey)}` : base;
 }
 
+// 분석 결과 삭제 — 본인 소유만. 진행 중인 분석은 409.
+export async function deleteAnalysis(analysisId) {
+  const { data } = await client.delete(`/analysis/${analysisId}`);
+  return data;
+}
+
 // 선택한 tone 1개의 CS 답글 초안만 lazy 로 요청.
 // body: { issueLabel, category?, tone?, recommendedAction?, polarity?, severity?, isActionableIssue?, sentiment? }
 // 응답: { templates: [{ issueLabel, tone, toneLabel, template }] } (배열 길이 1)

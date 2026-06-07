@@ -9,9 +9,11 @@ import {
   COOKIE_NAME,
   clearAuthCookie,
   optionalAuth,
+  requireAuth,
   setAuthCookie,
   signToken,
 } from '../middleware/auth.middleware.js';
+import { deleteUserAccountCascade } from '../services/dataLifecycle.service.js';
 import { buildMeContext, getUserSubscription } from '../services/billing.service.js';
 import { getBooleanSetting } from '../services/settings.service.js';
 import { isAdminEmail, maybePromoteOnLogin } from '../services/adminEmails.service.js';
@@ -120,6 +122,37 @@ router.get('/me', optionalAuth, (req, res) => {
     return res.status(401).json({ error: 'AUTH_REQUIRED', message: '로그인이 필요합니다.' });
   }
   return res.json(buildMeContext(req.user));
+});
+
+// DELETE /api/me/account — 계정 탈퇴 (cascade 데이터 삭제 + 쿠키 제거).
+// 권한:
+//   - requireAuth (로그인 필수)
+//   - 본인 user_id 기준만 삭제 (다른 user 삭제 불가)
+//   - 마지막 admin 은 차단(LAST_ADMIN_PROTECTED).
+// 응답:
+//   200 { ok:true, message, counts }
+//   401 / 409
+router.delete('/me/account', requireAuth, (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'AUTH_REQUIRED', message: '로그인이 필요합니다.' });
+  const result = deleteUserAccountCascade(userId);
+  if (!result.ok) {
+    if (result.error === 'LAST_ADMIN_PROTECTED') {
+      return res.status(409).json({
+        error: 'LAST_ADMIN_PROTECTED',
+        message: '마지막 관리자 계정은 탈퇴할 수 없습니다. 다른 관리자에게 권한을 위임한 후 다시 시도해 주세요.',
+      });
+    }
+    if (result.error === 'NOT_FOUND') {
+      // 이미 삭제된 사용자 — 쿠키만 정리해 클라이언트 로그아웃.
+      clearAuthCookie(res);
+      return res.status(404).json({ error: 'NOT_FOUND', message: '계정을 찾을 수 없습니다.' });
+    }
+    return res.status(500).json({ error: 'DELETE_FAILED', message: '계정 삭제 중 일시적인 문제가 있었어요.' });
+  }
+  // 삭제 성공 — 쿠키 즉시 만료시켜 다음 요청부터 익명 처리.
+  clearAuthCookie(res);
+  return res.json({ ok: true, message: '계정이 삭제되었습니다.', counts: result.counts });
 });
 
 export { COOKIE_NAME };

@@ -365,3 +365,52 @@ body, p, li, td, th, dd, dt, figcaption, blockquote,
 // 페이지 가로 스크롤 차단 — 어떤 자식이 폭을 넘겨도 body 가 가로로 늘어나지 않게.
 // (이미 부모 layout 에서 처리하지만 안전망)
 html, body { max-width: 100%; overflow-x: hidden; }
+
+// 위험 액션 (계정 삭제 등) — 강조용 위험 버튼.
+.btn--danger {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  &:hover:not(:disabled) { background: rgba(220, 38, 38, 0.16); border-color: rgba(220, 38, 38, 0.5); }
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+}
+
+// 계정 탈퇴 카드 — Settings 페이지 맨 아래.
+.account-delete-card {
+  border-color: rgba(220, 38, 38, 0.18);
+  background: rgba(254, 242, 242, 0.45);
+  margin-top: 20px;
+  &__row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+    input {
+      flex: 1 1 220px;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid rgba(220, 38, 38, 0.25);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+  }
+}
+
+// 분석 히스토리 카드 액션 영역 — 보기 / 삭제 버튼 묶음.
+.history-card__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.history-card__delete {
+  color: #991b1b;
+  &:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.08);
+    border-color: rgba(220, 38, 38, 0.32);
+  }
+}
+@media (max-width: 768px) {
+  .history-card__actions { width: 100%; }
+  .history-card__actions .btn { flex: 1; }
+}

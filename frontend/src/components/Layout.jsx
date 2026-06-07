@@ -201,7 +201,12 @@ export default function Layout() {
         )}
 
         <div className="sidebar__footer">
-          리뷰 엑셀만 올리면 상품별 불만과 상세페이지 수정안을 3분 안에.
+          <div>리뷰 엑셀만 올리면 상품별 불만과 상세페이지 수정안을 3분 안에.</div>
+          <div className="sidebar__legal">
+            <Link to="/terms">이용약관</Link>
+            <span className="sidebar__legal-sep" aria-hidden="true">·</span>
+            <Link to="/privacy">개인정보처리방침</Link>
+          </div>
         </div>
       </aside>
 
@@ -234,6 +239,11 @@ export default function Layout() {
         <nav className="mobile-drawer__nav">
           <NavItems onClick={() => setDrawerOpen(false)} />
         </nav>
+        <div className="mobile-drawer__legal">
+          <Link to="/terms" onClick={() => setDrawerOpen(false)}>이용약관</Link>
+          <span className="sidebar__legal-sep" aria-hidden="true">·</span>
+          <Link to="/privacy" onClick={() => setDrawerOpen(false)}>개인정보처리방침</Link>
+        </div>
       </aside>
 
       <div className="main">
