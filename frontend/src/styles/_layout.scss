@@ -671,3 +671,107 @@
     &:hover { color: #1d4ed8; text-decoration: underline; }
   }
 }
+
+// ===== 사용량 chip (topbar) =====
+// 로그인 사용자 topbar 우측에 plan + 한도 상태 표시. 클릭 시 3 항목 게이지 팝오버.
+.usage-chip {
+  position: relative;
+  display: inline-flex;
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid rgba(15, 111, 220, 0.18);
+    background: #fff;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #1d4ed8;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 120ms ease-out, border-color 120ms ease-out;
+    min-height: 32px;
+    &:hover { background: rgba(15, 111, 220, 0.06); }
+    &--warning {
+      color: #92400e;
+      border-color: rgba(234, 179, 8, 0.4);
+      background: rgba(234, 179, 8, 0.06);
+    }
+    &--danger {
+      color: #991b1b;
+      border-color: rgba(220, 38, 38, 0.4);
+      background: rgba(220, 38, 38, 0.06);
+    }
+  }
+  &__plan { white-space: nowrap; }
+  &__status { white-space: nowrap; font-weight: 700; }
+
+  // 모바일 — 상태 라벨 숨김, plan 만 표시.
+  @media (max-width: $bp-tablet) {
+    &__status { display: none; }
+    &__btn { padding: 6px 8px; font-size: 12px; }
+  }
+
+  &__pop {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 280px;
+    max-width: calc(100vw - 24px);
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    padding: 12px;
+    z-index: 60;
+  }
+  &__pop-head { margin-bottom: 8px; }
+  &__pop-plan { font-weight: 700; font-size: 14px; color: #1f2937; }
+  &__list { list-style: none; padding: 0; margin: 0; }
+  &__row {
+    padding: 8px 0;
+    border-bottom: 1px dashed rgba(15, 23, 42, 0.06);
+    &:last-child { border-bottom: 0; }
+  }
+  &__row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 4px;
+  }
+  &__row-label { color: #475569; }
+  &__row-value { font-weight: 700; color: #1f2937; }
+  &__row-status {
+    font-size: 11.5px;
+    margin-top: 4px;
+    font-weight: 700;
+  }
+  &__row--warning &__row-status { color: #92400e; }
+  &__row--danger &__row-status { color: #991b1b; }
+
+  &__bar-track {
+    height: 5px;
+    background: rgba(15, 111, 220, 0.10);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  &__bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+    border-radius: 999px;
+    transition: width 300ms ease-out;
+  }
+  &__row--warning &__bar-fill { background: linear-gradient(90deg, #f59e0b, #d97706); }
+  &__row--danger  &__bar-fill { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+
+  &__footnote {
+    font-size: 11.5px;
+    margin-top: 8px;
+    text-align: right;
+  }
+}

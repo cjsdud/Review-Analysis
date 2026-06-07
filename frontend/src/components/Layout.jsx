@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'reac
 import { useAuth } from '../auth/AuthContext.jsx';
 import AnnouncementBanner from './AnnouncementBanner.jsx';
 import BrandTitle from './BrandTitle.jsx';
+import UsageMeterChip from './UsageMeterChip.jsx';
 
 const NAV = [
   { to: '/history', label: '분석 히스토리', icon: '🗂️' },
@@ -288,16 +289,20 @@ export default function Layout() {
 
           <div className="topbar__right">
             {user ? (
-              <UserMenu
-                user={user}
-                subscription={subscription}
-                usage={usage}
-                open={accountOpen}
-                onToggle={() => setAccountOpen((v) => !v)}
-                onClose={() => setAccountOpen(false)}
-                onLogout={async () => { await logout(); navigate('/login'); }}
-                onAdminConsole={() => navigate('/admin')}
-              />
+              <>
+                {/* 사용량 chip — plan + 한도 임박/도달 시각화. 클릭 시 3개 항목 게이지 팝오버. */}
+                <UsageMeterChip />
+                <UserMenu
+                  user={user}
+                  subscription={subscription}
+                  usage={usage}
+                  open={accountOpen}
+                  onToggle={() => setAccountOpen((v) => !v)}
+                  onClose={() => setAccountOpen(false)}
+                  onLogout={async () => { await logout(); navigate('/login'); }}
+                  onAdminConsole={() => navigate('/admin')}
+                />
+              </>
             ) : (
               <div className="topbar__auth">
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigate('/login')}>

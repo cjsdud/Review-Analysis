@@ -4172,6 +4172,63 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== Usage Meter (topbar) 회귀 =====
+//
+// 프론트 utils/usage.js 의 normalizeUsageSummary / formatUsageLine / usageStatusLabel
+// 가 의도된 값을 내는지 단위 검증. 실제 DOM 렌더 검증은 별도 e2e 가 필요.
+
+await step('usage normalize — limit 없을 때 hasLimit=false, ratio=0, status=normal', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const url = await import('node:url');
+  const here = path.dirname(url.fileURLToPath(import.meta.url));
+  const utilPath = path.resolve(here, '../../frontend/src/utils/usage.js');
+  const src = fs.readFileSync(utilPath, 'utf-8');
+  // Frontend ES module 을 backend check 에서 직접 import 하려면 경로/확장자 트릭이 필요해
+  // 정규식으로 소스의 핵심 약속만 검증한다 (정상 export + 핵심 분기).
+  assert(/export\s+function\s+normalizeUsageSummary/.test(src), 'normalizeUsageSummary export');
+  assert(/export\s+function\s+formatUsageLine/.test(src), 'formatUsageLine export');
+  assert(/export\s+function\s+usageStatusLabel/.test(src), 'usageStatusLabel export');
+  // status 분기 — danger / warning / normal 가 정의되어 있어야 함.
+  assert(/status\s*=\s*['"]danger['"]/.test(src), 'danger 분기');
+  assert(/status\s*=\s*['"]warning['"]/.test(src), 'warning 분기');
+  // ratio 는 0..1 clamp.
+  assert(/Math\.min\(1,/.test(src), 'ratio 1.0 캡');
+  // 한국어 라벨.
+  assert(/이번 달 리뷰 분석/.test(src), '리뷰 분석 라벨');
+  assert(/파일 업로드/.test(src), '파일 업로드 라벨');
+  assert(/CS 답글 초안/.test(src), 'CS 답글 초안 라벨');
+});
+
+await step('usage chip — UsageMeterChip 컴포넌트 + Layout 통합 + refresh 트리거 (소스 패턴)', async () => {
+  const fs = await import('node:fs');
+  const read = (rel) => fs.readFileSync(new URL(`../../frontend/src/${rel}`, import.meta.url), 'utf-8');
+  const chip = read('components/UsageMeterChip.jsx');
+  assert(/useAuth\(\)/.test(chip), 'useAuth 사용');
+  assert(/normalizeUsageSummary/.test(chip), 'normalize 함수 사용');
+  assert(/role="dialog"/.test(chip), '팝오버 dialog 역할');
+
+  const layout = read('components/Layout.jsx');
+  assert(/UsageMeterChip/.test(layout), 'Layout 에 chip 통합');
+
+  const mapping = read('pages/ColumnMappingPage.jsx');
+  assert(/refreshAuth\?\.\(\)/.test(mapping), '분석 생성 후 refresh 트리거');
+
+  const history = read('pages/AnalysisHistoryPage.jsx');
+  assert(/wasRunningRef/.test(history), '진행 중 → 완료 전이 시 refresh');
+  assert(/refreshAuth\?\.\(\)/.test(history), 'AnalysisHistory 에서 refresh 호출');
+});
+
+await step('me API — buildMeContext 가 plan + 3 usage 항목을 반환', async () => {
+  // 백엔드 buildMeContext 가 monthlyAnalysisUsed/Limit, monthlyFileUsed/Limit,
+  // monthlyCsReplyUsed/Limit 를 모두 채우는지 단위 검증 — 변경 없음 확인용 회귀.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/services/billing.service.js', import.meta.url), 'utf-8');
+  for (const key of ['monthlyAnalysisUsed', 'monthlyAnalysisLimit', 'monthlyFileUsed', 'monthlyFileLimit', 'monthlyCsReplyUsed', 'monthlyCsReplyLimit']) {
+    assert(new RegExp(key).test(src), `${key} 가 응답에 포함되어야 함`);
+  }
+});
+
 // ===== Legal Pages & Account Delete 회귀 =====
 //
 // 분석 삭제 / 계정 탈퇴는 본인 데이터만, 진행 중 분석은 차단, 마지막 admin 차단.

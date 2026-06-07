@@ -117,6 +117,9 @@ export default function ColumnMappingPage() {
       // 분석은 백그라운드로 시작됨 — 응답에는 analysisId 만 들어 있고 상태는 processing.
       // 대시보드 대신 히스토리로 보내서 사용자가 진행률을 보고 완료 후 리포트로 이동하게 함.
       const res = await runAnalysis(uploadId, { analysisMode });
+      // 사용량 chip 즉시 반영 — 분석 생성/업로드 카운터가 바뀌었으므로 /api/me 갱신.
+      // 실패해도 흐름은 진행 (silently fail).
+      try { await refreshAuth?.(); } catch { /* ignore */ }
       navigate(`/history?highlight=${encodeURIComponent(res.analysisId)}`);
     } catch (e) {
       setError(e.message);

@@ -6,6 +6,7 @@ import LoadingState from '../components/LoadingState.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import { getAnalyses, deleteAnalysis } from '../api/analysisApi.js';
 import { progressStepLabel, progressMetaText } from '../utils/progressSteps.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 function formatDate(s) {
   if (!s) return '—';
@@ -56,6 +57,9 @@ export default function AnalysisHistoryPage() {
   const [error, setError] = useState('');
   const pollRef = useRef(null);
   const [deletingId, setDeletingId] = useState('');
+  const { refresh: refreshAuth } = useAuth();
+  // 진행 중 → 완료 전이 시점에 1회만 사용량 chip 갱신.
+  const wasRunningRef = useRef(false);
 
   // 분석 결과 삭제 — confirm 후 본인 분석만. processing/pending 은 백엔드가 409 로 차단.
   async function onDelete(it) {
@@ -101,6 +105,15 @@ export default function AnalysisHistoryPage() {
     if (hasRunning) pollRef.current = setInterval(load, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [hasRunning]);
+
+  // hasRunning 이 true → false 로 바뀌는 순간(= 진행 중 분석이 모두 완료/실패) 사용량 chip 갱신.
+  useEffect(() => {
+    if (wasRunningRef.current && !hasRunning) {
+      // 분석 완료 시 usage_events 가 증가했을 가능성 — /api/me refresh.
+      refreshAuth?.().catch(() => {});
+    }
+    wasRunningRef.current = hasRunning;
+  }, [hasRunning, refreshAuth]);
 
   if (loading) return <LoadingState title="분석 히스토리를 불러오는 중..." />;
 
