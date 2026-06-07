@@ -155,6 +155,7 @@ export default function AdminLlmLogsPage() {
       ) : !data?.logs?.length ? (
         <div className="muted">조건에 맞는 로그가 없습니다.</div>
       ) : (
+        <div className="table-scroll">
         <table className="admin-table">
           <thead>
             <tr>
@@ -223,6 +224,7 @@ export default function AdminLlmLogsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {totalPages > 1 && (

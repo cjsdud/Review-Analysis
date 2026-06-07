@@ -66,7 +66,7 @@ export default function CategoryChart({ distribution = [], type = 'bar', onCateg
       )}
       <ReactECharts
         option={option}
-        style={{ height: 320, cursor: clickable ? 'pointer' : 'default' }}
+        style={{ height: 320, width: '100%', cursor: clickable ? 'pointer' : 'default' }}
         notMerge
         onEvents={onEvents}
       />

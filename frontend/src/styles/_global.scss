@@ -331,3 +331,37 @@ h4 {
   border-radius: 999px;
   transition: width 400ms ease-out;
 }
+
+// ===== 모바일 안전망 — 한국어 텍스트 깨짐 방지 =====
+// 한국어는 단어 사이 공백을 기준으로 줄바꿈하므로 keep-all 이 자연스럽다.
+// overflow-wrap: anywhere 는 URL/긴 영어/ID 같은 끊김 없는 문자열의 안전망.
+body, p, li, td, th, dd, dt, figcaption, blockquote,
+.muted, .ai-comment__text, .review-card__text, .state-box__desc, .state-box__title,
+.history-card__name, .history-card__meta, .history-card__progress-step,
+.page-head__title, .page-head__sub, .section-card__head h2, .section-card__head p,
+.fix-card__name, .product-summary-card__name,
+.review-reaction-summary__sentiment-help,
+.beta-notice__body, .real-file-hint__lead {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+// 표는 모바일에서 가로 스크롤 컨테이너로 감싸지지 않은 곳이 많아 깨질 수 있다.
+// .data-table / .admin-table / .mapping-table 의 부모가 가로 스크롤을 허용하지 않으면
+// 부모 폭을 넘는 표가 가로 스크롤 없이 잘려 보인다.
+// 모바일에서만 표가 들어간 컨테이너에 가로 스크롤을 보장.
+@media (max-width: $bp-tablet) {
+  .table-scroll,
+  .admin-card .data-table,
+  .admin-card .admin-table,
+  .section-card .data-table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+// 페이지 가로 스크롤 차단 — 어떤 자식이 폭을 넘겨도 body 가 가로로 늘어나지 않게.
+// (이미 부모 layout 에서 처리하지만 안전망)
+html, body { max-width: 100%; overflow-x: hidden; }

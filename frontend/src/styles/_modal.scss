@@ -111,6 +111,8 @@
 
   &__search {
     flex: 1;
+    // min-width 200px 는 모달이 좁아질 때(특히 390px) 플렉스 줄바꿈을 차단해 다른 컨트롤이
+    // 잘리거나 가로 스크롤이 생긴다. 데스크톱은 그대로, 모바일은 줄바꿈/축소를 허용.
     min-width: 200px;
     width: 100%;
     padding: 10px 12px;
@@ -119,6 +121,11 @@
     font-size: 14px;
     min-height: 44px;
     box-sizing: border-box;
+
+    @media (max-width: $bp-tablet) {
+      min-width: 0;
+      flex: 1 1 100%;
+    }
   }
 
   &__chips {

@@ -840,14 +840,20 @@
     border-color: $primary-light;
   }
 
+  // 막대 트랙 — 모바일에서도 일관되게 보이도록 컨테이너 폭 기반.
   &__bar-track {
     background: #eef2f7;
     border-radius: 4px;
     width: 90px;
+    max-width: 100%;
     display: inline-block;
     vertical-align: middle;
     margin-right: 8px;
     height: 6px;
+
+    @media (max-width: $bp-mobile) {
+      width: 56px;
+    }
   }
   &__bar {
     height: 6px;
@@ -855,6 +861,21 @@
     background: linear-gradient(90deg, $primary-200, $primary);
     display: inline-block;
     vertical-align: middle;
+    max-width: 100%;
+  }
+
+  // 순위 표(부정/이슈 랭킹) 컬럼 폭 — 모바일에서는 # 열을 더 좁히고 값 열은 자연 폭으로.
+  &--ranking {
+    table-layout: fixed;
+    .data-table__rank-col  { width: 36px; }
+    .data-table__value-col { width: 160px; }
+    .data-table__name      { font-weight: 600; word-break: keep-all; overflow-wrap: anywhere; }
+
+    @media (max-width: $bp-mobile) {
+      .data-table__rank-col  { width: 30px; }
+      .data-table__value-col { width: 96px; }
+      th, td { padding: 8px 6px; }
+    }
   }
   &__top-issue {
     font-size: 12px;
@@ -1054,8 +1075,12 @@
 .product-summary-card {
   // 상품명 영역이 카드 가로의 절반을 넘지 않도록 left 컬럼 폭을 강하게 제한.
   // 우측 지표/감성바/액션이 안정적으로 보이는 공간을 확보한다.
+  // 모바일에서는 두 컬럼 합산 최소폭(180+260=440)이 뷰포트를 넘기 때문에 1열로 전환.
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(260px, 360px);
+  @media (max-width: $bp-tablet) {
+    grid-template-columns: 1fr;
+  }
   gap: $sp-4;
   background: $card;
   border: 1px solid $border;
@@ -1312,20 +1337,31 @@
       gap: 4px;
       font-size: 12px;
       color: #475569;
+      flex: 1 1 150px;
+      min-width: 0;
 
       input {
         padding: 6px 8px;
         border: 1px solid rgba(15, 111, 220, 0.25);
         border-radius: 6px;
         font-size: 13px;
-        min-width: 150px;
+        min-width: 0;
+        width: 100%;
+        box-sizing: border-box;
       }
+    }
+
+    // 모바일은 각 줄에 input 두 개를 나란히 두지 않고 100% 폭으로 쌓는다.
+    @media (max-width: $bp-mobile) {
+      gap: 8px;
+      label { flex: 1 1 100%; }
     }
   }
   &__actions {
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: wrap;
   }
 }
 
