@@ -45,9 +45,12 @@ export function exportXlsxUrl(analysisId, productKey) {
   return productKey ? `${base}?productKey=${encodeURIComponent(productKey)}` : base;
 }
 
-export async function generateReplyTemplates(issueLabel, category) {
-  const { data } = await client.post('/ai/reply-templates', { issueLabel, category });
-  return data.templates;
+// 선택한 tone 1개의 CS 답글 초안만 lazy 로 요청.
+// body: { issueLabel, category?, tone?, recommendedAction?, polarity?, severity?, isActionableIssue?, sentiment? }
+// 응답: { templates: [{ issueLabel, tone, toneLabel, template }] } (배열 길이 1)
+export async function generateReplyTemplates(body) {
+  const { data } = await client.post('/ai/reply-templates', body || {});
+  return data.templates || [];
 }
 
 // 사용자 분류 수정 저장

@@ -302,7 +302,15 @@ export default function ProductDetailPage() {
             <div className="muted">답글 초안이 없어요.</div>
           ) : (
             product.replyTemplates.map((rt, i) => (
-              <ReplyTemplateBox key={i} issueLabel={rt.issueLabel} variants={rt.variants} />
+              <ReplyTemplateBox
+                key={i}
+                issueLabel={rt.issueLabel}
+                variants={rt.variants}
+                category={rt.category}
+                severity={rt.severity}
+                polarity={rt.polarity}
+                recommendedAction={rt.recommendedAction}
+              />
             ))
           )}
         </SectionCard>

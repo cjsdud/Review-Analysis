@@ -1,5 +1,11 @@
 // 고객용 답글 초안 생성기 — issueLabel 을 그대로 노출하지 않고 자연스러운 표현으로 변환한다.
 // LLM 없이 규칙 기반으로 생성하며, aiClient.generateReplyTemplates 의 mock 응답으로도 사용된다.
+import {
+  REPLY_TONES,
+  REPLY_TONE_FULL_LABEL,
+  DEFAULT_PRECOMPUTED_TONE,
+  normalizeReplyTone,
+} from '../constants/replyTones.js';
 
 // 내부 분석 라벨 → 고객용 표현
 const CUSTOMER_FACING_ISSUE_PHRASE = {
@@ -218,3 +224,45 @@ export function buildReplyTemplates(input) {
     { issueLabel, tone: 'professional', toneLabel: '전문적인 말투',   template: tones.professional },
   ];
 }
+
+// 선택된 1 tone 만 반환 — 분석 시점에는 polite 만 미리 만들고, 사용자가 다른 tone 을
+// 클릭하면 /api/ai/reply-templates 가 이 함수의 결과 또는 LLM 호출 결과를 돌려준다.
+// 입력은 buildReplyTemplates 와 동일. 반환은 길이 1 배열 또는 [].
+export function buildSingleToneTemplate(input, requestedTone) {
+  const tone = normalizeReplyTone(requestedTone, DEFAULT_PRECOMPUTED_TONE);
+  const all = buildReplyTemplates(input);
+  if (!all.length) return [];
+  const picked = all.find((v) => v.tone === tone);
+  return picked ? [picked] : [all[0]];
+}
+
+// 사과가 필요한 상황인지 — LLM 사용 시점 + rule fallback 모두에서 일관 적용.
+// positive 또는 단순 mentionedAspect 만 있는 경우 사과 금지.
+// price 양보 패턴(가격이 비싸지만 만족) 도 강한 사과 금지.
+//
+// 입력: { sentiment?, polarity?, isActionableIssue?, severity?, category?, issueLabel? }
+// 출력: { mayApologize, shouldStrongApologize, reason }
+export function shouldApologizeForReply(input = {}) {
+  const sentiment = input.sentiment || null;
+  const polarity = input.polarity || (sentiment === 'positive' ? 'positive' : 'negative');
+  const isActionableIssue = input.isActionableIssue !== false;
+  const severity = input.severity || 'medium';
+
+  if (polarity === 'positive' || sentiment === 'positive') {
+    return { mayApologize: false, shouldStrongApologize: false, reason: 'positive_review' };
+  }
+  if (!isActionableIssue) {
+    return { mayApologize: false, shouldStrongApologize: false, reason: 'no_actionable_issue' };
+  }
+  // 가격 양보 패턴 — "비싸지만 만족" 류 → 강한 사과 금지.
+  if (input.category === '가격/가성비' && /비싸도|비싸지만|비싸긴|돈값|값어치/.test(String(input.issueLabel || ''))) {
+    return { mayApologize: true, shouldStrongApologize: false, reason: 'price_concession' };
+  }
+  if (severity === 'high' || (sentiment === 'negative' && polarity === 'negative')) {
+    return { mayApologize: true, shouldStrongApologize: severity === 'high', reason: 'real_inconvenience' };
+  }
+  return { mayApologize: true, shouldStrongApologize: false, reason: 'default_negative' };
+}
+
+export { REPLY_TONES, REPLY_TONE_FULL_LABEL };
+

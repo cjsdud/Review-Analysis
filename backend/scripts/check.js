@@ -4000,9 +4000,12 @@ await step('analytics — demo-view 기록 + allowlist + 집계', async () => {
 });
 
 await step('aiClient (mock)', async () => {
+  // CS reply 는 tone 1개만 반환 (이전: 5톤 통째 → 현재: 선택한 1톤만, 기본 polite).
+  // 5톤 전체 회귀는 위쪽 'aiClient.generateReplyTemplates — tone 1개만 반환' step 이 별도로 다룬다.
   const m = await import('../src/services/aiClient.service.js');
   const t = await m.generateReplyTemplates({ category: '사이즈', issueLabel: '허리가 작게 나옴' });
-  assert(Array.isArray(t) && t.length === 5, '답글 템플릿 mock 실패 (5 tones 기대)');
+  assert(Array.isArray(t) && t.length === 1, `답글 템플릿 mock 실패 (1 tone 기대, 실제 ${t.length})`);
+  assert.equal(t[0].tone, 'polite', 'tone 미설정 시 기본 polite');
 });
 
 await step('dateUtils — normalizeReviewDate 다양한 포맷', async () => {
@@ -4167,6 +4170,128 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(!/개선되었습니다|악화되었습니다/.test(summary), `단정형 표현 노출: ${summary}`);
   // "줄어든/늘어난 것으로 보입니다" 톤 포함
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
+});
+
+// ===== CS Reply Tone Pipeline 회귀 =====
+//
+// 분석 시점에 5톤 일괄 생성 → 1톤(polite)만 미리 생성으로 바뀜. 나머지 4톤은
+// /api/ai/reply-templates 가 tone 받아 1개만 lazy 반환. invalid tone 은 400 INVALID_REPLY_TONE.
+
+await step('replyTones constants — 5 tone enum + normalizeReplyTone legacy 흡수', async () => {
+  const m = await import('../src/constants/replyTones.js');
+  assert.deepEqual(m.REPLY_TONES, ['polite', 'friendly', 'concise', 'empathetic', 'professional']);
+  assert.equal(m.DEFAULT_PRECOMPUTED_TONE, 'polite');
+  assert.equal(m.normalizeReplyTone('polite'), 'polite');
+  assert.equal(m.normalizeReplyTone('FRIENDLY'), 'friendly');
+  assert.equal(m.normalizeReplyTone('정중'), 'polite', 'legacy 한글 라벨도 흡수');
+  assert.equal(m.normalizeReplyTone('친근'), 'friendly');
+  assert.equal(m.normalizeReplyTone(undefined), 'polite', 'undefined → default');
+  assert.equal(m.normalizeReplyTone('bogus'), 'polite', 'invalid → default');
+});
+
+await step('replyTemplates.buildSingleToneTemplate — 요청한 tone 1개만 반환', async () => {
+  const { buildSingleToneTemplate } = await import('../src/services/replyTemplates.service.js');
+  const input = {
+    issueLabel: '허리가 작게 나옴',
+    category: '사이즈',
+    polarity: 'negative',
+    isActionableIssue: true,
+    severity: 'medium',
+  };
+  const polite = buildSingleToneTemplate(input, 'polite');
+  assert.equal(polite.length, 1, 'polite 1개');
+  assert.equal(polite[0].tone, 'polite');
+  const empathetic = buildSingleToneTemplate(input, 'empathetic');
+  assert.equal(empathetic.length, 1);
+  assert.equal(empathetic[0].tone, 'empathetic');
+  // 두 tone 의 template 문구가 명확히 달라야 함 (단순 어휘 치환 X — 시작 문장이 다름).
+  assert.notEqual(polite[0].template, empathetic[0].template, '톤별 문구 차이');
+});
+
+await step('replyTemplates.buildSingleToneTemplate — positive / non-actionable / generic 라벨은 [] 반환', async () => {
+  const { buildSingleToneTemplate } = await import('../src/services/replyTemplates.service.js');
+  // positive
+  assert.deepEqual(buildSingleToneTemplate({ issueLabel: '핏 좋아요', category: '핏/실루엣', polarity: 'positive' }, 'polite'), []);
+  // non-actionable
+  assert.deepEqual(buildSingleToneTemplate({ issueLabel: '괜찮음', category: '기타', isActionableIssue: false }, 'polite'), []);
+  // generic 라벨
+  assert.deepEqual(buildSingleToneTemplate({ issueLabel: '사이즈 관련 의견', category: '사이즈' }, 'polite'), []);
+});
+
+await step('replyTemplates — 답글 본문에 내부 영문 카테고리 키 노출 금지', async () => {
+  const { buildSingleToneTemplate } = await import('../src/services/replyTemplates.service.js');
+  const out = buildSingleToneTemplate({
+    issueLabel: '허리가 작게 나옴', category: '사이즈', polarity: 'negative',
+  }, 'polite');
+  assert.equal(out.length, 1);
+  const txt = out[0].template;
+  // 영문 슬러그가 답글에 새면 안 됨.
+  assert(!/\b(size_fit|material|color|quality|comfort|durability|delivery|price)\b/.test(txt),
+    `내부 슬러그 노출: ${txt}`);
+  // issueLabel 원문 그대로 따옴표 인용도 금지.
+  assert(!/['"‘’“”]\s*허리가 작게 나옴\s*['"‘’“”]/.test(txt),
+    `issueLabel 직접 인용: ${txt}`);
+});
+
+await step('replyTemplates.shouldApologizeForReply — positive 는 사과 금지, severity=high 는 강한 사과', async () => {
+  const { shouldApologizeForReply } = await import('../src/services/replyTemplates.service.js');
+  // 긍정 리뷰
+  const pos = shouldApologizeForReply({ sentiment: 'positive', polarity: 'positive' });
+  assert.equal(pos.mayApologize, false);
+  // 단순 언급(actionable=false)
+  const aspect = shouldApologizeForReply({ sentiment: 'neutral', polarity: 'positive', isActionableIssue: false });
+  assert.equal(aspect.mayApologize, false);
+  // 가격 양보 — 사과는 가능하지만 강한 사과 금지
+  const concession = shouldApologizeForReply({
+    sentiment: 'mixed', polarity: 'negative',
+    category: '가격/가성비', issueLabel: '비싸지만 만족',
+  });
+  assert.equal(concession.mayApologize, true);
+  assert.equal(concession.shouldStrongApologize, false);
+  // severity=high → 강한 사과
+  const severe = shouldApologizeForReply({ sentiment: 'negative', polarity: 'negative', severity: 'high' });
+  assert.equal(severe.mayApologize, true);
+  assert.equal(severe.shouldStrongApologize, true);
+});
+
+await step('aiClient.generateReplyTemplates — tone 1개만 반환 (mock 환경)', async () => {
+  const aiClient = (await import('../src/services/aiClient.service.js')).default;
+  const out1 = await aiClient.generateReplyTemplates({
+    issueLabel: '허리가 작게 나옴', category: '사이즈',
+    polarity: 'negative', isActionableIssue: true, severity: 'medium',
+    tone: 'polite',
+  });
+  assert.equal(out1.length, 1, `polite 1개만, 실제: ${out1.length}`);
+  assert.equal(out1[0].tone, 'polite');
+  // tone 미설정 시도 polite 로 fallback + 1개.
+  const out2 = await aiClient.generateReplyTemplates({
+    issueLabel: '허리가 작게 나옴', category: '사이즈',
+    polarity: 'negative', isActionableIssue: true, severity: 'medium',
+  });
+  assert.equal(out2.length, 1);
+  assert.equal(out2[0].tone, 'polite', 'tone 미설정 → polite default');
+});
+
+await step('ai.routes — INVALID_REPLY_TONE 400, valid tone 통과 (zod schema 검증)', async () => {
+  // 실제 라우트는 express 핸들러라 호출이 번거롭다. 소스 정규식 회귀로 갈음.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/ai.routes.js', import.meta.url), 'utf-8');
+  assert(/INVALID_REPLY_TONE/.test(src), 'INVALID_REPLY_TONE 코드가 정의되어 있어야 함');
+  assert(/REPLY_TONES/.test(src), 'REPLY_TONES enum 을 사용해야 함');
+  // 요청 시 tone 을 generateReplyTemplates 로 전달해야 함.
+  assert(/generateReplyTemplates\(\{\s*\.\.\.input,\s*tone\s*\}/.test(src), 'tone 을 service 로 전달');
+  // usage 기록에 tone metadata 포함.
+  assert(/metadata:\s*\{[^}]*tone/.test(src), 'recordUsage metadata 에 tone 포함');
+});
+
+await step('productAnalysis — 분석 시점에 polite 1개만 미리 생성 + lazy fetch 컨텍스트 동봉', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/services/productAnalysis.service.js', import.meta.url), 'utf-8');
+  // generateReplyTemplates 호출에 tone: 'polite' 가 박혀 있어야 함.
+  assert(/tone:\s*['"]polite['"]/.test(src), '분석 시점 generateReplyTemplates 호출에 tone polite 명시');
+  // lazy fetch 용 컨텍스트(category/severity/polarity/recommendedAction) 가 replyTemplates 에 저장.
+  assert(/replyTemplates\.push\(\{[\s\S]*category:[\s\S]*severity:[\s\S]*polarity:[\s\S]*recommendedAction:[\s\S]*variants/.test(src),
+    'replyTemplates 에 컨텍스트 동봉');
 });
 
 // ===== Rate Limit 회귀 =====

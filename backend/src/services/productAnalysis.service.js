@@ -521,6 +521,9 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       : { detailPageActions: [], summary: '' };
 
     // 5) CS 답글 — analysisMode 가 quick/batch 면 OFF.
+    // 분석 시점에는 polite 한 개만 미리 생성한다 (과거 5톤 일괄 생성 대비 토큰 사용량 1/5).
+    // 다른 4 tone 은 사용자가 ReplyTemplateBox 의 탭을 클릭할 때 /api/ai/reply-templates 로
+    // lazy fetch — productKey/category/issueLabel 등 충분한 컨텍스트를 함께 저장해 둔다.
     const replyTemplates = [];
     if (effectivePolicy.usesCsReplyLlm) {
       for (const iss of topIssues.slice(0, 3)) {
@@ -529,10 +532,21 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
             category: iss.category, issueLabel: iss.issueLabel,
             recommendedAction: iss.recommendedAction, polarity: iss.polarity,
             isActionableIssue: true, severity: iss.severity,
+            tone: 'polite',
           }),
           { requestType: 'cs_reply', role: 'csReply', userId: opts.userId || null, analysisId: opts.analysisId || null },
         );
-        if (variants && variants.length) replyTemplates.push({ issueLabel: iss.issueLabel, variants });
+        if (variants && variants.length) {
+          replyTemplates.push({
+            issueLabel: iss.issueLabel,
+            // lazy fetch 용 컨텍스트 — 프론트가 generateReplyTemplates({tone, ...}) 로 보낸다.
+            category: iss.category,
+            severity: iss.severity,
+            polarity: iss.polarity,
+            recommendedAction: iss.recommendedAction,
+            variants,
+          });
+        }
       }
     }
 

@@ -2,8 +2,9 @@
 // LLM_PROVIDER(mock|openai|gemini|claude)로 provider를 고르고,
 // 키가 없거나 호출/파싱이 실패하면 항상 mock 응답으로 안전하게 fallback 한다.
 // 모든 provider 응답은 JSON으로 파싱하며, 파싱/검증 실패 시 mock 기본값을 반환한다.
-import { buildReplyTemplates } from './replyTemplates.service.js';
+import { buildReplyTemplates, buildSingleToneTemplate } from './replyTemplates.service.js';
 import { normalizeCategoryKey, categoryLabelFor } from './ai/sizeDirection.js';
+import { DEFAULT_PRECOMPUTED_TONE, normalizeReplyTone as normalizeReplyToneShared } from '../constants/replyTones.js';
 
 // ---------- provider / key / model 해석 ----------
 const PROVIDER = (process.env.LLM_PROVIDER || process.env.AI_PROVIDER || 'mock').toLowerCase();
@@ -378,13 +379,21 @@ export async function generateProductImprovementReport(productSummary) {
 // 4) 이슈별 답글 템플릿 (기본/정중/친근)
 //    입력: issueSummary({category, issueLabel}). 출력: [{issueLabel, tone, template}]
 // ===================================================================
+// 입력: issueSummary({issueLabel, category, recommendedAction, polarity?, isActionableIssue?, severity?, tone?})
+// 출력: [{issueLabel, tone, toneLabel, template}] — 항상 길이 1 (또는 정책상 차단 시 []).
+//
+// 변경: 과거에는 5개 tone 전체를 한 번에 LLM 으로 생성했다(매 분석마다 token 5배). 이제는
+// issueSummary.tone (없으면 'polite') 한 개만 요청한다. 사용자가 UI 에서 다른 tone 을
+// 클릭하면 /api/ai/reply-templates 가 다시 호출되어 그 tone 만 lazy 로 만든다.
 export async function generateReplyTemplates(issueSummary) {
   // 정책 가드 — generic / positive / non-actionable 이슈는 답글 자체를 만들지 않는다.
   // (UI 단의 필터와 별개로 백엔드에서도 한 번 더 차단)
-  const ruleBased = buildReplyTemplates(issueSummary);
+  const requestedTone = normalizeReplyToneShared(issueSummary?.tone, DEFAULT_PRECOMPUTED_TONE);
+  const ruleBased = buildSingleToneTemplate(issueSummary, requestedTone);
   if (!ruleBased.length) return [];
 
-  const llm = await tryLLM(buildReplyPrompt(issueSummary), (parsed) => {
+  // LLM prompt 도 1 tone 만 요청.
+  const llm = await tryLLM(buildReplyPrompt({ ...issueSummary, tone: requestedTone }), (parsed) => {
     const arr = Array.isArray(parsed?.templates) ? parsed.templates : Array.isArray(parsed) ? parsed : null;
     if (!arr || !arr.length) return null;
     const out = arr
@@ -396,12 +405,17 @@ export async function generateReplyTemplates(issueSummary) {
         const lit = new RegExp(`['"\\u2018\\u2019\\u201C\\u201D]\\s*${escapeRegex(lbl)}\\s*['"\\u2018\\u2019\\u201C\\u201D]`);
         return !lit.test(t.template);
       })
+      // 추가 안전망: 내부 영문 카테고리 키(size_fit / material 등) 가 답글 본문에 새면 거부.
+      .filter((t) => !/\b(size_fit|material|color|quality|comfort|durability|delivery|price)\b/.test(t.template))
       .map((t) => ({
         issueLabel: t.issueLabel || issueSummary.issueLabel || '',
-        tone: normalizeReplyTone(t.tone),
-        toneLabel: REPLY_TONE_LABELS[normalizeReplyTone(t.tone)] || '정중한 말투',
+        tone: normalizeReplyTone(t.tone || requestedTone),
+        toneLabel: REPLY_TONE_LABELS[normalizeReplyTone(t.tone || requestedTone)] || '정중한 말투',
         template: t.template.trim(),
-      }));
+      }))
+      // 요청한 tone 만 골라서 반환. LLM 이 다른 tone 을 같이 만들어 보내도 1개만.
+      .filter((t) => t.tone === requestedTone)
+      .slice(0, 1);
     return out.length ? out : null;
   }, { role: 'csReply' });
   return llm || ruleBased;
@@ -594,24 +608,33 @@ function buildReportPrompt(productSummary) {
   ].join('\n');
 }
 
+// 단일 tone prompt — 입력의 issueSummary.tone 한 개만 생성한다.
+// 토큰 사용량을 1/5 로 축소(과거 5톤 일괄 생성 대비) + 응답 시간 단축.
+const TONE_GUIDE = {
+  polite:       'polite : 정중한 기본 고객센터 톤. 안정적, 사과 1회, 2~3 문장.',
+  friendly:     'friendly : 부드럽고 가까운 톤. 딱딱한 표현 회피. 이모지는 쓰지 않는다.',
+  concise:      'concise : 짧고 명확. 1~2 문장. 군더더기 없음.',
+  empathetic:   'empathetic : 고객 불편을 먼저 인정. 아쉬웠던 지점을 구체적으로 언급. 부정 리뷰에 적합.',
+  professional: 'professional : 공식 브랜드 응대. 차분, 검토/개선 절차 중심. 과한 감정 표현은 없다.',
+};
 function buildReplyPrompt(issueSummary) {
+  const tone = (issueSummary && issueSummary.tone) || DEFAULT_PRECOMPUTED_TONE;
+  const guide = TONE_GUIDE[tone] || TONE_GUIDE[DEFAULT_PRECOMPUTED_TONE];
   return [
-    '너는 패션 쇼핑몰 CS 담당자다. 아래 이슈에 대한 답글 초안을 5 가지 말투(tone)로 각각 작성한다.',
+    '너는 패션 쇼핑몰 CS 담당자다. 아래 이슈에 대한 답글 초안을 지정된 한 가지 말투(tone) 로만 작성한다.',
     '',
-    'tone 별 작성 기준 (반드시 문장 길이 / 시작 문장 / 어휘가 분명히 달라야 한다):',
-    '- polite       : 정중한 기본 고객센터 톤. 안정적, 사과 1회, 2~3 문장.',
-    '- friendly     : 부드럽고 가까운 톤. 너무 딱딱한 표현 회피. 이모지는 쓰지 않는다.',
-    '- concise      : 짧고 명확. 1~2 문장. 군더더기 없음.',
-    '- empathetic   : 고객 불편을 먼저 인정. 아쉬웠던 지점을 구체적으로 언급. 부정 리뷰에 적합.',
-    '- professional : 공식 브랜드 응대. 차분, 검토/개선 절차 중심. 과한 감정 표현은 없다.',
+    `대상 tone: ${tone}`,
+    `tone 작성 기준: ${guide}`,
     '',
     '공통 규칙:',
     '- "반드시 개선하겠습니다" 처럼 확정적 약속 대신 "개선에 참고하겠습니다 / 검토하겠습니다" 처럼 안전하게.',
-    '- 긍정 맥락엔 불필요한 사과 금지.',
+    '- 긍정 맥락 / 단순 언급만 있는 경우엔 불필요한 사과 금지. 실제 불편이 있을 때만 사과한다.',
     '- 답글 본문에 issueLabel 을 따옴표로 그대로 인용하지 말 것.',
+    '- size_fit / material / color / quality / delivery / price 같은 내부 영문 카테고리 키를 본문에 노출하지 말 것.',
+    '- 정확도/매출/자동 크롤링 관련 표현 금지. 보상 금액 같은 근거 없는 약속 금지.',
     '',
-    '반드시 아래 JSON 만 출력한다 (다른 텍스트 금지):',
-    '{"templates":[{"issueLabel":"...","tone":"polite|friendly|concise|empathetic|professional","template":"..."}]}',
+    '반드시 아래 JSON 만 출력한다 (다른 텍스트 금지). templates 배열 길이는 1.',
+    `{"templates":[{"issueLabel":"...","tone":"${tone}","template":"..."}]}`,
     '',
     JSON.stringify(issueSummary),
   ].join('\n');

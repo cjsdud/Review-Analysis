@@ -5,20 +5,48 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import { aiReplyLimiter } from '../middleware/rateLimit.middleware.js';
 import { checkCanGenerateCsReply, recordUsage } from '../services/billing.service.js';
 import { USAGE_EVENT_TYPES } from '../constants/plans.js';
+import { REPLY_TONES, DEFAULT_PRECOMPUTED_TONE } from '../constants/replyTones.js';
 
 const router = Router();
 
-// POST /api/ai/reply-templates — 특정 이슈에 대한 CS 답글 초안 생성.
+// POST /api/ai/reply-templates — 특정 이슈에 대한 CS 답글 초안 생성 (요청한 tone 1개).
 // 플랜의 월 CS 답글 한도 검사 후 생성. 익명 데모 모드는 카운트 X.
 // 미들웨어 순서: requireAuth → aiReplyLimiter (req.user 기반 키).
 // rate limit 은 LLM 비용 폭주 방지용 abuse 가드 — checkCanGenerateCsReply(플랜 정책) 와 별개.
-router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) => {
-  const schema = z.object({ category: z.string().optional(), issueLabel: z.string().min(1) });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'issueLabel이 필요합니다.' });
+const replyTemplateSchema = z.object({
+  category: z.string().optional(),
+  issueLabel: z.string().min(1, 'issueLabel은 필수입니다.'),
+  // 선택된 1 tone — 미설정 시 polite. 잘못된 값은 별도 400 코드(INVALID_REPLY_TONE).
+  tone: z.enum(REPLY_TONES).optional(),
+  // 선택 컨텍스트 — 사과 여부 / 강도 결정에 사용. 모두 optional.
+  recommendedAction: z.string().optional(),
+  polarity: z.string().optional(),
+  isActionableIssue: z.boolean().optional(),
+  severity: z.string().optional(),
+  sentiment: z.string().optional(),
+});
 
-  // 답글은 한 번 호출 시 보통 3 variant 가 만들어진다. 한도 검사 시점에는 1 으로 계산하고
-  // (variant 가 0 인 응답도 가능), 실제 응답 길이만큼 사용량을 증가시킨다.
+router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) => {
+  // 잘못된 tone 은 다른 입력 오류와 다른 코드(INVALID_REPLY_TONE) 로 응답해 프론트가 분기 가능.
+  if (req.body && req.body.tone != null && !REPLY_TONES.includes(req.body.tone)) {
+    return res.status(400).json({
+      error: 'INVALID_REPLY_TONE',
+      code: 'INVALID_REPLY_TONE',
+      message: '지원하지 않는 답글 말투입니다. 정중/친근/간결/공감/전문 중에서 선택해 주세요.',
+    });
+  }
+  const parsed = replyTemplateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'INVALID_INPUT',
+      code: 'INVALID_INPUT',
+      message: parsed.error.issues?.[0]?.message || 'issueLabel이 필요합니다.',
+    });
+  }
+  const input = parsed.data;
+  const tone = input.tone || DEFAULT_PRECOMPUTED_TONE;
+
+  // 플랜 한도 — tone 1개 호출당 1 차감.
   const userId = req.user?.id || null;
   const guard = checkCanGenerateCsReply(userId, 1);
   if (!guard.ok) {
@@ -29,9 +57,13 @@ router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) =>
         || '현재 플랜의 월 CS 답글 초안 한도를 초과했습니다. 상위 플랜에서 더 많은 답글을 받을 수 있어요.',
     });
   }
-  const templates = await aiClient.generateReplyTemplates(parsed.data);
+  // generateReplyTemplates 는 tone 인자를 받아 1개만 반환 (배열 길이 1).
+  const templates = await aiClient.generateReplyTemplates({ ...input, tone });
   if (userId && Array.isArray(templates) && templates.length > 0) {
-    recordUsage(userId, USAGE_EVENT_TYPES.CS_REPLY_GENERATED, { amount: templates.length });
+    recordUsage(userId, USAGE_EVENT_TYPES.CS_REPLY_GENERATED, {
+      amount: templates.length,
+      metadata: { tone, category: input.category || null, issueLabel: input.issueLabel },
+    });
   }
   res.json({ templates });
 });
