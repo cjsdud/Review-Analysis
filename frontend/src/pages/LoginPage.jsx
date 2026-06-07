@@ -176,6 +176,7 @@ function humanize(code, msg) {
   if (code === 'INVALID_CREDENTIALS') return '이메일 또는 비밀번호가 올바르지 않습니다.';
   if (code === 'INVALID_INPUT') return '입력값을 확인해 주세요.';
   if (code === 'SIGNUP_DISABLED') return '현재 신규 가입이 제한되어 있습니다.';
+  if (code === 'RATE_LIMITED') return '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.';
   if (msg) return msg;
   return '요청 중 오류가 발생했습니다.';
 }

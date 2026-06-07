@@ -20,6 +20,7 @@ import { purgeStaleUploadRows } from './db/database.js';
 import { maintenanceGate } from './middleware/maintenance.middleware.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import { seedConfiguredAccounts } from './services/seedAccounts.service.js';
+import { logRateLimitConfig } from './middleware/rateLimit.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,11 @@ const UPLOAD_ROWS_TTL_MIN = Math.max(1, Number(process.env.UPLOAD_ROWS_TTL_MIN |
 // cleanup 주기(분). 최소 1분.
 const UPLOAD_CLEANUP_INTERVAL_MIN = Math.max(1, Number(process.env.UPLOAD_CLEANUP_INTERVAL_MIN || 10));
 const isProd = process.env.NODE_ENV === 'production';
+
+// Render / 일반 프록시 환경에서 올바른 client IP 기반 rate limit + 로그를 위해 trust proxy 설정.
+// 1 = 직속 프록시 1개(예: Render edge) 를 신뢰. 멀티 hop CDN 사용 시 늘려야 함.
+// express-rate-limit 가 정확한 req.ip 를 보기 위해서도 필요.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
 
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
@@ -126,4 +132,5 @@ try {
 app.listen(PORT, () => {
   const serving = isProd && distExists ? ', serving frontend/dist' : '';
   console.log(`[review-fit] backend on port ${PORT} (AI mode: ${aiMode}${serving})`);
+  logRateLimitConfig();
 });

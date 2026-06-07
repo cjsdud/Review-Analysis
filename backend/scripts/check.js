@@ -1,5 +1,12 @@
 // 주요 모듈이 정상적으로 import 되고 핵심 파이프라인이 동작하는지 빠르게 확인.
 // 실행: npm run check  (DB/서버 없이 동작)
+//
+// rate limiter / auth/ownership 회귀 등이 다수의 login 호출을 하므로 체크 스크립트에서는
+// 명시적으로 NODE_ENV=test + DISABLE_RATE_LIMIT=true 를 강제해 limiter 가 동작하지 않게 한다.
+// (별도 supertest 기반 e2e 가 도입되면 그때 일부 step 만 한정 해제 가능.)
+process.env.NODE_ENV = 'test';
+process.env.DISABLE_RATE_LIMIT = 'true';
+
 import assert from 'node:assert';
 
 const failures = [];
@@ -4160,6 +4167,104 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(!/개선되었습니다|악화되었습니다/.test(summary), `단정형 표현 노출: ${summary}`);
   // "줄어든/늘어난 것으로 보입니다" 톤 포함
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
+});
+
+// ===== Rate Limit 회귀 =====
+//
+// P0 abuse 방지: authLimiter / uploadLimiter / aiReplyLimiter 가 export 되고,
+// env override 가 파싱되며, 라우트 모듈이 깨지지 않고 import 되는지 확인.
+
+await step('rateLimit middleware — 3개 limiter 가 export 되고 함수 시그니처를 가진다', async () => {
+  const m = await import('../src/middleware/rateLimit.middleware.js');
+  assert.equal(typeof m.authLimiter, 'function', 'authLimiter 가 함수여야 함 (Express middleware)');
+  assert.equal(typeof m.uploadLimiter, 'function', 'uploadLimiter 가 함수여야 함');
+  assert.equal(typeof m.aiReplyLimiter, 'function', 'aiReplyLimiter 가 함수여야 함');
+  assert.equal(typeof m.getRateLimitConfig, 'function', '설정 진단용 헬퍼 export');
+});
+
+await step('rateLimit — 기본 정책 (env 미설정) 이 의도된 값으로 파싱', async () => {
+  const prev = {
+    AUTH_RATE_LIMIT_WINDOW_MS: process.env.AUTH_RATE_LIMIT_WINDOW_MS,
+    AUTH_RATE_LIMIT_MAX: process.env.AUTH_RATE_LIMIT_MAX,
+    UPLOAD_RATE_LIMIT_WINDOW_MS: process.env.UPLOAD_RATE_LIMIT_WINDOW_MS,
+    UPLOAD_RATE_LIMIT_MAX: process.env.UPLOAD_RATE_LIMIT_MAX,
+    AI_REPLY_RATE_LIMIT_WINDOW_MS: process.env.AI_REPLY_RATE_LIMIT_WINDOW_MS,
+    AI_REPLY_RATE_LIMIT_MAX: process.env.AI_REPLY_RATE_LIMIT_MAX,
+  };
+  for (const k of Object.keys(prev)) delete process.env[k];
+  try {
+    // 캐시된 module 을 무시하고 재import — env 변경이 반영되는 모듈은 보통 cache 됨.
+    // express-rate-limit 의 객체는 한 번 만들어지므로 getRateLimitConfig 를 호출해
+    // env 파서가 옳은 값을 내는지만 단위 검증.
+    const { getRateLimitConfig } = await import('../src/middleware/rateLimit.middleware.js');
+    const cfg = getRateLimitConfig();
+    assert.equal(cfg.auth.max, 5, 'auth max 기본 5');
+    assert.equal(cfg.auth.windowMs, 15 * 60 * 1000, 'auth window 15분');
+    assert.equal(cfg.upload.max, 10, 'upload max 기본 10');
+    assert.equal(cfg.upload.windowMs, 24 * 60 * 60 * 1000, 'upload window 24h');
+    assert.equal(cfg.aiReply.max, 50, 'ai_reply max 기본 50');
+    assert.equal(cfg.aiReply.windowMs, 24 * 60 * 60 * 1000, 'ai_reply window 24h');
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+await step('rateLimit — env override 가 정상 반영', async () => {
+  const prev = {
+    AUTH_RATE_LIMIT_MAX: process.env.AUTH_RATE_LIMIT_MAX,
+    UPLOAD_RATE_LIMIT_MAX: process.env.UPLOAD_RATE_LIMIT_MAX,
+    AI_REPLY_RATE_LIMIT_MAX: process.env.AI_REPLY_RATE_LIMIT_MAX,
+  };
+  process.env.AUTH_RATE_LIMIT_MAX = '2';
+  process.env.UPLOAD_RATE_LIMIT_MAX = '99';
+  process.env.AI_REPLY_RATE_LIMIT_MAX = '7';
+  try {
+    const { getRateLimitConfig } = await import('../src/middleware/rateLimit.middleware.js');
+    const cfg = getRateLimitConfig();
+    assert.equal(cfg.auth.max, 2);
+    assert.equal(cfg.upload.max, 99);
+    assert.equal(cfg.aiReply.max, 7);
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+await step('rateLimit — 라우트가 limiter 를 import + 적용 (소스 패턴)', async () => {
+  // 정규식 기반 회귀 — 향후 누군가가 라우트에서 limiter 를 실수로 제거하면 잡힌다.
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const read = (p) => fs.readFileSync(new URL(p, import.meta.url), 'utf-8');
+
+  const authSrc = read('../src/routes/auth.routes.js');
+  assert(/authLimiter/.test(authSrc), 'auth.routes 가 authLimiter import 해야 함');
+  assert(/router\.post\(\s*['"]\/login['"]\s*,\s*authLimiter/.test(authSrc), '/login 에 authLimiter 적용');
+  assert(/router\.post\(\s*['"]\/register['"]\s*,\s*authLimiter/.test(authSrc), '/register 에 authLimiter 적용');
+
+  const uploadSrc = read('../src/routes/upload.routes.js');
+  assert(/uploadLimiter/.test(uploadSrc), 'upload.routes 가 uploadLimiter import 해야 함');
+  // POST / 에 requireAuth + uploadLimiter 가 함께 적용되어야 함 (순서 무관 정규식).
+  assert(/router\.post\(\s*['"]\/['"][^)]*uploadLimiter/.test(uploadSrc), 'POST / 에 uploadLimiter 적용');
+  assert(/router\.post\(\s*['"]\/sample['"][^)]*uploadLimiter/.test(uploadSrc), 'POST /sample 에 uploadLimiter 적용');
+
+  const aiSrc = read('../src/routes/ai.routes.js');
+  assert(/aiReplyLimiter/.test(aiSrc), 'ai.routes 가 aiReplyLimiter import 해야 함');
+  assert(/router\.post\(\s*['"]\/reply-templates['"][^)]*aiReplyLimiter/.test(aiSrc), 'POST /reply-templates 에 aiReplyLimiter 적용');
+
+  // billing/plan guard 가 함께 살아 있어야 한다 (rate limit 이 plan limit 을 대체하지 않음).
+  assert(/checkCanUploadFile/.test(uploadSrc), 'upload.routes 의 plan guard 가 살아 있어야 함');
+  assert(/checkCanGenerateCsReply/.test(aiSrc), 'ai.routes 의 plan guard 가 살아 있어야 함');
+});
+
+await step('rateLimit — trust proxy 가 server.js 에 설정됨 (Render/프록시 환경 client IP)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/server.js', import.meta.url), 'utf-8');
+  assert(/trust proxy/.test(src), "server.js 에 'trust proxy' 설정 필요");
 });
 
 // ===== P0 Runtime / Auth Safety 회귀 =====

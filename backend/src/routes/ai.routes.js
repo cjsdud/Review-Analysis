@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import aiClient from '../services/aiClient.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
+import { aiReplyLimiter } from '../middleware/rateLimit.middleware.js';
 import { checkCanGenerateCsReply, recordUsage } from '../services/billing.service.js';
 import { USAGE_EVENT_TYPES } from '../constants/plans.js';
 
@@ -9,7 +10,9 @@ const router = Router();
 
 // POST /api/ai/reply-templates — 특정 이슈에 대한 CS 답글 초안 생성.
 // 플랜의 월 CS 답글 한도 검사 후 생성. 익명 데모 모드는 카운트 X.
-router.post('/reply-templates', requireAuth, async (req, res) => {
+// 미들웨어 순서: requireAuth → aiReplyLimiter (req.user 기반 키).
+// rate limit 은 LLM 비용 폭주 방지용 abuse 가드 — checkCanGenerateCsReply(플랜 정책) 와 별개.
+router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) => {
   const schema = z.object({ category: z.string().optional(), issueLabel: z.string().min(1) });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'issueLabel이 필요합니다.' });

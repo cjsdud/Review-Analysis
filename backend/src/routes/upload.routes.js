@@ -13,6 +13,7 @@ import { autoMapColumns, FIELDS, FIELD_CANDIDATES, isMappingValid, missingRequir
 import { normalizeReviews } from '../services/normalizeReview.service.js';
 import { maskRows, maskMatrix } from '../services/privacyMasking.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
+import { uploadLimiter } from '../middleware/rateLimit.middleware.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = Router();
@@ -110,7 +111,11 @@ function assertOwnership(req, res, row) {
 }
 
 // POST /api/uploads — 파일 업로드 + 파싱 + 컬럼 자동 매핑 후보 반환
-router.post('/', requireAuth, upload.single('file'), async (req, res) => {
+// 미들웨어 순서: requireAuth → uploadLimiter → multer.
+//   requireAuth 가 먼저 실행되어야 req.user 가 채워져 limiter 가 user.id 기반으로 동작한다.
+//   (uploadLimiter 는 req.user 없으면 IP fallback.)
+// uploadLimiter 는 plan limit 와 별개로 abuse 방지용 — checkCanUploadFile 은 plan 정책.
+router.post('/', requireAuth, uploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다.' });
 
   // 플랜의 월 파일 업로드 한도 검사 — billing 이 enforce 모드일 때만 실제로 차단.
@@ -158,7 +163,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
 
 // POST /api/uploads/sample — 내장 샘플 데이터로 업로드 흐름 시작 (체험하기)
 // requireAuth — 익명 데모 모드(DEMO_ALLOW_ANONYMOUS=true)면 user_id=null 로 저장.
-router.post('/sample', requireAuth, async (req, res) => {
+router.post('/sample', requireAuth, uploadLimiter, async (req, res) => {
   const samplePath = path.join(__dirname, '../../../sample-data/sample_reviews_fashion.csv');
   if (!fs.existsSync(samplePath)) return res.status(404).json({ error: '샘플 파일을 찾을 수 없습니다.' });
   const buf = fs.readFileSync(samplePath);

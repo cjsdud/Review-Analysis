@@ -16,6 +16,7 @@ import { buildMeContext, getUserSubscription } from '../services/billing.service
 import { getBooleanSetting } from '../services/settings.service.js';
 import { isAdminEmail, maybePromoteOnLogin } from '../services/adminEmails.service.js';
 import { isSeedReservedEmail } from '../services/seedAccounts.service.js';
+import { authLimiter } from '../middleware/rateLimit.middleware.js';
 
 const router = Router();
 
@@ -37,7 +38,8 @@ function publicUser(row) {
 }
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+// authLimiter — brute force 계정 생성 시도(스팸성 회원가입) 차단.
+router.post('/register', authLimiter, async (req, res) => {
   // 운영 설정으로 신규 가입 차단 가능
   if (!getBooleanSetting('signup_enabled', true)) {
     return res.status(403).json({ error: 'SIGNUP_DISABLED', message: '현재 신규 가입이 제한되어 있습니다.' });
@@ -82,7 +84,8 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+// authLimiter — 비밀번호 brute force 방지. IP 기준 15분 5회 (env override 가능).
+router.post('/login', authLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'INVALID_INPUT', message: '이메일/비밀번호를 입력하세요.' });
