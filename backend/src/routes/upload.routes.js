@@ -89,15 +89,24 @@ const upload = multer({
   },
 });
 
-// 소유권 가드 — 익명 데모(req.user==null) 는 user_id=null 인 업로드만 접근.
-// 로그인 사용자는 자기 user_id 의 업로드만 접근.
+// 소유권 가드 — 로그인 사용자는 자기 user_id 의 업로드만 접근.
+//
+// 과거에는 "익명끼리(둘 다 null) 통과" 였으나, 익명 모드에서는 모든 익명 사용자가
+// user_id=null 을 공유해 다른 익명 사용자의 업로드/리뷰에 교차 접근할 수 있었다.
+// 이제는 인증된 user_id 가 없으면 즉시 401, 다르면 403. 익명 데모는 read-only
+// 정적 페이지로 분리.
 function assertOwnership(req, res, row) {
   const ownerId = row.user_id || null;
   const reqId = req.user?.id || null;
-  if (ownerId === reqId) return true;
-  // 익명이 다른 사용자의 데이터 접근 시도하거나, 사용자가 남의 데이터 접근 시 403
-  res.status(403).json({ error: 'FORBIDDEN', message: '이 업로드에 접근할 권한이 없습니다.' });
-  return false;
+  if (!reqId) {
+    res.status(401).json({ error: 'AUTH_REQUIRED', message: '이 업로드를 보려면 로그인이 필요합니다.' });
+    return false;
+  }
+  if (ownerId !== reqId) {
+    res.status(403).json({ error: 'FORBIDDEN', message: '이 업로드에 접근할 권한이 없습니다.' });
+    return false;
+  }
+  return true;
 }
 
 // POST /api/uploads — 파일 업로드 + 파싱 + 컬럼 자동 매핑 후보 반환

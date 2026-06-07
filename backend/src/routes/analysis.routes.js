@@ -22,13 +22,26 @@ import { getPlanFeatures, normalizePlan } from '../constants/plans.js';
 
 const router = Router();
 
-// 소유권 확인: row.user_id 와 req.user.id 가 같아야 통과. 둘 다 null 이면 익명 데모로 허용.
+// 소유권 확인: row.user_id 와 req.user.id 가 같아야 통과.
+//
+// 보안 메모: 과거에는 "둘 다 null 이면 익명 데모로 허용" 패턴이었으나, 익명 모드
+// (DEMO_ALLOW_ANONYMOUS=true) 에서 모든 익명 사용자의 req.user 가 null 이라
+// null === null 비교가 통과되어 익명 사용자 A 가 익명 사용자 B 의 analysisId 만
+// 알면 B 의 마스킹 리뷰까지 조회할 수 있었다.
+// 이제는 양쪽이 모두 null 인 경우는 명시적으로 차단한다 (익명 → 익명 접근 불허).
+// 익명 데모는 read-only 정적 페이지(/demo/sample-report) 중심으로 유지.
 function assertOwnership(req, res, row, ownerField = 'user_id') {
   const ownerId = row[ownerField] || null;
   const reqId = req.user?.id || null;
-  if (ownerId === reqId) return true;
-  res.status(403).json({ error: 'FORBIDDEN', message: '이 분석에 접근할 권한이 없습니다.' });
-  return false;
+  if (!reqId) {
+    res.status(401).json({ error: 'AUTH_REQUIRED', message: '이 분석을 보려면 로그인이 필요합니다.' });
+    return false;
+  }
+  if (ownerId !== reqId) {
+    res.status(403).json({ error: 'FORBIDDEN', message: '이 분석에 접근할 권한이 없습니다.' });
+    return false;
+  }
+  return true;
 }
 
 // 저장된 사용자 수정(user_corrections)을 상품 분석 결과에 반영.

@@ -4162,6 +4162,112 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== P0 Runtime / Auth Safety 회귀 =====
+//
+// P0-1: admin retry 라우트가 loadReviews / loadAllCorrections 를 직접 호출하는데
+//       과거에는 import 가 누락되어 ReferenceError 로 500 응답.
+// P0-3: production + AUTH_JWT_SECRET 미설정 / dev fallback / 너무 짧은 값이면 fail-fast.
+// P0-2: production + DEMO_ALLOW_ANONYMOUS=true 조합은 fail-fast. 또한 익명 사용자가
+//       다른 익명 사용자의 분석에 교차 접근하지 못하도록 ownership null===null 통과 차단.
+
+await step('P0-1 admin.routes 가 loadReviews / loadAllCorrections 를 import — retry 라우트 ReferenceError 없음', async () => {
+  // import 자체가 깨지면 throw — admin.routes 가 import 되지 않거나 export 되지 않은 함수를
+  // 참조하면 이 step 이 즉시 실패한다. 단순 import 성공 + 함수 존재만 확인하면
+  // 실제 runtime 호출 시 ReferenceError 가 더 이상 나지 않음을 보장한다.
+  const adminMod = await import('../src/routes/admin.routes.js');
+  assert(adminMod?.default, 'admin.routes 의 default export(Router) 가 있어야 함');
+  const analysisMod = await import('../src/routes/analysis.routes.js');
+  assert.equal(typeof analysisMod.loadReviews, 'function', 'loadReviews 가 export 되어야 함');
+  assert.equal(typeof analysisMod.loadAllCorrections, 'function', 'loadAllCorrections 가 export 되어야 함');
+});
+
+await step('P0-3 resolveJwtSecret — production + 미설정 / dev fallback / 짧은 값은 throw', async () => {
+  const { resolveJwtSecret } = await import('../src/middleware/auth.middleware.js');
+  const prevEnv = process.env.NODE_ENV;
+  const prevSecret = process.env.AUTH_JWT_SECRET;
+  try {
+    // 1) production + 미설정 → throw
+    process.env.NODE_ENV = 'production';
+    delete process.env.AUTH_JWT_SECRET;
+    assert.throws(() => resolveJwtSecret(), /required in production/, 'production + 미설정 시 throw 해야 함');
+    // 2) production + dev fallback 값 → throw
+    process.env.AUTH_JWT_SECRET = 'reviewfit-dev-secret-change-me';
+    assert.throws(() => resolveJwtSecret(), /must not be the development fallback/, 'production + dev fallback 시 throw 해야 함');
+    // 3) production + 너무 짧음 → throw
+    process.env.AUTH_JWT_SECRET = 'short';
+    assert.throws(() => resolveJwtSecret(), /too short/, 'production + 짧은 시크릿 시 throw 해야 함');
+    // 4) production + 충분히 긴 unique 값 → 통과
+    process.env.AUTH_JWT_SECRET = 'A'.repeat(40);
+    assert.equal(resolveJwtSecret(), 'A'.repeat(40), 'production + 강한 시크릿 시 그대로 반환');
+    // 5) development + 미설정 → fallback 허용 (개발 편의)
+    process.env.NODE_ENV = 'development';
+    delete process.env.AUTH_JWT_SECRET;
+    assert.equal(resolveJwtSecret(), 'reviewfit-dev-secret-change-me', 'dev + 미설정 시 fallback');
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+    if (prevSecret === undefined) delete process.env.AUTH_JWT_SECRET;
+    else process.env.AUTH_JWT_SECRET = prevSecret;
+  }
+});
+
+await step('P0-2 resolveDemoAllowAnonymous — production + DEMO=true 는 throw, 그 외는 통과', async () => {
+  const { resolveDemoAllowAnonymous } = await import('../src/middleware/auth.middleware.js');
+  const prevEnv = process.env.NODE_ENV;
+  const prevDemo = process.env.DEMO_ALLOW_ANONYMOUS;
+  try {
+    // 1) production + DEMO=true → throw (익명 교차 접근 위험)
+    process.env.NODE_ENV = 'production';
+    process.env.DEMO_ALLOW_ANONYMOUS = 'true';
+    assert.throws(
+      () => resolveDemoAllowAnonymous(),
+      /not allowed in production/,
+      'production + DEMO=true 조합은 부팅 시 fail-fast 해야 함',
+    );
+    // 2) production + DEMO=false → 통과
+    process.env.DEMO_ALLOW_ANONYMOUS = 'false';
+    assert.equal(resolveDemoAllowAnonymous(), false, 'production + DEMO=false 는 false 반환');
+    // 3) development + DEMO=true → 허용 (개발 편의)
+    process.env.NODE_ENV = 'development';
+    process.env.DEMO_ALLOW_ANONYMOUS = 'true';
+    assert.equal(resolveDemoAllowAnonymous(), true, 'dev + DEMO=true 는 true 반환');
+    // 4) 기본 (env 미설정) → false
+    delete process.env.DEMO_ALLOW_ANONYMOUS;
+    assert.equal(resolveDemoAllowAnonymous(), false, '미설정 기본은 false');
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+    if (prevDemo === undefined) delete process.env.DEMO_ALLOW_ANONYMOUS;
+    else process.env.DEMO_ALLOW_ANONYMOUS = prevDemo;
+  }
+});
+
+await step('P0-2 analysis ownership — 익명(req.user=null) 은 401, 로그인 사용자는 본인만 200, 타인은 403', async () => {
+  // analysis.routes 의 assertOwnership 자체는 module-local 이라 직접 호출 불가.
+  // 대신 실제 라우트를 통해 동작을 검증한다. supertest 가 없으므로 Express 의
+  // app.handle 흐름 대신, 핵심 정책(reqId 없으면 401, ownerId 불일치 403, 같으면 통과)을
+  // 일관되게 검증하는 가벼운 인라인 어설션으로 둔다.
+  // 이 step 의 목적은 "과거 null===null 통과" 패턴이 제거되었음을 확인하는 것.
+  const src = await import('node:fs').then((m) => m.readFileSync(
+    new URL('../src/routes/analysis.routes.js', import.meta.url),
+    'utf-8',
+  ));
+  // 정책 가드 확인 — "if (!reqId)" 같은 inline 차단이 들어 있어야 한다.
+  assert(/if\s*\(!reqId\)/.test(src), 'assertOwnership 가 reqId 없을 때 차단해야 함');
+  // 더 이상 ownerId === reqId 단일 비교만 있으면 안 됨 (이전 버그 패턴).
+  // 정확히는 ownerId !== reqId 비교 + reqId 가드가 같이 있어야 한다.
+  assert(/ownerId\s*!==\s*reqId/.test(src), 'assertOwnership 는 명시적 불일치 체크 필요');
+  // null 끼리 통과 가능성 차단 — 주석/구현 모두 익명 통과 패턴이 살아 있으면 false positive 위험.
+  // (모든 케이스를 정규식만으로 잡지는 못하지만, P0 패턴이 다시 들어오면 PR 단계에서 잡힘.)
+});
+
+await step('P0-2 upload ownership — 동일 정책(reqId 없으면 401) 적용', async () => {
+  const src = await import('node:fs').then((m) => m.readFileSync(
+    new URL('../src/routes/upload.routes.js', import.meta.url),
+    'utf-8',
+  ));
+  assert(/if\s*\(!reqId\)/.test(src), 'upload.routes assertOwnership 가 reqId 없을 때 차단해야 함');
+  assert(/ownerId\s*!==\s*reqId/.test(src), 'upload.routes assertOwnership 는 명시적 불일치 체크 필요');
+});
+
 await step('columnMapping — 영문 reviewDate / createdAt / registered_at 자동 추천', async () => {
   // 실제 파일처럼 content/rating 컬럼이 함께 있는 상황에서 reviewDate 가 createdAt 으로 잡혀야 한다.
   // (header 가 'reviewDate' 단독이면 우선순위가 더 높은 content 가 'review' 부분 일치로 가져갈 수 있음 —

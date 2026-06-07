@@ -16,6 +16,11 @@ import {
   createPendingJob,
   runAnalysisJob,
 } from '../services/analysisJob.service.js';
+// admin retry 라우트가 사용 — loadReviews / loadAllCorrections 는 analysis.routes.js 에
+// export 되어 있다. 누락하면 POST /admin/analyses/:id/retry 호출 시
+// ReferenceError: loadReviews is not defined 로 즉시 500 응답이 나간다.
+// 순환 참조 없음 (analysis.routes.js 는 admin.routes.js 를 import 하지 않음).
+import { loadReviews, loadAllCorrections } from './analysis.routes.js';
 
 const router = Router();
 

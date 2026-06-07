@@ -10,10 +10,51 @@
 import jwt from 'jsonwebtoken';
 import db from '../db/database.js';
 
-const JWT_SECRET = process.env.AUTH_JWT_SECRET || 'reviewfit-dev-secret-change-me';
+// JWT 서명용 시크릿 — production 에서는 반드시 환경 변수로 강한 값을 지정해야 한다.
+// production + 미설정 또는 dev fallback 그대로면 부팅 시 fail-fast 한다.
+// (개발 환경은 편의 위해 기본값 허용 — 콘솔에 경고만 남긴다.)
+const DEV_FALLBACK_SECRET = 'reviewfit-dev-secret-change-me';
+function resolveJwtSecret() {
+  const envSecret = process.env.AUTH_JWT_SECRET && String(process.env.AUTH_JWT_SECRET).trim();
+  const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  if (isProd) {
+    if (!envSecret) {
+      throw new Error('AUTH_JWT_SECRET is required in production. Set a strong secret in environment variables.');
+    }
+    if (envSecret === DEV_FALLBACK_SECRET) {
+      throw new Error('AUTH_JWT_SECRET must not be the development fallback value in production. Set a strong, unique secret.');
+    }
+    if (envSecret.length < 32) {
+      throw new Error('AUTH_JWT_SECRET is too short for production (minimum 32 characters recommended). Set a strong, unique secret.');
+    }
+    return envSecret;
+  }
+  if (!envSecret) {
+    console.warn('[auth] AUTH_JWT_SECRET 미설정 — 개발용 fallback 시크릿 사용. production 배포 전 반드시 강한 값으로 설정하세요.');
+    return DEV_FALLBACK_SECRET;
+  }
+  return envSecret;
+}
+const JWT_SECRET = resolveJwtSecret();
+export { resolveJwtSecret }; // 테스트/관리자 진단용 export
+
 export const COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'reviewfit_token';
 export const TOKEN_EXPIRES_IN = process.env.AUTH_TOKEN_EXPIRES_IN || '7d';
-const DEMO_ALLOW_ANONYMOUS = String(process.env.DEMO_ALLOW_ANONYMOUS || 'false').toLowerCase() === 'true';
+
+// DEMO_ALLOW_ANONYMOUS — 데모/체험용 익명 허용 토글.
+// production 에서는 익명 분석 데이터가 모든 익명 사용자 사이에서 user_id=null 로
+// 공유되어 교차 접근(다른 익명 사용자가 analysisId 만 알면 조회) 위험이 있으므로
+// 부팅 시 강제 차단한다. 데모는 /demo/sample-report 같이 read-only 정적 페이지로 운영.
+function resolveDemoAllowAnonymous() {
+  const raw = String(process.env.DEMO_ALLOW_ANONYMOUS || 'false').toLowerCase() === 'true';
+  const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  if (raw && isProd) {
+    throw new Error('DEMO_ALLOW_ANONYMOUS=true is not allowed in production. Anonymous sessions share user_id=null and can cross-access each other\'s analyses. Set DEMO_ALLOW_ANONYMOUS=false in production.');
+  }
+  return raw;
+}
+const DEMO_ALLOW_ANONYMOUS = resolveDemoAllowAnonymous();
+export { resolveDemoAllowAnonymous };
 
 export function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
