@@ -4172,6 +4172,115 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== CS Reply Tone Server Cache 회귀 =====
+//
+// 비용 절감용 in-memory 캐시. (issueLabel, category, tone, severity, polarity) 만 키로 사용.
+// 개인정보(review content / orderId / email 등) 포함 요청은 cacheable=false 로 우회.
+
+await step('csReplyCache.isCacheableReplyRequest — 기본 입력 OK, PII 포함 시 false', async () => {
+  const m = await import('../src/services/csReplyCache.service.js');
+  // 기본 — 캐시 가능
+  assert.equal(m.isCacheableReplyRequest({
+    issueLabel: '허리가 작게 나옴', category: '사이즈', tone: 'polite',
+  }), true);
+  // issueLabel 미설정 → false
+  assert.equal(m.isCacheableReplyRequest({ category: '사이즈', tone: 'polite' }), false);
+  // PII 필드 포함 → false
+  for (const f of ['content', 'reviewContent', 'review_text', 'customerName', 'orderId', 'email', 'phone']) {
+    assert.equal(m.isCacheableReplyRequest({
+      issueLabel: 'x', category: '사이즈', tone: 'polite', [f]: 'value',
+    }), false, `${f} 포함 시 캐시 우회`);
+  }
+  // 너무 긴 issueLabel → false (방어)
+  assert.equal(m.isCacheableReplyRequest({
+    issueLabel: 'a'.repeat(200), category: '사이즈', tone: 'polite',
+  }), false);
+});
+
+await step('csReplyCache.buildReplyCacheKey — 결정적 + 같은 조합 같은 key + tone/severity/polarity 차이 반영', async () => {
+  const m = await import('../src/services/csReplyCache.service.js');
+  const base = { issueLabel: '허리가 작게 나옴', category: '사이즈', tone: 'polite' };
+  const k1 = m.buildReplyCacheKey(base);
+  const k2 = m.buildReplyCacheKey(base);
+  assert.equal(k1, k2, '동일 입력 → 동일 키');
+  // 공백 정규화 — "허리가  작게 나옴" (이중 공백) 도 같은 키.
+  const k3 = m.buildReplyCacheKey({ ...base, issueLabel: '허리가  작게 나옴' });
+  assert.equal(k1, k3, '공백 정규화');
+  // tone 차이
+  assert.notEqual(k1, m.buildReplyCacheKey({ ...base, tone: 'friendly' }));
+  // category 차이
+  assert.notEqual(k1, m.buildReplyCacheKey({ ...base, category: '소재/두께' }));
+  // severity 차이
+  assert.notEqual(k1, m.buildReplyCacheKey({ ...base, severity: 'high' }));
+  // polarity 차이
+  assert.notEqual(k1, m.buildReplyCacheKey({ ...base, polarity: 'mixed' }));
+  // 키에 PII 가 들어가지 않음 — 정규식으로 안전망.
+  assert(!/orderId|email|phone|content/.test(k1), `key 에 PII 흔적 없음: ${k1}`);
+});
+
+await step('csReplyCache — set 후 get 은 hit, 다른 key 는 miss, 빈 값은 캐시 안 됨', async () => {
+  const m = await import('../src/services/csReplyCache.service.js');
+  m._resetReplyCacheForTests();
+  const k = 'test:key:1';
+  assert.equal(m.getCachedReplyTemplate(k), null, '초기 miss');
+  m.setCachedReplyTemplate(k, [{ tone: 'polite', template: 'hello' }]);
+  const v = m.getCachedReplyTemplate(k);
+  assert(Array.isArray(v) && v[0].template === 'hello', 'hit 후 같은 값 반환');
+  // 다른 키 — miss.
+  assert.equal(m.getCachedReplyTemplate('test:key:2'), null);
+  // 빈 결과는 캐시되지 않아야 함.
+  m._resetReplyCacheForTests();
+  m.setCachedReplyTemplate('empty', []);
+  assert.equal(m.getCachedReplyTemplate('empty'), null, '빈 배열은 캐시 안 됨');
+  m.setCachedReplyTemplate('null', null);
+  assert.equal(m.getCachedReplyTemplate('null'), null, 'null 은 캐시 안 됨');
+});
+
+await step('csReplyCache — TTL 만료 동작 (짧은 TTL 로 set 후 시간 진행)', async () => {
+  const m = await import('../src/services/csReplyCache.service.js');
+  m._resetReplyCacheForTests();
+  m.setCachedReplyTemplate('ttl:k', [{ tone: 'polite', template: 'x' }], 5 /* ms */);
+  // 즉시 hit
+  assert(m.getCachedReplyTemplate('ttl:k'));
+  // 10ms 대기 — 만료.
+  await new Promise((r) => setTimeout(r, 12));
+  assert.equal(m.getCachedReplyTemplate('ttl:k'), null, '만료 후 null');
+});
+
+await step('csReplyCache — max size 초과 시 가장 오래된 키 제거 + stats 반영', async () => {
+  const m = await import('../src/services/csReplyCache.service.js');
+  m._resetReplyCacheForTests();
+  const max = 3;
+  // 의도적으로 max 보다 1개 더 set — 첫 번째 키가 제거되어야 함.
+  m.setCachedReplyTemplate('a', [{ template: 'A' }], 60_000, max);
+  m.setCachedReplyTemplate('b', [{ template: 'B' }], 60_000, max);
+  m.setCachedReplyTemplate('c', [{ template: 'C' }], 60_000, max);
+  m.setCachedReplyTemplate('d', [{ template: 'D' }], 60_000, max);
+  assert.equal(m.getCachedReplyTemplate('a'), null, '가장 먼저 들어온 a 가 제거');
+  assert(m.getCachedReplyTemplate('d'), '최신 d 는 살아 있음');
+  const stats = m.getReplyCacheStats();
+  assert(stats.evictions >= 1, `eviction 카운트: ${stats.evictions}`);
+  assert(stats.sets >= 4);
+});
+
+await step('ai.routes — 캐시 hit / miss 메타가 응답에 동봉되고, 정상 응답만 캐시', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/ai.routes.js', import.meta.url), 'utf-8');
+  // cache helper 호출
+  assert(/getCachedReplyTemplate/.test(src));
+  assert(/setCachedReplyTemplate/.test(src));
+  assert(/isCacheableReplyRequest/.test(src));
+  // 응답에 meta.cacheHit
+  assert(/meta:\s*\{[^}]*cacheHit/.test(src), '응답 meta.cacheHit 포함');
+  // recordUsage metadata 에도 cacheHit 동봉 (운영 진단)
+  assert(/metadata:\s*\{[^}]*cacheHit/.test(src), 'usage metadata 에 cacheHit');
+  // 플랜 한도(checkCanGenerateCsReply) 는 캐시 hit 여부와 무관하게 항상 적용.
+  // → checkCanGenerateCsReply 호출이 캐시 조회보다 앞에 있어야 함 (LLM 비용 폭주 방지 + plan 보호).
+  const guardIdx = src.indexOf('checkCanGenerateCsReply(');
+  const cacheIdx = src.indexOf('getCachedReplyTemplate(');
+  assert(guardIdx > 0 && cacheIdx > guardIdx, 'plan guard 가 캐시 조회보다 먼저 실행');
+});
+
 // ===== Usage Meter (topbar) 회귀 =====
 //
 // 프론트 utils/usage.js 의 normalizeUsageSummary / formatUsageLine / usageStatusLabel

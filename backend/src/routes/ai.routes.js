@@ -6,6 +6,12 @@ import { aiReplyLimiter } from '../middleware/rateLimit.middleware.js';
 import { checkCanGenerateCsReply, recordUsage } from '../services/billing.service.js';
 import { USAGE_EVENT_TYPES } from '../constants/plans.js';
 import { REPLY_TONES, DEFAULT_PRECOMPUTED_TONE } from '../constants/replyTones.js';
+import {
+  buildReplyCacheKey,
+  getCachedReplyTemplate,
+  setCachedReplyTemplate,
+  isCacheableReplyRequest,
+} from '../services/csReplyCache.service.js';
 
 const router = Router();
 
@@ -46,7 +52,7 @@ router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) =>
   const input = parsed.data;
   const tone = input.tone || DEFAULT_PRECOMPUTED_TONE;
 
-  // 플랜 한도 — tone 1개 호출당 1 차감.
+  // 플랜 한도 — tone 1개 호출당 1 차감. 캐시 히트라도 플랜 사용량은 동일하게 차감 (정책).
   const userId = req.user?.id || null;
   const guard = checkCanGenerateCsReply(userId, 1);
   if (!guard.ok) {
@@ -57,15 +63,37 @@ router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) =>
         || '현재 플랜의 월 CS 답글 초안 한도를 초과했습니다. 상위 플랜에서 더 많은 답글을 받을 수 있어요.',
     });
   }
-  // generateReplyTemplates 는 tone 인자를 받아 1개만 반환 (배열 길이 1).
-  const templates = await aiClient.generateReplyTemplates({ ...input, tone });
+
+  // 서버 캐시 조회 — 비식별 입력만 캐시 대상. PII 가 포함된 요청은 우회.
+  const cacheable = isCacheableReplyRequest({ ...input, tone });
+  const cacheKey = cacheable ? buildReplyCacheKey({ ...input, tone }) : null;
+  let templates = null;
+  let cacheHit = false;
+  if (cacheKey) {
+    const cached = getCachedReplyTemplate(cacheKey);
+    if (cached) {
+      templates = cached;
+      cacheHit = true;
+    }
+  }
+
+  if (!templates) {
+    // generateReplyTemplates 는 tone 인자를 받아 1개만 반환 (배열 길이 1).
+    templates = await aiClient.generateReplyTemplates({ ...input, tone });
+    // 정상 응답만 캐시 — fallback/[]/정책 차단은 캐시하지 않음.
+    if (cacheKey && Array.isArray(templates) && templates.length > 0) {
+      setCachedReplyTemplate(cacheKey, templates);
+    }
+  }
+
   if (userId && Array.isArray(templates) && templates.length > 0) {
     recordUsage(userId, USAGE_EVENT_TYPES.CS_REPLY_GENERATED, {
       amount: templates.length,
-      metadata: { tone, category: input.category || null, issueLabel: input.issueLabel },
+      metadata: { tone, category: input.category || null, issueLabel: input.issueLabel, cacheHit },
     });
   }
-  res.json({ templates });
+  // 응답 — 기존 프론트는 templates 만 읽으므로 meta 는 보조 정보.
+  res.json({ templates, meta: { cacheHit, tone } });
 });
 
 export default router;
