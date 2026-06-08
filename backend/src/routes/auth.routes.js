@@ -19,6 +19,12 @@ import { getBooleanSetting } from '../services/settings.service.js';
 import { isAdminEmail, maybePromoteOnLogin } from '../services/adminEmails.service.js';
 import { isSeedReservedEmail } from '../services/seedAccounts.service.js';
 import { authLimiter } from '../middleware/rateLimit.middleware.js';
+import {
+  isGoogleLoginConfigured,
+  verifyGoogleIdToken,
+  findOrCreateUserFromGooglePayload,
+  tokenPayloadFromUser,
+} from '../services/googleAuth.service.js';
 
 const router = Router();
 
@@ -108,6 +114,92 @@ router.post('/login', authLimiter, async (req, res) => {
   const token = signToken({ sub: row.id, email: row.email });
   setAuthCookie(res, token);
   return res.json({ user: publicUser(row) });
+});
+
+// GET /api/auth/google/config — 프론트가 Google 로그인 노출 여부 판단용.
+// VITE_GOOGLE_CLIENT_ID 미설정 / 백엔드 미설정 환경에서 버튼을 숨길지 결정.
+router.get('/google/config', (_req, res) => {
+  res.json({ enabled: isGoogleLoginConfigured() });
+});
+
+// POST /api/auth/google — Google ID Token 검증 + 계정 연결/생성 + ReviewFit JWT 발급.
+// 미들웨어: authLimiter (login 과 동일 한도). credential 원문은 절대 로그 X.
+router.post('/google', authLimiter, async (req, res) => {
+  if (!isGoogleLoginConfigured()) {
+    return res.status(503).json({
+      error: 'GOOGLE_NOT_CONFIGURED',
+      code: 'GOOGLE_NOT_CONFIGURED',
+      message: 'Google 로그인 설정이 완료되지 않았어요. 잠시 후 다시 시도해 주세요.',
+    });
+  }
+  // 신규 가입 차단 토글 — local register 와 동일 정책.
+  // 단, 기존 user 의 returning/linked 는 가입이 아니므로 허용. created 만 차단.
+  const credential = String(req.body?.credential || '').trim();
+  if (!credential) {
+    return res.status(400).json({
+      error: 'INVALID_INPUT',
+      code: 'INVALID_INPUT',
+      message: 'Google 로그인 인증 정보를 받지 못했어요.',
+    });
+  }
+  let payload;
+  try {
+    payload = await verifyGoogleIdToken(credential);
+  } catch (e) {
+    if (e.code === 'GOOGLE_NOT_CONFIGURED') {
+      return res.status(503).json({ error: e.code, code: e.code, message: 'Google 로그인 설정이 완료되지 않았어요.' });
+    }
+    // 검증 실패는 401. credential / e.reason 은 응답에 노출하지 않는다.
+    console.warn(`[auth/google] verify failed code=${e.code || 'unknown'}`);
+    return res.status(401).json({
+      error: 'GOOGLE_LOGIN_FAILED',
+      code: 'GOOGLE_LOGIN_FAILED',
+      message: 'Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.',
+    });
+  }
+
+  let result;
+  try {
+    result = findOrCreateUserFromGooglePayload(payload);
+  } catch (e) {
+    if (e.code === 'GOOGLE_EMAIL_UNVERIFIED') {
+      return res.status(403).json({
+        error: 'GOOGLE_EMAIL_UNVERIFIED',
+        code: 'GOOGLE_EMAIL_UNVERIFIED',
+        message: '확인되지 않은 Google 계정이에요. 다른 Google 계정으로 시도해 주세요.',
+      });
+    }
+    console.error('[auth/google] find/create failed', e);
+    return res.status(500).json({
+      error: 'GOOGLE_LOGIN_FAILED',
+      code: 'GOOGLE_LOGIN_FAILED',
+      message: 'Google 로그인 중 일시적인 문제가 있었어요.',
+    });
+  }
+
+  // 신규 가입 차단 토글 — kind=created 만 차단해서 returning/linked 는 영향 없음.
+  if (result.kind === 'created' && !getBooleanSetting('signup_enabled', true)) {
+    return res.status(403).json({
+      error: 'SIGNUP_DISABLED',
+      code: 'SIGNUP_DISABLED',
+      message: '현재 신규 가입이 제한되어 있어요.',
+    });
+  }
+
+  // 로그인 시 ADMIN_EMAILS 보정 — 기존 local login 흐름과 동일하게 returning/linked 모두 보정.
+  // user row 를 DB 에서 다시 읽어 maybePromoteOnLogin 입력.
+  const row = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(result.user.id);
+  const finalRole = row ? maybePromoteOnLogin(row) : result.user.role;
+  if (row && finalRole !== row.role) {
+    result.user.role = finalRole;
+  }
+
+  const token = signToken(tokenPayloadFromUser(result.user));
+  setAuthCookie(res, token);
+  return res.json({
+    user: result.user,
+    kind: result.kind, // 운영 진단용 — 'returning' / 'linked' / 'created'
+  });
 });
 
 // POST /api/auth/logout

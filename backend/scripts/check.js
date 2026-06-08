@@ -4172,6 +4172,151 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== Google Login 회귀 =====
+//
+// findOrCreateUserFromGooglePayload 의 핵심 정책 검증.
+// 실제 verifyIdToken 은 외부 호출이라 mock 으로 우회 — payload 만 직접 전달.
+
+await step('googleAuth — google_sub 매칭 시 returning + role/plan 보존', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { findOrCreateUserFromGooglePayload } = await import('../src/services/googleAuth.service.js');
+  const uid = 'g_returning_' + Date.now();
+  const email = `${uid}@x.com`;
+  const sub = 'sub_' + Date.now();
+  db.prepare(
+    `INSERT INTO users (id, email, password_hash, name, role, auth_provider, google_sub, email_verified)
+     VALUES (?, ?, ?, ?, 'admin', 'google', ?, 1)`,
+  ).run(uid, email, 'dummy', 'Old Name', sub);
+  db.prepare("INSERT INTO subscriptions (id, user_id, plan_code, status) VALUES (?, ?, 'business', 'active')")
+    .run('sub_row_' + uid, uid);
+  const result = findOrCreateUserFromGooglePayload({
+    sub, email: email.toUpperCase(), email_verified: true, name: 'New Name', picture: 'http://x/a.png',
+  });
+  assert.equal(result.kind, 'returning');
+  assert.equal(result.user.id, uid);
+  assert.equal(result.user.role, 'admin', 'role 보존');
+  // plan/구독은 별도 — 사용자가 google 로 들어왔다고 plan_code 가 변하면 안 됨.
+  const subRow = db.prepare("SELECT plan_code FROM subscriptions WHERE user_id = ? AND status IN ('active','trialing')").get(uid);
+  assert.equal(subRow.plan_code, 'business', 'plan 보존');
+  // name 은 갱신 (COALESCE 정책상 NULL 이 아닐 때 갱신).
+  const fresh = db.prepare('SELECT name FROM users WHERE id = ?').get(uid);
+  assert.equal(fresh.name, 'New Name', 'name 최신화');
+});
+
+await step('googleAuth — 같은 email 의 local user 가 있고 email_verified=true 면 linked, role/plan 보존', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { findOrCreateUserFromGooglePayload } = await import('../src/services/googleAuth.service.js');
+  const uid = 'g_linked_' + Date.now();
+  const email = `${uid}@x.com`;
+  db.prepare(
+    `INSERT INTO users (id, email, password_hash, name, role, auth_provider, email_verified)
+     VALUES (?, ?, ?, ?, 'admin', 'local', 0)`,
+  ).run(uid, email, 'localhash', 'Local Name');
+  db.prepare("INSERT INTO subscriptions (id, user_id, plan_code, status) VALUES (?, ?, 'pro', 'active')")
+    .run('sub_row_' + uid, uid);
+  const sub = 'sub_' + Date.now();
+  const result = findOrCreateUserFromGooglePayload({
+    sub, email, email_verified: true, name: 'Updated', picture: null,
+  });
+  assert.equal(result.kind, 'linked');
+  assert.equal(result.user.id, uid, '같은 user id 유지');
+  assert.equal(result.user.role, 'admin', 'role 보존');
+  // auth_provider 는 local 그대로 (사용자가 local 비밀번호로도 계속 로그인 가능).
+  const fresh = db.prepare('SELECT auth_provider, google_sub, email_verified FROM users WHERE id = ?').get(uid);
+  assert.equal(fresh.auth_provider, 'local', 'auth_provider local 유지');
+  assert.equal(fresh.google_sub, sub, 'google_sub 연결');
+  assert.equal(fresh.email_verified, 1, 'email_verified 갱신');
+  const subRow = db.prepare("SELECT plan_code FROM subscriptions WHERE user_id = ?").get(uid);
+  assert.equal(subRow.plan_code, 'pro', 'plan 보존');
+});
+
+await step('googleAuth — 같은 email 의 local user 이지만 email_verified=false → GOOGLE_EMAIL_UNVERIFIED', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { findOrCreateUserFromGooglePayload } = await import('../src/services/googleAuth.service.js');
+  const uid = 'g_unverified_' + Date.now();
+  const email = `${uid}@x.com`;
+  db.prepare("INSERT INTO users (id, email, password_hash, name, role) VALUES (?,?,?,?,?)")
+    .run(uid, email, 'h', 'X', 'user');
+  assert.throws(
+    () => findOrCreateUserFromGooglePayload({ sub: 'sub_' + Date.now(), email, email_verified: false }),
+    (e) => e.code === 'GOOGLE_EMAIL_UNVERIFIED',
+    '미확인 이메일 거부',
+  );
+});
+
+await step('googleAuth — 신규 user 생성 (auth_provider=google, role=user, free 구독)', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const { findOrCreateUserFromGooglePayload } = await import('../src/services/googleAuth.service.js');
+  const email = `g_new_${Date.now()}@x.com`;
+  const sub = 'sub_new_' + Date.now();
+  const result = findOrCreateUserFromGooglePayload({
+    sub, email, email_verified: true, name: 'New', picture: 'http://x/a.png',
+  });
+  assert.equal(result.kind, 'created');
+  assert.equal(result.user.email, email);
+  assert.equal(result.user.role, 'user');
+  assert.equal(result.user.authProvider, 'google');
+  // 기본 free 구독 자동 생성.
+  const subRow = db.prepare("SELECT plan_code FROM subscriptions WHERE user_id = ?").get(result.user.id);
+  assert.equal(subRow?.plan_code, 'free', '신규 user 는 free 구독');
+});
+
+await step('googleAuth — verifyGoogleIdToken: GOOGLE_CLIENT_ID 미설정 시 명확한 에러', async () => {
+  const prev = process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_ID;
+  try {
+    const { verifyGoogleIdToken, isGoogleLoginConfigured } = await import('../src/services/googleAuth.service.js');
+    assert.equal(isGoogleLoginConfigured(), false);
+    await assert.rejects(
+      () => verifyGoogleIdToken('valid-looking-token-1234567890'),
+      (e) => e.code === 'GOOGLE_NOT_CONFIGURED',
+    );
+  } finally {
+    if (prev !== undefined) process.env.GOOGLE_CLIENT_ID = prev;
+  }
+});
+
+await step('googleAuth — credential 짧거나 빈 값 → INVALID_CREDENTIAL', async () => {
+  process.env.GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'test-id.apps.googleusercontent.com';
+  const { verifyGoogleIdToken } = await import('../src/services/googleAuth.service.js');
+  for (const bad of ['', '   ', 'short', null, undefined]) {
+    await assert.rejects(() => verifyGoogleIdToken(bad), (e) => e.code === 'INVALID_CREDENTIAL', `bad=${bad}`);
+  }
+});
+
+await step('auth.routes — POST /api/auth/google 등록 + authLimiter + credential 로깅 금지 (소스 패턴)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/auth.routes.js', import.meta.url), 'utf-8');
+  assert(/router\.post\(\s*['"]\/google['"][\s\S]*?authLimiter/.test(src), 'POST /google + authLimiter');
+  assert(/router\.get\(\s*['"]\/google\/config['"]/.test(src), 'GET /google/config 등록');
+  assert(/verifyGoogleIdToken/.test(src), 'verifyGoogleIdToken 호출');
+  assert(/findOrCreateUserFromGooglePayload/.test(src), 'find/create 호출');
+  // credential 원문이 console.log/info/warn 인자로 직접 들어가지 않아야 함.
+  assert(!/console\.(log|info|warn|error)\([^)]*credential\b/.test(src), 'credential 로그 금지');
+});
+
+await step('frontend — GoogleLoginButton + AuthContext.loginWithGoogle 통합 + LoginPage 노출 (소스 패턴)', async () => {
+  const fs = await import('node:fs');
+  const read = (rel) => fs.readFileSync(new URL(`../../frontend/src/${rel}`, import.meta.url), 'utf-8');
+  const ctx = read('auth/AuthContext.jsx');
+  assert(/loginWithGoogle/.test(ctx), 'AuthContext 에 loginWithGoogle');
+  const api = read('api/authApi.js');
+  assert(/googleLogin\(credential\)/.test(api), 'authApi.googleLogin');
+  assert(/getGoogleLoginConfig/.test(api), 'authApi.getGoogleLoginConfig');
+  const btn = read('components/GoogleLoginButton.jsx');
+  assert(/VITE_GOOGLE_CLIENT_ID/.test(btn), 'GoogleLoginButton 이 VITE_GOOGLE_CLIENT_ID 사용');
+  assert(/getGoogleLoginConfig/.test(btn), '백엔드 활성 여부 사전 확인');
+  assert(/loginWithGoogle/.test(btn), 'AuthContext 의 loginWithGoogle 호출');
+  const login = read('pages/LoginPage.jsx');
+  assert(/<GoogleLoginButton/.test(login), 'LoginPage 에 GoogleLoginButton');
+  assert(/auth-card__divider/.test(login), '구분선 — 이메일 로그인은 보조 영역');
+  // 금지 표현 — 쇼핑몰 OAuth 처럼 보이지 않게.
+  for (const re of [/스마트스토어\s*계정\s*연동/, /카페24\s*계정\s*연동/, /리뷰\s*자동\s*수집/, /플랫폼\s*OAuth\s*연동/]) {
+    assert(!re.test(login), `금지 표현: ${re}`);
+    assert(!re.test(btn), `금지 표현(btn): ${re}`);
+  }
+});
+
 // ===== CS Reply Tone Server Cache 회귀 =====
 //
 // 비용 절감용 in-memory 캐시. (issueLabel, category, tone, severity, polarity) 만 키로 사용.

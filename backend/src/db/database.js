@@ -108,6 +108,19 @@ ensureColumn('analysis_jobs', 'progress_step', 'progress_step TEXT');
 ensureColumn('analysis_jobs', 'progress_meta', 'progress_meta TEXT');
 ensureColumn('analysis_jobs', 'progress_updated_at', 'progress_updated_at TEXT');
 
+// Google 로그인 — 기존 local 가입 사용자를 깨지 않도록 nullable 컬럼만 추가.
+// auth_provider: 'local'(기본) | 'google'. password 가 없는 Google 전용 계정은 'google'.
+// google_sub: Google ID Token payload.sub (고유 식별자, 안정적). UNIQUE 인덱스로 중복 가입 차단.
+// avatar_url / email_verified / last_login_at: 표시·정책 판정용.
+ensureColumn('users', 'auth_provider',  "auth_provider TEXT NOT NULL DEFAULT 'local'");
+ensureColumn('users', 'google_sub',     'google_sub TEXT');
+ensureColumn('users', 'avatar_url',     'avatar_url TEXT');
+ensureColumn('users', 'email_verified', 'email_verified INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'last_login_at',  'last_login_at TEXT');
+// google_sub 는 UNIQUE 인덱스 — 같은 Google 계정으로 두 user row 가 생기지 않게.
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL'); }
+catch (e) { console.warn('[db] google_sub unique index create skipped:', e.message); }
+
 // llm_usage_logs 확장 컬럼 (이전 마이그레이션엔 없었음 — idempotent 추가).
 // 관리자 콘솔 "AI 분석 로그" 화면이 한 row 로 분석 단위 요약을 보여줄 수 있게 한다.
 ensureColumn('llm_usage_logs', 'analysis_version', 'analysis_version TEXT');

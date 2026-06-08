@@ -52,6 +52,20 @@ export function AuthProvider({ children }) {
     }
   }, [refresh]);
 
+  // Google ID Token credential → 백엔드 /api/auth/google 호출 → /api/me refresh.
+  // 결과 shape 는 login/register 와 동일하게 { ok, error?, code? }.
+  const loginWithGoogle = useCallback(async (credential) => {
+    setError('');
+    try {
+      await authApi.googleLogin(credential);
+      await refresh();
+      return { ok: true };
+    } catch (e) {
+      setError(e.message);
+      return { ok: false, error: e.message, code: e.code };
+    }
+  }, [refresh]);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -74,6 +88,7 @@ export function AuthProvider({ children }) {
     error,
     login,
     register,
+    loginWithGoogle,
     logout,
     refresh,
   };

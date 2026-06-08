@@ -165,3 +165,48 @@
     min-height: 44px;
   }
 }
+
+// ===== Google 로그인 영역 (LoginPage 상단) =====
+.auth-card__google {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.google-login__button {
+  display: flex;
+  justify-content: center;
+  min-height: 40px; // GSI 버튼이 비동기로 렌더되는 동안 layout shift 방지
+  width: 100%;
+}
+.auth-card__legal {
+  font-size: 12px;
+  margin-top: 8px;
+  text-align: center;
+  line-height: 1.5;
+  a {
+    color: #475569;
+    text-decoration: underline;
+    &:hover { color: #1d4ed8; }
+  }
+}
+.auth-card__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  span {
+    background: #fff;
+    padding: 0 8px;
+  }
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(15, 23, 42, 0.10);
+  }
+}

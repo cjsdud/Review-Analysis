@@ -1,9 +1,11 @@
 // 로그인 / 회원가입 페이지 (toggle 방식).
-// 이메일/비밀번호 기반. 로그인 성공 시 from(원래 가려던 곳) 또는 /upload 로 이동.
+// "Google로 계속하기" 를 최상단 기본 옵션으로, 이메일/비밀번호는 보조 옵션으로 둔다.
+// VITE_GOOGLE_CLIENT_ID 또는 백엔드 GOOGLE_CLIENT_ID 미설정 시 Google 버튼이 자동 숨김.
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import BrandTitle from '../components/BrandTitle.jsx';
+import GoogleLoginButton from '../components/GoogleLoginButton.jsx';
 
 // initialMode='login'  → /login 진입 시 로그인 폼
 // initialMode='register' → /signup 진입 시 회원가입 폼
@@ -71,6 +73,26 @@ export default function LoginPage({ initialMode = 'login' }) {
         </p>
 
         {err && <div className="error-banner" role="alert">{err}</div>}
+
+        {/* Google로 계속하기 — 가장 위에. 환경 변수 없으면 자동 숨김. */}
+        <div className="auth-card__google">
+          <GoogleLoginButton
+            text={mode === 'login' ? 'signin_with' : 'continue_with'}
+            onSuccess={() => navigate(from, { replace: true })}
+            onError={(m) => setErr(m)}
+          />
+          <p className="auth-card__legal muted">
+            계속하면 ReviewFit{' '}
+            <Link to="/terms">이용약관</Link>
+            {' 및 '}
+            <Link to="/privacy">개인정보처리방침</Link>
+            에 동의한 것으로 간주됩니다.
+          </p>
+        </div>
+
+        <div className="auth-card__divider" aria-hidden="true">
+          <span>또는 이메일로 {mode === 'login' ? '로그인' : '가입'}</span>
+        </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
           {mode === 'register' && (
@@ -177,6 +199,9 @@ function humanize(code, msg) {
   if (code === 'INVALID_INPUT') return '입력값을 확인해 주세요.';
   if (code === 'SIGNUP_DISABLED') return '현재 신규 가입이 제한되어 있습니다.';
   if (code === 'RATE_LIMITED') return '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.';
+  if (code === 'GOOGLE_EMAIL_UNVERIFIED') return '확인되지 않은 Google 계정이에요. 다른 Google 계정으로 시도해 주세요.';
+  if (code === 'GOOGLE_LOGIN_FAILED') return 'Google 로그인에 실패했어요. 잠시 후 다시 시도해주세요.';
+  if (code === 'GOOGLE_NOT_CONFIGURED') return 'Google 로그인 설정이 완료되지 않았어요.';
   if (msg) return msg;
   return '요청 중 오류가 발생했습니다.';
 }

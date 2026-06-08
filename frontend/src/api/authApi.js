@@ -34,3 +34,21 @@ export async function deleteAccount() {
   const { data } = await client.delete('/me/account', opts);
   return data;
 }
+
+// Google 로그인 — 백엔드가 GOOGLE_CLIENT_ID 로 ID Token 을 검증한 뒤 ReviewFit JWT(쿠키) 발급.
+// credential: Google Identity Services 의 callback 으로 받은 ID Token 문자열.
+export async function googleLogin(credential) {
+  const { data } = await client.post('/auth/google', { credential }, opts);
+  return data;
+}
+
+// Google 로그인 기능 활성 여부 — 백엔드 GOOGLE_CLIENT_ID 미설정 시 false.
+// 프론트는 VITE_GOOGLE_CLIENT_ID 도 같이 확인해 둘 중 하나라도 비면 버튼을 숨긴다.
+export async function getGoogleLoginConfig() {
+  try {
+    const { data } = await client.get('/auth/google/config');
+    return Boolean(data?.enabled);
+  } catch {
+    return false;
+  }
+}

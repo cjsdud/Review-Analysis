@@ -12,6 +12,10 @@
     <meta property="og:site_name" content="ReviewFit" />
     <!-- favicon: 컴팩트 RF 아이콘 (SVG). 해상도 무관하게 또렷. -->
     <link rel="icon" type="image/svg+xml" href="/src/assets/branding/reviewfit-logo-compact.svg" />
+    <!-- Google Identity Services — "Google로 계속하기" 버튼 렌더용.
+         VITE_GOOGLE_CLIENT_ID 가 비어 있으면 GoogleLoginButton 이 자동으로 숨겨지지만,
+         script 자체는 항상 로드해 두어 클라이언트 측 분기 비용을 0 으로 둔다. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>
