@@ -18,4 +18,12 @@ export default defineConfig({
       },
     },
   },
+  // Vitest 설정 — jsdom + RTL setup 파일. css: false 로 SCSS 컴파일 스킵해 빠른 실행.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/setupTests.js'],
+    css: false,
+    include: ['src/**/*.{test,spec}.{js,jsx}'],
+  },
 });
