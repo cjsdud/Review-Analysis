@@ -13,6 +13,7 @@ import historyRoutes from './routes/history.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import billingRoutes from './routes/billing.routes.js';
+import plansRoutes from './routes/plans.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import announcementsRoutes from './routes/announcements.routes.js';
 import { aiMode } from './services/aiClient.service.js';
@@ -53,6 +54,8 @@ app.use('/api/auth', authRoutes); // POST /register /login /logout, GET /me
 // GET /api/me 별칭 — /api/auth/me 와 동일하게 동작
 app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
 app.use('/api/billing', billingRoutes);
+// 공개 플랜 features SSOT — PLAN_FEATURES + analysisModes 노출. PricingPage 사용.
+app.use('/api/plans', plansRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/announcements', announcementsRoutes);
 app.use('/api/uploads', uploadRoutes);

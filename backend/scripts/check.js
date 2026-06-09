@@ -4172,6 +4172,31 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== Pricing SSOT 회귀 =====
+//
+// /api/plans/features 는 PLAN_FEATURES + analysisModes 의 SSOT. 라우트 import + 핵심 키 노출 확인.
+
+await step('plans.routes — /api/plans/features 4 플랜 + limits/features/analysisModes 노출', async () => {
+  const plansRoutes = (await import('../src/routes/plans.routes.js')).default;
+  assert(plansRoutes, 'router export 필요');
+  // 라우터 내부 구조 정적 검증.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/plans.routes.js', import.meta.url), 'utf-8');
+  assert(/PLAN_CODES/.test(src), 'PLAN_CODES 기반 4 플랜');
+  assert(/ANALYSIS_MODES/.test(src), 'analysisModes 노출');
+  for (const key of ['monthlyAnalysisLimit', 'monthlyFileLimit', 'monthlyCsReplyLimit',
+                     'canExportFullExcel', 'canUsePrecisionAnalysis', 'periodComparison']) {
+    assert(new RegExp(key).test(src), `${key} 노출`);
+  }
+});
+
+await step('server — /api/plans 마운트', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/server.js', import.meta.url), 'utf-8');
+  assert(/import\s+plansRoutes/.test(src), 'plansRoutes import');
+  assert(/app\.use\(\s*['"]\/api\/plans['"]/.test(src), '/api/plans mount');
+});
+
 // ===== Google Login 회귀 =====
 //
 // findOrCreateUserFromGooglePayload 의 핵심 정책 검증.
