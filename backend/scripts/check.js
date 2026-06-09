@@ -4172,6 +4172,49 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== Infra (render.yaml + docs) 회귀 =====
+
+await step('infra — render.yaml 존재 + 필수 환경 변수 / startCommand / disk mountPath', async () => {
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const repoRoot = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
+  const yamlPath = path.join(repoRoot, 'render.yaml');
+  assert(fs.existsSync(yamlPath), 'render.yaml 가 루트에 존재해야 함');
+  const yaml = fs.readFileSync(yamlPath, 'utf-8');
+  // 필수 변수 / 설정 점검 (정적 검사 — yaml 파서 도입 없이).
+  for (const key of [
+    'AUTH_JWT_SECRET', 'DEMO_ALLOW_ANONYMOUS', 'NODE_ENV',
+    'GOOGLE_CLIENT_ID', 'VITE_GOOGLE_CLIENT_ID',
+    'DB_PATH', 'CLIENT_ORIGIN', 'ADMIN_EMAILS',
+    'AUTH_RATE_LIMIT_MAX', 'UPLOAD_RATE_LIMIT_MAX', 'AI_REPLY_RATE_LIMIT_MAX',
+    'ENABLE_ANALYSIS_STARTUP_RECOVERY',
+  ]) {
+    assert(new RegExp(`key:\\s*${key}\\b`).test(yaml), `render.yaml 에 ${key} 필요`);
+  }
+  assert(/buildCommand:\s*npm run render:build/.test(yaml), 'buildCommand');
+  assert(/startCommand:\s*npm run render:start/.test(yaml), 'startCommand');
+  assert(/healthCheckPath:\s*\/api\/health/.test(yaml), 'healthCheckPath');
+  assert(/mountPath:\s*\/var\/data/.test(yaml), 'persistent disk mountPath');
+  // DEMO_ALLOW_ANONYMOUS 가 false 로 고정되어 있어야 함 (production 부팅 가드 위반 방지).
+  assert(/key:\s*DEMO_ALLOW_ANONYMOUS[\s\S]{0,80}value:\s*"false"/.test(yaml),
+    'DEMO_ALLOW_ANONYMOUS 가 "false" 로 고정');
+  // NODE_ENV=production.
+  assert(/key:\s*NODE_ENV[\s\S]{0,40}value:\s*production/.test(yaml), 'NODE_ENV=production');
+});
+
+await step('infra — Render Blueprint 가이드 문서 존재', async () => {
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const repoRoot = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
+  const doc = path.join(repoRoot, 'docs/render-blueprint.md');
+  assert(fs.existsSync(doc), 'docs/render-blueprint.md 존재');
+  const text = fs.readFileSync(doc, 'utf-8');
+  assert(/Worker 분리 계획/.test(text), 'Worker 분리 섹션');
+  assert(/AUTH_JWT_SECRET/.test(text), '필수 변수 안내');
+});
+
 // ===== Pricing SSOT 회귀 =====
 //
 // /api/plans/features 는 PLAN_FEATURES + analysisModes 의 SSOT. 라우트 import + 핵심 키 노출 확인.

@@ -1,0 +1,115 @@
+# Render Blueprint — ReviewFit 단일 web service (백엔드 Express 가 프론트 정적 파일까지 서빙).
+#
+# 현재 구조:
+#   - 백엔드: Node 20 / Express + better-sqlite3.
+#   - 프론트: Vite build → frontend/dist (백엔드가 production 모드에서 express.static 으로 서빙).
+#   - 비동기 분석 job: in-process (setImmediate + heartbeat). BullMQ/Redis 미도입.
+#   - DB: SQLite. 운영 영구 저장을 위해 Persistent Disk 필수 — env DB_PATH 가 disk mount 경로 내부를 가리켜야 한다.
+#
+# Worker 분리 TODO (이번 PR 범위 밖):
+#   - 1단계: Render Background Worker 서비스로 분석 job 분리.
+#   - 2단계: Redis + BullMQ 도입 후 worker 가 큐에서 pull → 본 web 은 enqueue 만.
+#   - 단, in-process 흐름은 그대로 두고(서버 재시작 시 recoverStaleAnalysisJobs 가 stale 'processing' row 를 'failed' 로 전이),
+#     아래 web service 는 변경 없이 운영. worker 도입 시 services: 에 type: worker 항목 추가.
+#
+# 환경 변수 가이드: docs/render-deployment.md
+# Google 로그인 설정 가이드: docs/google-login-setup.md
+
+services:
+  - type: web
+    name: reviewfit
+    runtime: node
+    plan: free  # 운영 트래픽 발생 시 starter 이상으로 상향 권장
+    autoDeploy: true
+    buildCommand: npm run render:build
+    startCommand: npm run render:start
+    healthCheckPath: /api/health
+
+    disk:
+      name: reviewfit-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      # ── 서버 기본 ────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: CLIENT_ORIGIN
+        sync: false  # Render 가 발급한 본 서비스 URL (예: https://reviewfit-xxxx.onrender.com) 을 직접 입력
+      - key: TRUST_PROXY_HOPS
+        value: 1
+      - key: MAX_UPLOAD_BYTES
+        value: 10485760
+
+      # ── 인증 (REQUIRED, production 부팅 강제 검사) ───────────
+      - key: AUTH_JWT_SECRET
+        # 32자 이상 강한 임의 값. dev fallback 값 사용 시 부팅 거부.
+        sync: false
+      - key: AUTH_COOKIE_NAME
+        value: reviewfit_token
+      - key: AUTH_TOKEN_EXPIRES_IN
+        value: 7d
+      - key: DEMO_ALLOW_ANONYMOUS
+        # production 에서 true 는 부팅 거부 (익명 교차 접근 방지). 빈 값/false 만 허용.
+        value: "false"
+
+      # ── 관리자 부트스트랩 ────────────────────────────────────
+      - key: ADMIN_EMAILS
+        # 쉼표 구분. 예: owner@example.com,ops@example.com
+        sync: false
+
+      # ── Google 로그인 (선택) ─────────────────────────────────
+      - key: GOOGLE_CLIENT_ID
+        # Google Cloud Console → OAuth 2.0 Client ID (Web application). 미설정 시 /api/auth/google 는 503.
+        # 같은 값을 빌드 시 VITE_GOOGLE_CLIENT_ID 로도 노출 → 프론트 버튼 표시.
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        # GOOGLE_CLIENT_ID 와 동일 값. VITE_ 변수는 빌드 타임 인라인 — env 변경 후 재배포 필수.
+        sync: false
+
+      # ── DB / 임시 데이터 ────────────────────────────────────
+      - key: DB_PATH
+        # Persistent Disk 마운트 경로 내부 — 재배포해도 데이터 보존.
+        value: /var/data/reviewfit/app.db
+      - key: UPLOAD_ROWS_TTL_MIN
+        value: 60
+      - key: UPLOAD_CLEANUP_INTERVAL_MIN
+        value: 10
+
+      # ── LLM (선택) ──────────────────────────────────────────
+      - key: LLM_PROVIDER
+        value: mock  # openai 사용 시 'openai' 로 변경 후 OPENAI_API_KEY 채우기
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_TIMEOUT_MS
+        value: 20000
+
+      # ── Rate Limit (선택, 기본값 그대로 두면 됨) ───────────
+      - key: AUTH_RATE_LIMIT_MAX
+        value: 5
+      - key: UPLOAD_RATE_LIMIT_MAX
+        value: 10
+      - key: AI_REPLY_RATE_LIMIT_MAX
+        value: 50
+
+      # ── Analysis Job 안정성 ────────────────────────────────
+      - key: ENABLE_ANALYSIS_STARTUP_RECOVERY
+        value: "true"
+      - key: ANALYSIS_STALE_PROCESSING_MINUTES
+        value: 30
+
+# ─────────────────────────────────────────────────────────────
+# (참고) worker 서비스 분리 예시 — 현재는 활성화하지 않는다.
+#  - type: worker
+#    name: reviewfit-analysis-worker
+#    runtime: node
+#    plan: starter
+#    buildCommand: npm --prefix backend ci --omit=dev
+#    startCommand: node backend/src/workers/analysisJobWorker.js
+#    envVars:
+#      - fromService: { type: web, name: reviewfit, envVarKey: AUTH_JWT_SECRET }
+#      - fromService: { type: web, name: reviewfit, envVarKey: DB_PATH }
+#      - key: REDIS_URL
+#        sync: false
