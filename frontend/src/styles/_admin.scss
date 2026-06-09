@@ -303,3 +303,100 @@
   &--maintenance { background: $danger-soft;  border-color: $danger-border; }
   &--promotion   { background: $success-soft; border-color: rgba($success, 0.3); }
 }
+
+// ===== AdminLlmLogsPage 모바일 reflow =====
+// 데스크톱: 13컬럼 테이블 (.admin-llm__desktop) 사용.
+// 모바일(≤768px): 테이블 대신 .admin-llm__mobile 카드 리스트.
+
+.admin-llm__desktop { display: block; }
+.admin-llm__mobile  { display: none; list-style: none; padding: 0; margin: 0; }
+
+@media (max-width: $bp-tablet) {
+  .admin-llm__desktop { display: none; }
+  .admin-llm__mobile  { display: block; }
+}
+
+.admin-llm-card {
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-md;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  &__time {
+    font-weight: 700;
+    font-size: 13px;
+    color: $text-main;
+  }
+  &__user {
+    font-size: 12px;
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  &__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    padding: 4px 0;
+    border-top: 1px dashed rgba(15, 23, 42, 0.06);
+    &:first-of-type { border-top: none; }
+  }
+  &__label {
+    color: $text-sub;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  &__mono {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    word-break: break-all;
+    text-align: right;
+  }
+  &__metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 10px 0 8px;
+    padding: 10px;
+    background: $surface-2;
+    border-radius: $r-sm;
+  }
+  &__metric-label {
+    font-size: 11px;
+    color: $text-sub;
+    margin-bottom: 2px;
+  }
+  &__metric-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: $text-main;
+  }
+  &__tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 6px 0;
+  }
+  &__toggle {
+    margin-top: 6px;
+    width: 100%;
+  }
+  &__detail {
+    margin-top: 8px;
+    padding: 10px;
+    background: $surface-2;
+    border-radius: $r-sm;
+    font-size: 12px;
+    line-height: 1.7;
+    code { font-size: 11px; }
+  }
+}

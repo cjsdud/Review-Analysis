@@ -4233,12 +4233,15 @@ await step('googleAuth — 같은 email 의 local user 가 있고 email_verified
 await step('googleAuth — 같은 email 의 local user 이지만 email_verified=false → GOOGLE_EMAIL_UNVERIFIED', async () => {
   const { default: db } = await import('../src/db/database.js');
   const { findOrCreateUserFromGooglePayload } = await import('../src/services/googleAuth.service.js');
-  const uid = 'g_unverified_' + Date.now();
+  const { nanoid } = await import('nanoid');
+  // Date.now() 가 직전 테스트의 sub 와 ms 단위 충돌하면 bySub 가 잘못 매치 → returning 으로 빠진다.
+  // nanoid 로 충돌 없는 sub 를 만들어 의도된 byEmail 경로로 강제.
+  const uid = 'g_unverified_' + nanoid(6);
   const email = `${uid}@x.com`;
   db.prepare("INSERT INTO users (id, email, password_hash, name, role) VALUES (?,?,?,?,?)")
     .run(uid, email, 'h', 'X', 'user');
   assert.throws(
-    () => findOrCreateUserFromGooglePayload({ sub: 'sub_' + Date.now(), email, email_verified: false }),
+    () => findOrCreateUserFromGooglePayload({ sub: 'sub_unverified_' + nanoid(8), email, email_verified: false }),
     (e) => e.code === 'GOOGLE_EMAIL_UNVERIFIED',
     '미확인 이메일 거부',
   );

@@ -155,7 +155,9 @@ export default function AdminLlmLogsPage() {
       ) : !data?.logs?.length ? (
         <div className="muted">조건에 맞는 로그가 없습니다.</div>
       ) : (
-        <div className="table-scroll">
+        <>
+        {/* 데스크톱: 13컬럼 풀 테이블 (≥769px) — 모바일에서는 CSS 로 숨김 */}
+        <div className="admin-llm__desktop table-scroll">
         <table className="admin-table">
           <thead>
             <tr>
@@ -225,6 +227,88 @@ export default function AdminLlmLogsPage() {
           </tbody>
         </table>
         </div>
+
+        {/* 모바일(≤768px): 카드 reflow — 데스크톱 테이블은 CSS 로 숨김.
+            가장 자주 보는 필드(시간/사용자/요청/비용/토큰/cache/fallback) 를 상단에,
+            나머지 진단 정보는 "상세" 토글 펼침. */}
+        <ul className="admin-llm__mobile">
+          {data.logs.map((l) => (
+            <li key={`m-${l.id}`} className="admin-llm-card">
+              <div className="admin-llm-card__head">
+                <span className="admin-llm-card__time">{formatDate(l.createdAt)}</span>
+                <span className={`status-badge ${PROVIDER_TONE[l.provider] || 'is-neutral'}`}>
+                  {l.provider}
+                </span>
+              </div>
+              <div className="admin-llm-card__user muted">
+                {l.userEmail || l.userId || '—'}
+              </div>
+              <div className="admin-llm-card__row">
+                <span className="admin-llm-card__label">요청</span>
+                <span>{REQ_TYPE_LABEL[l.requestType] || l.requestType}</span>
+              </div>
+              <div className="admin-llm-card__row">
+                <span className="admin-llm-card__label">Model</span>
+                <span className="admin-llm-card__mono">{l.model || '—'}</span>
+              </div>
+              <div className="admin-llm-card__metrics">
+                <div>
+                  <div className="admin-llm-card__metric-label">토큰</div>
+                  <div className="admin-llm-card__metric-value">{formatNumber(l.totalTokens)}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    in {formatNumber(l.inputTokens)} / out {formatNumber(l.outputTokens)}
+                  </div>
+                </div>
+                <div>
+                  <div className="admin-llm-card__metric-label">예상 비용</div>
+                  <div className="admin-llm-card__metric-value">{formatCost(l.estimatedCostUsd)}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {l.openaiCalled ? 'OpenAI 호출' : '미호출'}
+                  </div>
+                </div>
+              </div>
+              <div className="admin-llm-card__tags">
+                {l.cacheHitCount > 0 && <span className="tag tag--neutral">cache {l.cacheHitCount}</span>}
+                {l.fallbackUsed && (
+                  <span className="tag tag--danger">
+                    fallback{l.fallbackProvider ? `(${l.fallbackProvider})` : ''}
+                  </span>
+                )}
+                {!l.cacheHitCount && !l.fallbackUsed && (
+                  <span className="muted" style={{ fontSize: 11 }}>—</span>
+                )}
+              </div>
+              {l.analysisId && (
+                <div className="admin-llm-card__row">
+                  <span className="admin-llm-card__label">Analysis</span>
+                  <code style={{ fontSize: 11 }}>{l.analysisId}</code>
+                </div>
+              )}
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm admin-llm-card__toggle"
+                onClick={() => setOpenId(openId === l.id ? null : l.id)}
+              >
+                {openId === l.id ? '상세 닫기' : '상세 보기'}
+              </button>
+              {openId === l.id && (
+                <div className="admin-llm-card__detail muted">
+                  <div>promptVersion: <code>{l.promptVersion || '—'}</code></div>
+                  <div>analysisVersion: <code>{l.analysisVersion || '—'}</code></div>
+                  <div>리뷰 수: {formatNumber(l.reviewCount)}</div>
+                  <div>mini 재분석: {formatNumber(l.miniReanalysisCount)} · cacheMiss: {formatNumber(l.cacheMissCount)}</div>
+                  <div>status: <strong>{l.status}</strong></div>
+                  {l.errorMessage && (
+                    <div style={{ color: '#b91c1c', marginTop: 6 }}>
+                      <strong>오류:</strong> <code>{l.errorMessage}</code>
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        </>
       )}
 
       {totalPages > 1 && (
