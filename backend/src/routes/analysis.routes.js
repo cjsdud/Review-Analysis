@@ -471,14 +471,30 @@ router.get('/:id/period-comparison', requireAuth, async (req, res) => {
     });
   }
 
-  // products 로드.
-  const productRows = db
-    .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
-    .all(req.params.id);
-  const products = productRows.map((r) => JSON.parse(r.data));
-
-  // mode + custom 인자 파싱.
+  // products 로드. productKey query 가 있으면 해당 상품만 — 상품 상세 페이지의
+  // 기간별 변화 섹션 전용. 없으면 전체 (대시보드).
   const q = req.query || {};
+  const productKey = (q.productKey || '').trim();
+  let productRows;
+  if (productKey) {
+    productRows = db
+      .prepare('SELECT data FROM product_analyses WHERE analysis_id = ? AND product_key = ?')
+      .all(req.params.id, productKey);
+  } else {
+    productRows = db
+      .prepare('SELECT data FROM product_analyses WHERE analysis_id = ?')
+      .all(req.params.id);
+  }
+  const products = productRows.map((r) => JSON.parse(r.data));
+  if (productKey && !products.length) {
+    return res.status(404).json({
+      available: false,
+      locked: false,
+      reason: 'product_not_found',
+      message: '해당 상품의 분석 결과를 찾을 수 없어요.',
+    });
+  }
+
   const requestedMode = String(q.mode || PERIOD_MODES.RECENT_30_VS_PREVIOUS_30);
   const validModes = Object.values(PERIOD_MODES);
   const mode = validModes.includes(requestedMode) ? requestedMode : PERIOD_MODES.RECENT_30_VS_PREVIOUS_30;

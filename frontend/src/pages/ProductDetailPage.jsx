@@ -13,6 +13,7 @@ import SectionNavigator from '../components/SectionNavigator.jsx';
 import AccessError from '../components/AccessError.jsx';
 import { getProductDetail, exportXlsxUrl } from '../api/analysisApi.js';
 import PlanGatedExport, { PrintWatermark } from '../components/PlanGatedExport.jsx';
+import PeriodComparisonSection from '../components/PeriodComparisonSection.jsx';
 import { getReviewsForIssue } from '../utils/getReviewsForIssue.js';
 
 export default function ProductDetailPage() {
@@ -175,6 +176,7 @@ export default function ProductDetailPage() {
         sections={[
           { id: 'sec-product-summary', label: '상품 요약' },
           product.reviewHighlights ? { id: 'sec-product-review-reaction', label: '리뷰 반응' } : null,
+          { id: 'sec-product-period-comparison', label: '기간별 변화' },
           { id: 'sec-product-core-issues', label: '핵심 문제' },
           { id: 'sec-product-detail-actions', label: '수정 체크리스트' },
           (product.replyTemplates || []).length > 0 ? { id: 'sec-product-replies', label: 'CS 답글 초안' } : null,
@@ -231,6 +233,16 @@ export default function ProductDetailPage() {
           />
         </SectionCard>
       )}
+
+      {/* 상품별 기간 변화 — Pro+ 잠금. 작성일 없는 분석은 빈 상태 안내.
+          분석 시점에 미리 만든 결과는 전체 기준이므로 lazy fetch 만 사용 (initial 없음). */}
+      <PeriodComparisonSection
+        analysisId={analysisId}
+        productKey={product.productKey || product.productName}
+        sectionId="sec-product-period-comparison"
+        title="이 상품의 기간별 리뷰 반응 변화"
+        subtitle="작성일이 있는 리뷰를 기준으로 이 상품의 기간별 반응 변화를 비교합니다."
+      />
 
       {/* 섹션 1: 이 상품의 핵심 문제 */}
       <SectionCard

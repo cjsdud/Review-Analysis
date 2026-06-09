@@ -35,7 +35,14 @@ function pctPointLabel(d) {
   return `${n > 0 ? '+' : ''}${n}%p`;
 }
 
-export default function PeriodComparisonSection({ analysisId, initial }) {
+export default function PeriodComparisonSection({
+  analysisId,
+  initial,
+  productKey,
+  title,
+  subtitle,
+  sectionId = 'sec-period-comparison',
+}) {
   const navigate = useNavigate();
   const [mode, setMode] = useState(initial?.requestedMode || 'recent_30_vs_previous_30');
   const [data, setData] = useState(initial || null);
@@ -63,24 +70,26 @@ export default function PeriodComparisonSection({ analysisId, initial }) {
         if (!cancelled) setLoading(false);
       }
     }
+    // productKey 가 주어지면 모든 요청에 함께 보낸다 — 상품 상세에서 해당 상품 데이터만.
+    const productScope = productKey ? { productKey } : {};
     if (mode === 'custom') {
       if (!customApplied) return;
-      const q = { mode, ...customForm };
+      const q = { mode, ...customForm, ...productScope };
       load(q);
     } else {
-      load({ mode });
+      load({ mode, ...productScope });
     }
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, customApplied, analysisId]);
+  }, [mode, customApplied, analysisId, productKey]);
 
   // 잠금 (Free/Starter).
   if (data?.locked) {
     return (
       <SectionCard
-        id="sec-period-comparison"
-        title="기간별 리뷰 반응 변화"
-        subtitle="리뷰가 시간이 지나며 어떻게 달라졌는지 확인해 보세요."
+        id={sectionId}
+        title={title || '기간별 리뷰 반응 변화'}
+        subtitle={subtitle || '리뷰가 시간이 지나며 어떻게 달라졌는지 확인해 보세요.'}
       >
         <div className="period-locked">
           <div className="period-locked__icon" aria-hidden="true">🔒</div>
@@ -103,9 +112,9 @@ export default function PeriodComparisonSection({ analysisId, initial }) {
   if (data && !data.available && data.reason === 'missing_review_dates') {
     return (
       <SectionCard
-        id="sec-period-comparison"
-        title="기간별 리뷰 반응 변화"
-        subtitle="작성일이 있는 리뷰를 기준으로 기간별 반응 변화를 비교합니다."
+        id={sectionId}
+        title={title || '기간별 리뷰 반응 변화'}
+        subtitle={subtitle || '작성일이 있는 리뷰를 기준으로 기간별 반응 변화를 비교합니다.'}
       >
         <div className="period-empty">
           <div className="period-empty__icon" aria-hidden="true">🗓️</div>
@@ -122,7 +131,7 @@ export default function PeriodComparisonSection({ analysisId, initial }) {
     <SectionCard
       id="sec-period-comparison"
       title="기간별 리뷰 반응 변화"
-      subtitle="작성일이 있는 리뷰를 기준으로 최근 기간과 이전 기간의 반응 변화를 비교합니다."
+      subtitle={subtitle || '작성일이 있는 리뷰를 기준으로 최근 기간과 이전 기간의 반응 변화를 비교합니다.'}
     >
       <div className="period-mode-toggle" role="tablist" aria-label="기간 비교 방식">
         {MODES.map((m) => (
