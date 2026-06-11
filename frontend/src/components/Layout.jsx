@@ -202,7 +202,7 @@ export default function Layout() {
         )}
 
         <div className="sidebar__footer">
-          <div>리뷰 엑셀만 올리면 상품별 불만과 상세페이지 수정안을 3분 안에.</div>
+          <div>리뷰 엑셀만 올리면 상품별 불만과 상세페이지 수정안을 빠르게.</div>
           <div className="sidebar__legal">
             <Link to="/terms">이용약관</Link>
             <span className="sidebar__legal-sep" aria-hidden="true">·</span>

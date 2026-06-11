@@ -8,6 +8,21 @@ process.env.NODE_ENV = 'test';
 process.env.DISABLE_RATE_LIMIT = 'true';
 
 import assert from 'node:assert';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+
+// 매 실행마다 fresh 임시 DB — check 를 idempotent 하게.
+// (이전에는 backend/data/app.db 를 그대로 써서 두 번째 실행부터 중복 email/row 로 10건씩
+//  실패했다. database.js 는 dynamic import 시점에 DB_PATH 를 읽으므로 여기서 지정하면 안전.)
+const CHECK_DB = path.join(os.tmpdir(), `reviewfit-check-${Date.now()}-${process.pid}.db`);
+process.env.DB_PATH = CHECK_DB;
+function cleanupCheckDb() {
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.unlinkSync(CHECK_DB + suffix); } catch { /* ignore */ }
+  }
+}
+process.on('exit', cleanupCheckDb);
 
 const failures = [];
 async function step(name, fn) {
@@ -1098,6 +1113,60 @@ await step('reviewClassification — 실제 사례 회귀: rating=2 + "비싸긴
   assert.equal(m.hasPriceConcession('비싸긴해도 돈값을 함'), true);
   assert.equal(m.hasPriceConcession('비싸지만 만족합니다'), true);
   assert.equal(m.hasPriceConcession('가성비 별로'), false);
+});
+
+// 베타 출시 전 필수 회귀 (audit §14) — 순수 긍정 / 봉제 불량 / 큰 사이즈 다운 방향.
+// 기존 step 이 케이스 1(가격 양보)·2(사이즈 업)·5(색상 차이)는 커버하므로 남은 3·4·6 만 추가.
+await step('분류 회귀 — 순수 긍정: improvementIssues 비고 + CS 답글 사과 없음', async () => {
+  const cls = await import('../src/services/reviewClassification.service.js');
+  const tpl = await import('../src/services/replyTemplates.service.js');
+  const r = cls.classifyReview({
+    id: 'pp1', productName: 'P', rating: 5,
+    content: '핏이 예쁘고 원단도 좋아요. 배송도 빨랐습니다.',
+  });
+  assert.equal(r.sentiment, 'positive', `순수 긍정은 positive (실제: ${r.sentiment})`);
+  assert.equal((r.improvementIssues || []).length, 0,
+    `순수 긍정은 improvementIssues 비어야 함: ${JSON.stringify(r.improvementIssues)}`);
+  // CS 답글 사과 가드 — positive 는 사과 자체가 불가.
+  const apology = tpl.shouldApologizeForReply({ sentiment: 'positive', polarity: 'positive' });
+  assert.equal(apology.mayApologize, false, '긍정 리뷰에 사과 금지');
+});
+
+await step('분류 회귀 — 봉제 불량: negative + 마감/불량 issue + 강한 사과 허용', async () => {
+  const cls = await import('../src/services/reviewClassification.service.js');
+  const tpl = await import('../src/services/replyTemplates.service.js');
+  const r = cls.classifyReview({
+    id: 'q1', productName: 'P', rating: 1,
+    content: '한 번 입었는데 봉제가 터졌어요. 마감이 너무 아쉬워요.',
+  });
+  assert.equal(r.sentiment, 'negative', `봉제 불량은 negative (실제: ${r.sentiment})`);
+  const qualityIssue = (r.improvementIssues || []).find((i) => /마감|불량/.test(i.category || ''));
+  assert(qualityIssue, `마감/불량 improvementIssue 필요: ${JSON.stringify(r.improvementIssues)}`);
+  // 실제 불편 — 사과 허용 (강한 이슈면 강한 사과).
+  const apology = tpl.shouldApologizeForReply({
+    sentiment: 'negative', polarity: 'negative', severity: 'high',
+    category: '마감/불량', issueLabel: qualityIssue.issueLabel,
+  });
+  assert.equal(apology.mayApologize, true, '실제 불량은 사과 가능');
+});
+
+await step('분류 회귀 — 큰 사이즈(다운 방향): 추천 조치에 "크게/업" 금지', async () => {
+  const cls = await import('../src/services/reviewClassification.service.js');
+  const dir = await import('../src/services/ai/sizeDirection.js');
+  const text = '허리가 너무 커서 흘러내려요. 한 치수 작게 살 걸 그랬어요.';
+  assert.equal(dir.detectSizeDirection(text), 'downsize', '다운 방향 감지');
+  const r = cls.classifyReview({ id: 'd1', productName: 'P', rating: 3, content: text });
+  // rule 결과의 추천 조치(action)에 반대 방향("크게/업") 문구가 없어야 한다.
+  const actions = (r.categories || []).map((c) => c.action || '').join(' ');
+  assert(!/한\s*치수\s*크게|크게\s*선택|사이즈\s*업/.test(actions),
+    `다운 방향 리뷰에 업 방향 추천 금지: ${actions}`);
+  // sanitize guard 를 통과해도 동일.
+  const sanitized = dir.sanitizeSizeRecommendationActions({
+    actions: ['여유 있는 핏을 원하면 한 치수 크게 선택하세요.'],
+    text,
+  });
+  assert(!sanitized.some((a) => /한\s*치수\s*크게|크게\s*선택|사이즈\s*업/.test(a)),
+    `sanitize 후에도 업 방향 잔존: ${JSON.stringify(sanitized)}`);
 });
 
 await step('reviewClassification — 사이즈 추천 방향: "3사이즈갈걸" → 작게 나옴(=upsize 추천)', async () => {
