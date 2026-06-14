@@ -123,6 +123,31 @@
   }
 }
 
+// 샘플 리뷰 데이터 다운로드 — 직접 업로드 흐름 체험용. 데모 데이터임을 명확히.
+.sample-download {
+  border: 1px solid $border;
+  border-radius: $r-md;
+  background: $surface;
+  padding: $sp-4;
+  margin: $sp-4 0;
+
+  &__title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: $sp-2;
+  }
+  &__desc {
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0 0 $sp-3;
+  }
+  &__links {
+    display: flex;
+    gap: $sp-2;
+    flex-wrap: wrap;
+  }
+}
+
 // 실제 리뷰 파일 업로드 안내 (신뢰 톤)
 .real-file-hint {
   margin-top: $sp-5;

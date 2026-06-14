@@ -4241,6 +4241,54 @@ await step('periodComparison — 룰 기반 요약은 "줄어든/늘어난 것�
   assert(/줄어든 것으로 보입|늘어난 것으로 보입/.test(summary), `톤 누락: ${summary}`);
 });
 
+// ===== 베타 데모 샘플 데이터 회귀 =====
+
+await step('beta demo sample — 파일 존재 + 360 리뷰 / 8 상품 / 필수 컬럼 / PII 없음', async () => {
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const repoRoot = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
+  const xlsx = path.join(repoRoot, 'frontend/public/samples/reviewfit_beta_demo_reviews.xlsx');
+  const csv = path.join(repoRoot, 'frontend/public/samples/reviewfit_beta_demo_reviews.csv');
+  const insights = path.join(repoRoot, 'sample-data/reviewfit_beta_demo_expected_insights.json');
+  assert(fs.existsSync(xlsx), '데모 xlsx 존재');
+  assert(fs.existsSync(csv), '데모 csv 존재');
+  assert(fs.existsSync(insights), 'expected_insights.json 존재');
+
+  // CSV 파싱 — 따옴표 없는 단순 구조라 라인 split 으로 충분. BOM 제거.
+  const raw = fs.readFileSync(csv, 'utf-8').replace(/^﻿/, '');
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+  const header = lines[0].split(',');
+  const dataLines = lines.slice(1);
+  // 필수 컬럼
+  for (const col of ['리뷰ID', '상품명', '옵션명', '별점', '작성일', '리뷰내용']) {
+    assert(header.includes(col), `필수 컬럼 ${col} 존재 (헤더: ${header.join('|')})`);
+  }
+  assert.equal(dataLines.length, 360, `리뷰 360건 기대 (실제 ${dataLines.length})`);
+  // 상품 수 8개 (상품명 컬럼 인덱스 기준)
+  const nameIdx = header.indexOf('상품명');
+  const products = new Set(dataLines.map((l) => l.split(',')[nameIdx]));
+  assert.equal(products.size, 8, `상품 8개 기대 (실제 ${products.size})`);
+
+  // PII 패턴 검사 — 이메일 / 전화번호 / 주민번호 / 긴 주문번호 형태가 없어야 함.
+  assert(!/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(raw), '이메일 패턴 없음');
+  assert(!/01[0-9][-\s]?\d{3,4}[-\s]?\d{4}/.test(raw), '전화번호 패턴 없음');
+  assert(!/\d{6}[-\s]\d{7}/.test(raw), '주민번호 패턴 없음');
+  assert(!/\b\d{10,}\b/.test(raw), '긴 주문번호(10자리+) 패턴 없음');
+});
+
+await step('beta demo sample — UI / 문서에 "실제 고객 리뷰 아님" 안내 존재', async () => {
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const path = await import('node:path');
+  const repoRoot = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
+  const uploadPage = fs.readFileSync(path.join(repoRoot, 'frontend/src/pages/UploadPage.jsx'), 'utf-8');
+  assert(/실제 고객 리뷰가 아닙니다|데모 데이터/.test(uploadPage), 'UploadPage 에 데모 데이터 안내');
+  assert(/\/samples\/reviewfit_beta_demo_reviews\.(xlsx|csv)/.test(uploadPage), '샘플 다운로드 링크');
+  const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf-8');
+  assert(/실제 고객 리뷰가 아닙니다/.test(readme), 'README 에 데모 데이터 고지');
+});
+
 // ===== Infra (render.yaml + docs) 회귀 =====
 
 await step('infra — render.yaml 존재 + 필수 환경 변수 / startCommand / disk mountPath', async () => {

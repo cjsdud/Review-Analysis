@@ -1,0 +1,131 @@
+{
+  "datasetName": "ReviewFit 베타 데모 리뷰 데이터",
+  "notice": "이 데이터는 ReviewFit 기능 시연을 위한 샘플 데이터입니다. 실제 고객 데이터가 아닙니다.",
+  "generatedAt": "2026-06-14",
+  "rowCount": 360,
+  "productCount": 8,
+  "columns": [
+    "리뷰ID",
+    "상품명",
+    "옵션명",
+    "별점",
+    "작성일",
+    "리뷰내용"
+  ],
+  "expectedOverallInsights": [
+    "전체적으로 긍정 리뷰가 많지만 사이즈/핏, 색상 차이, 소재 관리, 마감 품질 이슈가 상품별로 다르게 반복됩니다.",
+    "최근 30일에는 크롭 반팔 티셔츠의 색상 차이와 경량 숏패딩의 지퍼/마감 이슈가 상대적으로 더 잘 드러나도록 구성했습니다.",
+    "하이웨스트 데님 팬츠는 사이즈 작음 리뷰가 반복되어 상세페이지에 사이즈 업 안내를 추가하는 액션이 기대됩니다.",
+    "루즈핏 후드 집업은 사이즈 큼/넉넉함 리뷰가 반복되어 정핏 선호 고객에게 실측 확인 또는 사이즈 다운 안내가 필요합니다.",
+    "썸머 린넨 셔츠는 여름 착용감 장점이 강하지만 비침/구김 안내가 함께 필요합니다."
+  ],
+  "products": [
+    {
+      "productName": "데일리 와이드 슬랙스",
+      "expectedStatus": "만족도 높음 / 좋은데 고칠 점 있음",
+      "expectedTopIssues": [
+        "사이즈/핏",
+        "기장"
+      ],
+      "expectedActions": [
+        "허리/기장 실측 안내 강화",
+        "키/체형별 착용 예시 추가"
+      ]
+    },
+    {
+      "productName": "썸머 린넨 셔츠",
+      "expectedStatus": "좋은데 고칠 점 있음",
+      "expectedTopIssues": [
+        "소재",
+        "비침",
+        "구김"
+      ],
+      "expectedActions": [
+        "밝은 색상 비침 안내",
+        "구김 관리/세탁 안내 추가"
+      ]
+    },
+    {
+      "productName": "크롭 반팔 티셔츠",
+      "expectedStatus": "개선 우선",
+      "expectedTopIssues": [
+        "색상",
+        "비침"
+      ],
+      "expectedActions": [
+        "상세 이미지 색감 보정",
+        "색상별 실내/자연광 착용컷 추가"
+      ]
+    },
+    {
+      "productName": "세미오버핏 니트 가디건",
+      "expectedStatus": "좋은데 고칠 점 있음",
+      "expectedTopIssues": [
+        "소재",
+        "품질",
+        "세탁 후 변형"
+      ],
+      "expectedActions": [
+        "보풀/세탁 관리 안내",
+        "마감 검수 강화"
+      ]
+    },
+    {
+      "productName": "하이웨스트 데님 팬츠",
+      "expectedStatus": "개선 우선",
+      "expectedTopIssues": [
+        "사이즈/핏"
+      ],
+      "expectedActions": [
+        "사이즈 업 안내 추가",
+        "허리/허벅지 실측 강조",
+        "신축성 낮음 안내"
+      ]
+    },
+    {
+      "productName": "루즈핏 후드 집업",
+      "expectedStatus": "보통 / 좋은데 고칠 점 있음",
+      "expectedTopIssues": [
+        "사이즈/핏",
+        "소매 길이"
+      ],
+      "expectedActions": [
+        "정핏 선호 고객에게 사이즈 다운/실측 확인 안내",
+        "소매/품 실측 강조"
+      ]
+    },
+    {
+      "productName": "베이직 롱 원피스",
+      "expectedStatus": "좋은데 고칠 점 있음",
+      "expectedTopIssues": [
+        "기장",
+        "사이즈/핏"
+      ],
+      "expectedActions": [
+        "키별 기장 착용컷 추가",
+        "기장 옵션 또는 수선 안내"
+      ]
+    },
+    {
+      "productName": "경량 숏패딩",
+      "expectedStatus": "개선 우선",
+      "expectedTopIssues": [
+        "품질",
+        "지퍼",
+        "마감"
+      ],
+      "expectedActions": [
+        "지퍼/봉제 마감 검수 강화",
+        "포장 상태 점검"
+      ]
+    }
+  ],
+  "regressionCasesIncluded": [
+    "낮은 별점 + 강한 만족 + 가격 양보",
+    "사이즈 작음 → 사이즈 업 추천",
+    "사이즈 큼 → 사이즈 다운 추천",
+    "순수 긍정 → improvementIssues 없음",
+    "봉제/마감 품질 불만",
+    "색상 차이 mixed 리뷰"
+  ]
+}

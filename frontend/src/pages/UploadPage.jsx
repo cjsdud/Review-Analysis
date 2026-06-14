@@ -115,6 +115,24 @@ export default function UploadPage() {
             </button>
           </div>
 
+          {/* 샘플 리뷰 데이터 다운로드 — 직접 업로드 흐름까지 체험하고 싶을 때.
+              기능 시연을 위한 데모 데이터이며 실제 고객 리뷰가 아님을 명확히 표시. */}
+          <div className="sample-download">
+            <div className="sample-download__title">샘플 리뷰 데이터로 먼저 테스트해보기</div>
+            <p className="sample-download__desc muted">
+              샘플 엑셀을 내려받아 위 업로더에 올리면 컬럼 매핑부터 리뷰 분석까지 직접 체험할 수 있어요.
+              상품 8개·리뷰 360건으로 구성된 <b>기능 시연용 데모 데이터</b>이며, 실제 고객 리뷰가 아닙니다.
+            </p>
+            <div className="sample-download__links">
+              <a className="btn btn--ghost btn--sm" href="/samples/reviewfit_beta_demo_reviews.xlsx" download>
+                ⬇️ 샘플 엑셀 다운로드 (.xlsx)
+              </a>
+              <a className="btn btn--ghost btn--sm" href="/samples/reviewfit_beta_demo_reviews.csv" download>
+                ⬇️ 샘플 CSV 다운로드 (.csv)
+              </a>
+            </div>
+          </div>
+
           {/* 실제 리뷰 파일 검증 안내 — 개인정보 보호 강조 */}
           <div className="real-file-hint">
             <div className="real-file-hint__title">실제 리뷰 파일로 테스트하려면</div>
