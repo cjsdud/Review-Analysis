@@ -52,16 +52,20 @@ export default function Layout() {
   const drawerRef = useRef(null);
   const hamburgerRef = useRef(null);
 
-  // 중간 breadcrumb step 클릭 — 기본은 navigate(-1) (이전 페이지로 자연스럽게).
-  // history 가 비어 있거나 직접 진입한 경우 fallback route 로 이동.
-  // route 가 명시되지 않거나 /dashboard/undefined 같은 잘못된 경로는 무시.
+  // 중간 breadcrumb step 클릭 — 명시적 목적지(to)가 있으면 항상 그 경로로 직접 이동한다.
+  //
+  // 과거엔 navigate(-1)(뒤로가기)을 우선했는데, SectionNavigator 가 chip 클릭마다
+  // #섹션 해시를 history 에 push 하기 때문에 신뢰할 수 없었다. 상품 상세에서 chip 을 한 번
+  // 누른 뒤 "분석 대시보드" 를 눌러도 navigate(-1) 이 직전 해시 상태(같은 상품 페이지)로만
+  // 돌아가서 대시보드로 가지 못하는 버그가 있었다. 명시적 to 로 이동하면 chip 클릭 횟수와
+  // 무관하게 항상 정확히 대시보드로 간다.
   function handleCrumbClick(to) {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      navigate(-1);
+    if (to && !/\/undefined(\/|$)/.test(to)) {
+      navigate(to);
       return;
     }
-    if (!to || /\/undefined(\/|$)/.test(to)) return;
-    navigate(to);
+    // 목적지가 없는 crumb 만 뒤로가기 fallback.
+    if (typeof window !== 'undefined' && window.history.length > 1) navigate(-1);
   }
 
   // 현재 경로 기준 breadcrumb 경로. 마지막 원소는 현재 페이지(링크 없음).

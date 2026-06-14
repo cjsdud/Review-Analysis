@@ -364,7 +364,13 @@ body, p, li, td, th, dd, dt, figcaption, blockquote,
 
 // 페이지 가로 스크롤 차단 — 어떤 자식이 폭을 넘겨도 body 가 가로로 늘어나지 않게.
 // (이미 부모 layout 에서 처리하지만 안전망)
-html, body { max-width: 100%; overflow-x: hidden; }
+//
+// 주의: overflow-x: hidden 은 spec 상 overflow-y 를 auto 로 계산시켜 body 를 스크롤
+// 컨테이너로 만들고, 그 결과 모든 position: sticky 자식(topbar / SectionNavigator)이
+// 깨진다. overflow-x: clip 은 스크롤 컨테이너를 만들지 않고 가로 넘침만 잘라내므로
+// sticky 가 정상 동작한다. (clip 미지원 구형 브라우저는 가로 스크롤만 약간 허용되는
+// 정도로 graceful degradation.)
+html, body { max-width: 100%; overflow-x: clip; }
 
 // 위험 액션 (계정 삭제 등) — 강조용 위험 버튼.
 .btn--danger {
