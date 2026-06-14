@@ -95,14 +95,27 @@ export default function SectionNavigator({
     };
   }, [recompute]);
 
-  // 활성 칩이 가로 스크롤 컨테이너 밖이면 자동으로 보이게 스크롤
+  // 활성 칩이 가로 스크롤 컨테이너 밖이면 자동으로 보이게 — list 의 가로 스크롤만 이동한다.
+  //
+  // 주의: 예전엔 el.scrollIntoView({ block:'nearest', inline:'center' }) 를 썼는데,
+  // scrollIntoView 의 block 축은 가장 가까운 세로 스크롤 컨테이너(= document)를 건드린다.
+  // sticky nav 에서 이게 페이지를 위로 끌어올려서, "스크롤 내리면 activeId 변경 →
+  // scrollIntoView → 페이지가 다시 위로" 피드백 루프(스크롤 튐 버그)를 만들었다.
+  // 이제는 list 엘리먼트에 직접 scrollBy(left) 만 호출해 가로 스크롤만 수행한다
+  // (Element.scrollBy 는 해당 엘리먼트의 스크롤만 움직이고 document 는 절대 건드리지 않는다).
   useEffect(() => {
     const list = listRef.current;
     if (!list || !activeId) return;
     const el = list.querySelector(`[data-section-id="${activeId}"]`);
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    }
+    if (!el) return;
+    // list 가 실제로 가로 스크롤 가능한 경우에만 (overflow-x: auto + 내용이 넘칠 때).
+    if (list.scrollWidth <= list.clientWidth) return;
+    const listRect = list.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    // chip 중심 − list 중심 = 가로로 옮겨야 할 거리. 0 에 가까우면 굳이 움직이지 않는다.
+    const delta = (elRect.left + elRect.width / 2) - (listRect.left + listRect.width / 2);
+    if (Math.abs(delta) < 1) return;
+    list.scrollBy({ left: delta, behavior: 'smooth' });
   }, [activeId]);
 
   // 키보드 단축키 — j/k 또는 화살표. 입력 / 모달 열림 시 무시.
