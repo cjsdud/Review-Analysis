@@ -27,6 +27,19 @@ export const REPLY_TONE_FULL_LABEL = {
 // /api/ai/reply-templates 로 lazy fetch 한다. polite 가 가장 광범위하게 적합.
 export const DEFAULT_PRECOMPUTED_TONE = 'polite';
 
+// 플랜별 사용 가능한 CS 답글 톤.
+//   - free      : 정중(polite) 1개만. 나머지 4개는 잠금 (Starter 이상 안내).
+//   - starter+  : 5개 전부.
+// 분석 시점 정중 톤은 모든 플랜에서 미리 생성되므로 free 도 정중 답글은 바로 본다.
+export function allowedReplyTonesForPlan(planCode) {
+  const p = String(planCode || 'free').trim().toLowerCase();
+  if (p === 'free') return ['polite'];
+  return [...REPLY_TONES];
+}
+export function isReplyToneAllowedForPlan(planCode, tone) {
+  return allowedReplyTonesForPlan(planCode).includes(tone);
+}
+
 // 유효성 검사 + 정규화.
 export function isValidReplyTone(value) {
   return typeof value === 'string' && REPLY_TONES.includes(value);

@@ -144,6 +144,23 @@
   &__copy {
     margin-top: 10px;
   }
+  // Free 플랜에서 잠긴 말투 안내 — 정중 외 톤 클릭 시 노출.
+  &__lock-hint {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    color: #92400e;
+    background: rgba(234, 179, 8, 0.10);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    border-radius: 8px;
+    padding: 8px 12px;
+  }
+}
+
+// 잠긴 말투 탭 — 흐리게 + 자물쇠. 클릭은 가능하되(안내 노출) 선택은 안 됨.
+.segmented__btn.is-locked {
+  opacity: 0.55;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 // ===== 체크리스트 (체크박스 UI) =====

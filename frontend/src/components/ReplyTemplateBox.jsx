@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { REPLY_TONES, REPLY_TONE_SHORT_LABEL, DEFAULT_REPLY_TONE } from '../constants/replyTones.js';
+import { REPLY_TONES, REPLY_TONE_SHORT_LABEL, DEFAULT_REPLY_TONE, allowedReplyTonesForPlan } from '../constants/replyTones.js';
 import { generateReplyTemplates } from '../api/analysisApi.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 // CS 답글 초안 박스 — segmented 컨트롤로 tone 선택, 선택된 tone 1개만 렌더.
 //
@@ -49,9 +50,19 @@ export default function ReplyTemplateBox({
   const [errorByTone, setErrorByTone] = useState({});
   const [copied, setCopied] = useState(false);
 
-  // 선택한 tone 이 아직 없으면 lazy fetch.
+  // 플랜별 허용 톤 — Free 는 정중(polite) 만, Starter 이상은 5개 전부.
+  // billing 미적용/미로그인 환경에서도 안전하게 동작 (planCode 없으면 free 로 간주).
+  const { subscription } = useAuth();
+  const allowedTones = useMemo(
+    () => allowedReplyTonesForPlan(subscription?.planCode),
+    [subscription?.planCode],
+  );
+  const isToneLocked = (t) => !allowedTones.includes(t);
+
+  // 선택한 tone 이 아직 없으면 lazy fetch — 단, 잠긴 톤은 절대 요청하지 않는다.
   useEffect(() => {
     if (!issueLabel) return;
+    if (isToneLocked(selectedTone)) return;
     if (templatesByTone[selectedTone]) return;
     if (loadingTone === selectedTone) return;
     let cancelled = false;
@@ -88,9 +99,20 @@ export default function ReplyTemplateBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTone, issueLabel]);
 
+  const [lockHint, setLockHint] = useState(false);
   const current = templatesByTone[selectedTone];
   const isLoading = loadingTone === selectedTone && !current;
   const error = errorByTone[selectedTone];
+
+  // 탭 클릭 — 허용 톤이면 선택, 잠긴 톤이면 선택하지 않고 업그레이드 안내만.
+  function onToneClick(t) {
+    if (isToneLocked(t)) {
+      setLockHint(true);
+      return;
+    }
+    setLockHint(false);
+    setSelectedTone(t);
+  }
 
   async function copy() {
     try {
@@ -111,23 +133,34 @@ export default function ReplyTemplateBox({
         <div className="segmented" role="tablist" aria-label="답글 말투 선택">
           {REPLY_TONES.map((t) => {
             const isActive = selectedTone === t;
+            const locked = isToneLocked(t);
             const isCached = !!templatesByTone[t];
+            const title = locked
+              ? `${REPLY_TONE_SHORT_LABEL[t]} 말투 — Starter 이상에서 사용 가능`
+              : `${REPLY_TONE_SHORT_LABEL[t]} 말투${isCached ? '' : ' (탭하면 불러옵니다)'}`;
             return (
               <button
                 key={t}
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                className={`segmented__btn${isActive ? ' is-active' : ''}`}
-                onClick={() => setSelectedTone(t)}
-                title={`${REPLY_TONE_SHORT_LABEL[t]} 말투${isCached ? '' : ' (탭하면 불러옵니다)'}`}
+                aria-disabled={locked || undefined}
+                className={`segmented__btn${isActive ? ' is-active' : ''}${locked ? ' is-locked' : ''}`}
+                onClick={() => onToneClick(t)}
+                title={title}
               >
+                {locked && <span aria-hidden="true">🔒 </span>}
                 {REPLY_TONE_SHORT_LABEL[t]}
               </button>
             );
           })}
         </div>
       </div>
+      {lockHint && (
+        <div className="reply-box__lock-hint">
+          정중한 말투 외 다른 말투는 <b>Starter 이상</b>에서 사용할 수 있어요.
+        </div>
+      )}
       {isLoading ? (
         <div className="reply-box__text muted">답글 초안을 만들고 있어요…</div>
       ) : error ? (

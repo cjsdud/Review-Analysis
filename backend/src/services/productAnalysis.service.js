@@ -521,11 +521,14 @@ export async function runAnalysis(reviews, corrections = [], opts = {}) {
       : { detailPageActions: [], summary: '' };
 
     // 5) CS 답글 — analysisMode 가 quick/batch 면 OFF.
-    // 분석 시점에는 polite 한 개만 미리 생성한다 (과거 5톤 일괄 생성 대비 토큰 사용량 1/5).
-    // 다른 4 tone 은 사용자가 ReplyTemplateBox 의 탭을 클릭할 때 /api/ai/reply-templates 로
-    // lazy fetch — productKey/category/issueLabel 등 충분한 컨텍스트를 함께 저장해 둔다.
+    // 정중(polite) 톤 CS 답글 초안은 모든 플랜/모드에서 상위 3개 이슈에 대해 미리 생성한다.
+    // (Free 도 기본 정중 답글은 바로 볼 수 있어야 하므로 mode 의 usesCsReplyLlm 와 무관하게 생성.)
+    // 친근/간결/공감/전문 4개 톤은 Starter 이상에서만 ReplyTemplateBox 탭 클릭 시
+    // /api/ai/reply-templates 로 lazy fetch 된다 (plan 게이팅 — 라우트에서 차단).
+    // 과거엔 quick/batch 모드(usesCsReplyLlm=false)에서 CS 답글이 아예 안 생겨 Free 에서
+    // CS 답글 섹션이 보이지 않던 문제가 있었다.
     const replyTemplates = [];
-    if (effectivePolicy.usesCsReplyLlm) {
+    {
       for (const iss of topIssues.slice(0, 3)) {
         const variants = await callWithUsage(
           () => aiClient.generateReplyTemplates({

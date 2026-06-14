@@ -4945,6 +4945,46 @@ await step('productAnalysis — 분석 시점에 polite 1개만 미리 생성 + 
     'replyTemplates 에 컨텍스트 동봉');
 });
 
+await step('replyTones — allowedReplyTonesForPlan: free=정중만, starter+=전체', async () => {
+  const m = await import('../src/constants/replyTones.js');
+  assert.deepEqual(m.allowedReplyTonesForPlan('free'), ['polite'], 'free 는 정중만');
+  assert.deepEqual(m.allowedReplyTonesForPlan(), ['polite'], '미지정(=free) 도 정중만');
+  for (const p of ['starter', 'pro', 'business']) {
+    assert.deepEqual(m.allowedReplyTonesForPlan(p), m.REPLY_TONES, `${p} 는 5톤 전부`);
+  }
+  // 톤 허용 판정
+  assert.equal(m.isReplyToneAllowedForPlan('free', 'polite'), true);
+  assert.equal(m.isReplyToneAllowedForPlan('free', 'friendly'), false, 'free 의 친근은 차단');
+  assert.equal(m.isReplyToneAllowedForPlan('starter', 'professional'), true);
+});
+
+await step('ai.routes — Free 의 비-정중 톤은 403 TONE_PLAN_LOCKED 게이팅 (소스 패턴)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/routes/ai.routes.js', import.meta.url), 'utf-8');
+  assert(/isReplyToneAllowedForPlan/.test(src), '톤 허용 판정 사용');
+  assert(/TONE_PLAN_LOCKED/.test(src), 'TONE_PLAN_LOCKED 코드');
+  assert(/getUserSubscription/.test(src), 'DB 구독 조회로 plan 판정 (JWT stale 무시)');
+  // 403 + Starter 안내
+  assert(/status\(403\)[\s\S]{0,200}TONE_PLAN_LOCKED/.test(src), '403 응답');
+});
+
+await step('productAnalysis — CS 답글 polite 는 mode(usesCsReplyLlm) 와 무관하게 항상 생성', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/services/productAnalysis.service.js', import.meta.url), 'utf-8');
+  // 과거 `if (effectivePolicy.usesCsReplyLlm) {` 게이트가 제거되고 무조건 생성 블록이어야 함.
+  assert(!/if\s*\(\s*effectivePolicy\.usesCsReplyLlm\s*\)\s*\{[\s\S]{0,200}generateReplyTemplates/.test(src),
+    'usesCsReplyLlm 게이트가 polite 생성을 막으면 안 됨 (Free 도 정중 답글 보여야 함)');
+});
+
+await step('frontend — ReplyTemplateBox 가 Free 톤 잠금 + 잠긴 톤 lazy fetch 차단 (소스 패턴)', async () => {
+  const fs = await import('node:fs');
+  const box = fs.readFileSync(new URL('../../frontend/src/components/ReplyTemplateBox.jsx', import.meta.url), 'utf-8');
+  assert(/allowedReplyTonesForPlan/.test(box), '허용 톤 계산');
+  assert(/isToneLocked/.test(box), '잠금 판정');
+  assert(/if\s*\(\s*isToneLocked\(selectedTone\)\s*\)\s*return/.test(box), '잠긴 톤은 lazy fetch 안 함');
+  assert(/is-locked/.test(box), '잠긴 탭 시각 표시');
+});
+
 // ===== Rate Limit 회귀 =====
 //
 // P0 abuse 방지: authLimiter / uploadLimiter / aiReplyLimiter 가 export 되고,

@@ -46,7 +46,10 @@ function PlanCard({ plan, currentCode, modesByMinPlan }) {
         <li>월 리뷰 분석 <b>{formatNum(limits.monthlyAnalysisLimit)}회</b></li>
         <li>파일당 최대 리뷰 <b>{formatNum(limits.maxReviewsPerAnalysis)}개</b></li>
         <li>월 파일 업로드 <b>{formatNum(limits.monthlyFileLimit)}건</b></li>
-        <li>월 CS 답글 초안 <b>{formatNum(limits.monthlyCsReplyLimit)}건</b></li>
+        <li>
+          CS 답글 말투{' '}
+          <b>{plan.code === 'free' ? '정중한 말투만' : '5종 전부'}</b>
+        </li>
         <li>파일당 상품 <b>{formatNum(limits.maxProductsPerFile)}개</b></li>
         <li>데이터 보관 <b>{limits.dataRetentionDays != null ? `${limits.dataRetentionDays}일` : '—'}</b></li>
         <li className="pricing-card__feat">엑셀 전체 다운로드 {boolMark(features.canExportFullExcel)}</li>

@@ -25,3 +25,12 @@ export const DEFAULT_REPLY_TONE = 'polite';
 export function isValidReplyTone(value) {
   return REPLY_TONES.includes(value);
 }
+
+// 플랜별 사용 가능한 CS 답글 톤 — 백엔드 allowedReplyTonesForPlan 과 동일 규칙.
+//   free      → 정중(polite) 만
+//   starter+  → 5개 전부
+export function allowedReplyTonesForPlan(planCode) {
+  const p = String(planCode || 'free').trim().toLowerCase();
+  if (p === 'free') return ['polite'];
+  return [...REPLY_TONES];
+}

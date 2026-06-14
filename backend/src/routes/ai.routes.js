@@ -3,9 +3,9 @@ import { z } from 'zod';
 import aiClient from '../services/aiClient.service.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { aiReplyLimiter } from '../middleware/rateLimit.middleware.js';
-import { checkCanGenerateCsReply, recordUsage } from '../services/billing.service.js';
-import { USAGE_EVENT_TYPES } from '../constants/plans.js';
-import { REPLY_TONES, DEFAULT_PRECOMPUTED_TONE } from '../constants/replyTones.js';
+import { checkCanGenerateCsReply, recordUsage, getUserSubscription } from '../services/billing.service.js';
+import { USAGE_EVENT_TYPES, normalizePlan } from '../constants/plans.js';
+import { REPLY_TONES, DEFAULT_PRECOMPUTED_TONE, isReplyToneAllowedForPlan } from '../constants/replyTones.js';
 import {
   buildReplyCacheKey,
   getCachedReplyTemplate,
@@ -51,9 +51,23 @@ router.post('/reply-templates', requireAuth, aiReplyLimiter, async (req, res) =>
   }
   const input = parsed.data;
   const tone = input.tone || DEFAULT_PRECOMPUTED_TONE;
+  const userId = req.user?.id || null;
+
+  // 플랜별 톤 게이팅 — Free 는 정중(polite) 만, Starter 이상은 5개 전부.
+  // DB 의 subscriptions 를 매번 다시 조회 (관리자 plan 변경 즉시 반영, JWT stale 무시).
+  const sub = userId ? getUserSubscription(userId) : null;
+  const planCode = normalizePlan(sub?.plan_code || 'free');
+  if (!isReplyToneAllowedForPlan(planCode, tone)) {
+    return res.status(403).json({
+      error: 'TONE_PLAN_LOCKED',
+      code: 'TONE_PLAN_LOCKED',
+      requiredPlan: 'starter',
+      upgradeRequired: true,
+      message: '정중한 말투 외 다른 말투는 Starter 이상에서 사용할 수 있어요.',
+    });
+  }
 
   // 플랜 한도 — tone 1개 호출당 1 차감. 캐시 히트라도 플랜 사용량은 동일하게 차감 (정책).
-  const userId = req.user?.id || null;
   const guard = checkCanGenerateCsReply(userId, 1);
   if (!guard.ok) {
     return res.status(guard.status).json({
