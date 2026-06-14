@@ -31,7 +31,12 @@ export async function getProducts(analysisId) {
 }
 
 export async function getProductDetail(analysisId, productKey) {
-  const { data } = await client.get(`/analysis/${analysisId}/products/${productKey}`);
+  // productKey 는 상품명 그대로(예: "원피스/블랙", "니트 50%", "셔츠#1") 이므로
+  // 반드시 encodeURIComponent — '/', '#', '%' 같은 문자가 그대로 들어가면
+  // 경로가 깨져 백엔드가 다른 product_key 로 조회하거나 404 를 낸다.
+  const { data } = await client.get(
+    `/analysis/${encodeURIComponent(analysisId)}/products/${encodeURIComponent(productKey)}`,
+  );
   return data;
 }
 
