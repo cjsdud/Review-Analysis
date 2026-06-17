@@ -309,11 +309,9 @@ export default function Layout() {
               </>
             ) : (
               <div className="topbar__auth">
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigate('/login')}>
-                  로그인
-                </button>
-                <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/signup')}>
-                  회원가입
+                {/* Google 로그인 only — 별도의 회원가입 버튼 없음. 첫 Google 로그인 시 자동 가입. */}
+                <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/login')}>
+                  Google로 시작하기
                 </button>
               </div>
             )}

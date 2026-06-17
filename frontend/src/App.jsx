@@ -39,8 +39,10 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
-      <Route path="/login" element={<LoginPage initialMode="login" />} />
-      <Route path="/signup" element={<LoginPage initialMode="register" />} />
+      <Route path="/login" element={<LoginPage />} />
+      {/* /signup 은 Google 로그인 only 전환으로 의미가 없어졌다 — 로그인 페이지로 리다이렉트.
+          기존 booklet/DM 링크가 깨지지 않도록 라우트 자체는 유지. next 쿼리도 보존. */}
+      <Route path="/signup" element={<Navigate to="/login" replace />} />
       {/* 공개 샘플 리포트 — 비로그인 접근 가능. 정적 데이터만 사용. */}
       <Route path="/demo/sample-report" element={<SampleReportPage />} />
       {/* 외부 셀러용 공유 코드 입력 + 공유 분석 결과 — 비로그인 접근 가능. */}

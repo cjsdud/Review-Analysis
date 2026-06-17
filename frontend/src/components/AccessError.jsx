@@ -6,7 +6,7 @@ const COPY = {
   AUTH_REQUIRED: {
     icon: '🔐',
     title: '로그인이 필요합니다.',
-    desc: '계속하려면 로그인 또는 회원가입을 해주세요.',
+    desc: '계속하려면 Google 계정으로 로그인해 주세요.',
   },
   FORBIDDEN: {
     icon: '🚫',
@@ -37,7 +37,7 @@ export default function AccessError({ kind = 'GENERIC', detail = '' }) {
       <div className="page-actions" style={{ justifyContent: 'center', marginTop: 12 }}>
         {kind === 'AUTH_REQUIRED' ? (
           <button className="btn btn--primary" onClick={() => navigate('/login')}>
-            로그인하러 가기
+            Google로 로그인하기
           </button>
         ) : (
           <button className="btn btn--primary" onClick={() => navigate('/history')}>

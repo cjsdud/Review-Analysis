@@ -100,8 +100,9 @@ export default function SampleReportPage() {
   function goLogin() {
     navigate('/login');
   }
+  // Google 로그인 only 환경 — 별도 회원가입 흐름 없이 로그인 페이지로 보낸다.
   function goSignup() {
-    navigate('/signup?next=/upload');
+    navigate('/login?next=/upload');
   }
 
   return (
@@ -116,10 +117,9 @@ export default function SampleReportPage() {
           {user ? (
             <Link to="/history" className="btn btn--ghost btn--sm">앱으로 이동</Link>
           ) : (
-            <>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={goLogin}>로그인</button>
-              <button type="button" className="btn btn--primary btn--sm" onClick={goSignup}>회원가입</button>
-            </>
+            <button type="button" className="btn btn--primary btn--sm" onClick={goLogin}>
+              Google로 시작하기
+            </button>
           )}
         </div>
       </header>
@@ -139,8 +139,8 @@ export default function SampleReportPage() {
               내 리뷰 파일 분석하기
             </button>
             {!user && (
-              <button type="button" className="btn btn--ghost" onClick={goSignup}>
-                회원가입하고 시작하기
+              <button type="button" className="btn btn--ghost" onClick={goLogin}>
+                Google로 시작하기
               </button>
             )}
           </div>
@@ -211,19 +211,16 @@ export default function SampleReportPage() {
           </ul>
         </SectionCard>
 
-        {/* 회원가입 유도 CTA */}
+        {/* 로그인 유도 CTA */}
         <section ref={ctaRef} className="demo-cta">
           <div className="demo-cta__title">우리 상품 리뷰도 이렇게 보고 싶다면?</div>
           <div className="demo-cta__desc">
-            지금 회원가입하면 내 리뷰 파일을 그대로 올려 상품별 분석 리포트를 받아볼 수 있어요. 무료 베타로 부담 없이 시작해보세요.
+            Google 계정으로 로그인하면 내 리뷰 파일을 올려 상품별 분석 리포트를 받아볼 수 있어요. 무료 베타로 부담 없이 시작해보세요.
           </div>
           <div className="demo-cta__buttons">
             <button type="button" className="btn btn--primary" onClick={startAnalysis}>
-              {user ? '내 리뷰 파일 분석하기' : '무료 베타로 시작하기'}
+              {user ? '내 리뷰 파일 분석하기' : 'Google로 무료 베타 시작하기'}
             </button>
-            {!user && (
-              <button type="button" className="btn btn--ghost" onClick={goLogin}>이미 계정이 있어요</button>
-            )}
           </div>
           <div className="demo-cta__foot muted">
             샘플 리포트는 예시 데이터로 구성되어 있어요. 실제 분석에는 직접 올린 리뷰 파일이 사용됩니다.
@@ -274,7 +271,7 @@ export default function SampleReportPage() {
         )}
         <div className="mt-4" style={{ textAlign: 'center' }}>
           <button type="button" className="btn btn--primary" onClick={startAnalysis}>
-            회원가입하고 내 리뷰 분석하기
+            Google로 시작하고 내 리뷰 분석하기
           </button>
         </div>
       </Modal>

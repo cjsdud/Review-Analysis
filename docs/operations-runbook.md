@@ -5,7 +5,28 @@
 > `docs/ops-settings.md`, `docs/beta-release-checklist.md` 를 함께 참고하세요.
 
 ReviewFit은 셀러가 직접 내려받은 리뷰 **CSV/XLSX** 파일을 업로드해 분석하는 서비스입니다.
-자동 크롤링 / 쇼핑몰 OAuth 자동 수집은 제공하지 않으며, Google 로그인은 **사용자 인증 수단**으로만 사용됩니다.
+자동 크롤링 / 쇼핑몰 OAuth 자동 수집은 제공하지 않습니다.
+
+**로그인은 Google 로그인 only** 입니다. 이메일/비밀번호 가입·로그인 엔드포인트(`/api/auth/register`,
+`/api/auth/login`)는 제거되었으며, 모든 사용자 인증은 Google ID Token 검증으로 진행됩니다.
+`GOOGLE_CLIENT_ID` 와 `VITE_GOOGLE_CLIENT_ID` 가 설정되어 있지 않으면 사용자가 로그인 자체를 할 수 없으므로
+운영 환경에서는 **필수** 입니다.
+
+---
+
+## 0-A. Google 로그인 only 전환 시 1회 마이그레이션 (구버전 DB)
+
+이메일/비밀번호 로그인이 운영 중이던 구버전 DB 가 있다면, 기존 user/analysis/공유 코드는
+새 정책에서 영원히 접근 불가능합니다. **클린 시작** 정책을 따릅니다:
+
+1. (선택) 백업: Render Shell 에서 `cp $DB_PATH /var/data/backup-pre-google-only.db`
+2. DB 파일 삭제: `rm $DB_PATH $DB_PATH-wal $DB_PATH-shm 2>/dev/null || true`
+3. 재배포 → 첫 부팅에서 빈 스키마가 다시 생성됨
+4. `SEED_ADMIN_EMAIL` 또는 `ADMIN_EMAILS` 에 운영자 Google 이메일 등록
+5. 운영자가 Google 로그인 → 자동으로 admin role 부여
+6. 베타 셀러는 다시 안내 후 Google 로그인 → 신규 user 로 가입 → 다시 업로드/분석
+
+기존 회원의 분석 결과는 복구되지 않습니다. 신규 베타라면 무관합니다.
 
 ---
 
@@ -36,8 +57,8 @@ ReviewFit은 셀러가 직접 내려받은 리뷰 **CSV/XLSX** 파일을 업로�
 | `DEMO_ALLOW_ANONYMOUS` | ✅ | `false` (또는 미설정) | `true` 면 부팅 거부 — 익명 분석 교차 접근 차단 |
 | `CLIENT_ORIGIN` | ✅ | `https://<domain>` | CORS / 쿠키 도메인 |
 | `DB_PATH` | ✅ | `/var/data/reviewfit/app.db` | Disk 외부면 재배포마다 DB 초기화 |
-| `GOOGLE_CLIENT_ID` | 선택 | Google Cloud Web Client ID | 미설정 시 Google 버튼 자동 숨김 (에러 X) |
-| `VITE_GOOGLE_CLIENT_ID` | 선택 | 위와 동일 값 | **변경 시 frontend 재빌드 필수** |
+| `GOOGLE_CLIENT_ID` | **✅** | Google Cloud Web Client ID | 미설정 시 모든 사용자가 로그인 불가 (Google only 정책) |
+| `VITE_GOOGLE_CLIENT_ID` | **✅** | 위와 동일 값 | **변경 시 frontend 재빌드 필수** |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | 선택 | seed 1회용 | 비밀번호 노출 금지, 로그에 출력되지 않음 |
 | `ADMIN_EMAILS` | 권장 | 콤마 구분 이메일 | 부팅 시 자동 role=admin 보정 |
 | `OPENAI_API_KEY` | 선택 | sk-... | 없으면 mock 모드 (운영 비추천) |
@@ -64,7 +85,9 @@ ReviewFit은 셀러가 직접 내려받은 리뷰 **CSV/XLSX** 파일을 업로�
 5. `VITE_GOOGLE_CLIENT_ID` 는 빌드 시점에 번들에 박힌다 — **값 변경 후에는 반드시 Render "Clear build cache & deploy"**
 6. 운영 배포 후 `/login` 진입 → Google 버튼 표시 + 클릭 시 Google 계정 선택 팝업이 뜨는지 확인
 
-> 키를 안 넣어도 사이트는 정상 동작합니다. Google 버튼이 숨겨지고 이메일 로그인만 노출됩니다.
+> **Google 로그인 only 정책** — 키가 없으면 사용자가 로그인 자체를 할 수 없습니다.
+> 베타 진입 전 반드시 `GOOGLE_CLIENT_ID` + `VITE_GOOGLE_CLIENT_ID` 를 설정해야 합니다.
+> (이메일/비밀번호 가입·로그인 엔드포인트는 제거되었습니다.)
 
 ---
 
@@ -223,17 +246,20 @@ ReviewFit은 셀러가 직접 내려받은 리뷰 **CSV/XLSX** 파일을 업로�
 
 ### 7-4. Google 로그인이 안 됨
 
+Google 로그인 only 환경이므로 이 케이스는 **모든 신규 사용자가 사이트를 사용할 수 없음** 을 의미합니다 — 최우선 대응.
+
 | 단계 | 확인 |
 |---|---|
-| 1 | `/login` 페이지에 Google 버튼이 보이는가? | 안 보이면 `VITE_GOOGLE_CLIENT_ID` 미설정 → 재빌드 |
+| 1 | `/login` 페이지에 Google 버튼이 보이는가? | 안 보이면 `VITE_GOOGLE_CLIENT_ID` 미설정 → env 추가 후 **Clear build cache & deploy** |
 | 2 | 클릭 시 "Sign in with Google" 팝업이 뜨는가? | 안 뜨면 Authorized JS origin 누락 |
 | 3 | 팝업 후 401 / 403 | `GOOGLE_CLIENT_ID` (백엔드) 와 `VITE_GOOGLE_CLIENT_ID` (프론트) 값이 다름 |
 | 4 | "이메일이 확인되지 않았습니다" 에러 | 사용자 Google 계정의 email_verified=false — 안내 후 이메일 인증 요청 |
+| 5 | "Google 로그인 설정이 완료되지 않았어요" | 백엔드 `GOOGLE_CLIENT_ID` 미설정 또는 부팅 후 변경됨 — 재배포 |
 
 **조치**
 - env 값 둘이 다르면 동일하게 맞춘 뒤 **Clear build cache & deploy**
 - Authorized JS origins 에 운영 도메인 추가 후 5분 대기 (Google 캐시)
-- 임시: 이메일+비밀번호 로그인 안내 (Google 없이도 모든 기능 사용 가능)
+- 임시 운영 안내: 사이트 점검 공지 (관리자 콘솔 → 공지/배너) 로 안내 후 빠르게 env 수정
 
 ### 7-5. 환경 변수 누락으로 부팅 실패
 

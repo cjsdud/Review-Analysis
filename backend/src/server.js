@@ -51,7 +51,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, aiMode }));
 app.use('/api/analytics', analyticsRoutes);
 // 점검 모드 게이트 — health/auth/admin/announcements/active 를 제외한 일반 API 차단
 app.use(maintenanceGate);
-app.use('/api/auth', authRoutes); // POST /register /login /logout, GET /me
+app.use('/api/auth', authRoutes); // POST /google /logout, GET /google/config /me, DELETE /me/account
 // GET /api/me 별칭 — /api/auth/me 와 동일하게 동작
 app.get('/api/me', (req, res, next) => { req.url = '/me'; authRoutes(req, res, next); });
 app.use('/api/billing', billingRoutes);

@@ -2554,87 +2554,42 @@ async function jsonFetch(url, opts = {}) {
   return { status: r.status, body, setCookie };
 }
 
-await step('auth — 회원가입 성공 + password_hash 응답 노출 금지', async () => {
+// Google 로그인 only 회귀 — 과거 email/password 엔드포인트가 완전히 제거되었는지 확인.
+await step('auth(Google only) — /api/auth/register 와 /api/auth/login 은 제거되어 404', async () => {
   const app = await makeApp();
   const { srv, port } = await startServer(app);
   try {
-    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'a1@example.com', password: 'longenoughpw', name: 'A' }),
+    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'gone@example.com', password: 'longenoughpw' }),
     });
-    assert.equal(res.status, 201, `status=${res.status}`);
-    assert(res.body?.user?.id, 'user.id 누락');
-    assert.equal(res.body.user.email, 'a1@example.com');
-    assert(!('password_hash' in (res.body.user || {})), 'password_hash 가 응답에 노출됨');
-    assert(!('password' in (res.body.user || {})), 'password 가 응답에 노출됨');
-    assert(res.setCookie && /reviewfit_token=/.test(res.setCookie), 'auth cookie 미발급');
+    assert.equal(reg.status, 404, `register status=${reg.status}`);
+    const login = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'gone@example.com', password: 'longenoughpw' }),
+    });
+    assert.equal(login.status, 404, `login status=${login.status}`);
   } finally { srv.close(); }
 });
 
-await step('auth — 중복 이메일 → 409', async () => {
+await step('auth(Google only) — /api/auth/google/config 와 /api/me 는 그대로 동작', async () => {
   const app = await makeApp();
   const { srv, port } = await startServer(app);
   try {
-    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'b@example.com', password: 'longenoughpw' }),
-    });
-    const dup = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'b@example.com', password: 'longenoughpw' }),
-    });
-    assert.equal(dup.status, 409, `status=${dup.status}`);
-    assert.equal(dup.body?.error, 'EMAIL_TAKEN');
+    const cfg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/google/config`);
+    assert.equal(cfg.status, 200, `config status=${cfg.status}`);
+    assert.equal(typeof cfg.body?.enabled, 'boolean', 'enabled 필드 누락');
+    const me = await jsonFetch(`http://127.0.0.1:${port}/api/me`);
+    assert.equal(me.status, 401, `me status=${me.status}`);
   } finally { srv.close(); }
 });
 
-await step('auth — 로그인 성공 + 잘못된 비밀번호 → 401', async () => {
-  const app = await makeApp();
-  const { srv, port } = await startServer(app);
-  try {
-    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'c@example.com', password: 'longenoughpw' }),
-    });
-    const ok = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'c@example.com', password: 'longenoughpw' }),
-    });
-    assert.equal(ok.status, 200);
-    const bad = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'c@example.com', password: 'wrongpassword' }),
-    });
-    assert.equal(bad.status, 401, `status=${bad.status}`);
-    assert.equal(bad.body?.error, 'INVALID_CREDENTIALS');
-  } finally { srv.close(); }
-});
-
-await step('auth — /api/me 인증 필요 (cookie 없으면 401)', async () => {
-  const app = await makeApp();
-  const { srv, port } = await startServer(app);
-  try {
-    const r = await jsonFetch(`http://127.0.0.1:${port}/api/me`);
-    assert.equal(r.status, 401, `status=${r.status}`);
-  } finally { srv.close(); }
-});
-
-await step('password — DB 에 평문 비밀번호 저장 금지', async () => {
-  const app = await makeApp();
-  const { srv, port } = await startServer(app);
-  try {
-    const password = 'plaintextpw1234';
-    await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'pw@example.com', password }),
-    });
-    const { default: db } = await import('../src/db/database.js');
-    const row = db.prepare('SELECT password_hash FROM users WHERE email = ?').get('pw@example.com');
-    assert(row?.password_hash, 'password_hash 누락');
-    assert(row.password_hash !== password, 'password_hash 가 평문과 동일');
-    assert(row.password_hash.length > 30, 'bcrypt 해시 길이가 너무 짧음');
-  } finally { srv.close(); }
+await step('auth(Google only) — auth_provider/google_sub 컬럼이 users 테이블에 존재', async () => {
+  const { default: db } = await import('../src/db/database.js');
+  const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  assert(cols.includes('auth_provider'), 'auth_provider 컬럼 누락');
+  assert(cols.includes('google_sub'), 'google_sub 컬럼 누락');
+  assert(cols.includes('email_verified'), 'email_verified 컬럼 누락');
 });
 
 // ── ownership: 같은 분석에 다른 사용자가 접근하면 403 ──
@@ -2797,15 +2752,27 @@ async function makeAnalysisApp({ demoAllowAnonymous = 'false' } = {}) {
   return app;
 }
 
+// Google 로그인 only 환경 — /api/auth/register, /api/auth/login 은 제거되었다.
+// 테스트가 인증된 user cookie 가 필요할 때, DB 에 직접 user row 를 만들고
+// signToken 으로 JWT 를 발급해 cookie 형태로 반환한다 (Google 로그인 시 발급되는 것과 동일).
 async function registerAndCookie(port, email) {
-  const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password: 'longenoughpw' }),
-  });
-  if (r.status !== 201) throw new Error(`register failed: ${r.status}`);
-  // set-cookie 의 'reviewfit_token=...' 부분만 추출
-  const cookie = (r.setCookie || '').split(';')[0];
-  return { userId: r.body.user.id, cookie };
+  const { default: db } = await import('../src/db/database.js');
+  const { signToken, COOKIE_NAME } = await import('../src/middleware/auth.middleware.js');
+  const { nanoid } = await import('nanoid');
+  // dummy password_hash — NOT NULL 컬럼이라 채워야 하지만, 인증 경로(/login)는 없으므로 사용되지 않는다.
+  const bcrypt = (await import('bcryptjs')).default;
+  const hash = bcrypt.hashSync(`!test-${nanoid()}`, 4); // cost 4 — 테스트 속도용
+  const id = nanoid();
+  db.prepare(
+    `INSERT INTO users (id, email, password_hash, name, role, auth_provider)
+     VALUES (?, ?, ?, ?, 'user', 'google')`,
+  ).run(id, email, hash, null);
+  // 기본 free 구독 자동 생성 (register/google 엔드포인트가 하던 일)
+  const { getUserSubscription } = await import('../src/services/billing.service.js');
+  getUserSubscription(id);
+  const token = signToken({ sub: id, email });
+  const cookie = `${COOKIE_NAME}=${token}`;
+  return { userId: id, cookie };
 }
 
 function insertAnalysisFor(userId, summary = {}) {
@@ -2998,7 +2965,7 @@ await step('admin — 마지막 admin 강등 차단', async () => {
   } finally { srv.close(); }
 });
 
-await step('admin settings — signup_enabled 변경 + 로그 기록 + 신규가입 차단', async () => {
+await step('admin settings — signup_enabled 변경 + 로그 기록 + 캐시 반영', async () => {
   const app = await makeAdminApp();
   const { srv, port } = await startServer(app);
   try {
@@ -3012,15 +2979,12 @@ await step('admin settings — signup_enabled 변경 + 로그 기록 + 신규가
       body: JSON.stringify({ value: false, reason: '운영 점검' }),
     });
     assert.equal(r.status, 200);
-    // 새 회원가입 시도 → 403 SIGNUP_DISABLED
+    // 캐시 무효화 후 settings 가 실제 false 로 반영되는지 확인.
+    // Google 로그인 only 환경 — 이 토글은 /api/auth/google 의 kind=created 케이스에만 적용된다.
+    // (실제 차단 동작은 googleAuth.service 통합 테스트에서 검증 — 여기서는 setting 자체만 확인)
     const settings = await import('../src/services/settings.service.js');
     settings.clearSettingsCache();
-    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: `new_${Date.now()}@x.com`, password: 'longenoughpw' }),
-    });
-    assert.equal(r2.status, 403);
-    assert.equal(r2.body.error, 'SIGNUP_DISABLED');
+    assert.equal(settings.getBooleanSetting('signup_enabled', true), false, 'signup_enabled 가 false 로 반영되지 않음');
     // 원복
     await jsonFetch(`http://127.0.0.1:${port}/api/admin/settings/signup_enabled`, {
       method: 'PATCH', headers: { 'content-type': 'application/json', cookie },
@@ -3381,100 +3345,20 @@ async function makeAuthAdminApp() {
   return app;
 }
 
-await step('register — ADMIN_EMAILS 이메일은 admin role 로 생성, password_hash 응답 노출 금지', async () => {
+// Google 로그인 only 환경 — adminEmails / role 보정은 googleAuth.service 의 정책 테스트가
+// 따로 검증한다 (이미 통과). 여기서는 admin endpoint 접근 정책만 새 helper 로 회귀 확인.
+
+await step('admin endpoint — admin role 사용자는 /api/admin/summary 200', async () => {
   process.env.DEMO_ALLOW_ANONYMOUS = 'false';
-  process.env.ADMIN_EMAILS = 'newadmin@example.com';
   const app = await makeAuthAdminApp();
   const { srv, port } = await startServer(app);
   try {
-    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'NEWADMIN@example.com', password: 'longenoughpw' }),
-    });
-    assert.equal(res.status, 201);
-    assert.equal(res.body.user.role, 'admin', `role=${res.body.user.role}`);
-    assert(!('password_hash' in res.body.user), 'password_hash 응답에 포함됨');
-    assert(!('password' in res.body.user), 'password 응답에 포함됨');
-    // DB 확인
-    const { default: db } = await import('../src/db/database.js');
-    const row = db.prepare('SELECT role FROM users WHERE LOWER(email) = ?').get('newadmin@example.com');
-    assert.equal(row.role, 'admin');
-  } finally {
-    srv.close();
-    process.env.ADMIN_EMAILS = '';
-  }
-});
-
-await step('register — ADMIN_EMAILS 에 없는 이메일은 일반 user', async () => {
-  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
-  process.env.ADMIN_EMAILS = 'someother@example.com';
-  const app = await makeAuthAdminApp();
-  const { srv, port } = await startServer(app);
-  try {
-    const res = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: `regular_${Date.now()}@example.com`, password: 'longenoughpw' }),
-    });
-    assert.equal(res.status, 201);
-    assert.equal(res.body.user.role, 'user');
-  } finally {
-    srv.close();
-    process.env.ADMIN_EMAILS = '';
-  }
-});
-
-await step('login — ADMIN_EMAILS 보정: 기존 role=user 사용자가 로그인 시 admin 으로 보정', async () => {
-  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
-  process.env.ADMIN_EMAILS = '';  // 가입 시점에는 비어 있음 → 일반 user 로 가입
-  const app = await makeAuthAdminApp();
-  const { srv, port } = await startServer(app);
-  try {
-    const email = `late_admin_${Date.now()}@example.com`;
-    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: 'longenoughpw' }),
-    });
-    assert.equal(reg.body.user.role, 'user');
-
-    // 운영자가 나중에 ADMIN_EMAILS 에 이메일 추가
-    process.env.ADMIN_EMAILS = email;
-    const login = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: 'longenoughpw' }),
-    });
-    assert.equal(login.status, 200);
-    assert.equal(login.body.user.role, 'admin', `로그인 후 role=${login.body.user.role}`);
-
-    // /api/me 도 admin
-    const cookie = (login.setCookie || '').split(';')[0];
-    const me = await jsonFetch(`http://127.0.0.1:${port}/api/me`, { headers: { cookie } });
-    assert.equal(me.body.user.role, 'admin');
-  } finally {
-    srv.close();
-    process.env.ADMIN_EMAILS = '';
-  }
-});
-
-await step('admin endpoint — ADMIN_EMAILS 로 생성된 admin 은 /api/admin/summary 접근 가능', async () => {
-  process.env.DEMO_ALLOW_ANONYMOUS = 'false';
-  process.env.ADMIN_EMAILS = `summary_admin_${Date.now()}@example.com`;
-  const app = await makeAuthAdminApp();
-  const { srv, port } = await startServer(app);
-  try {
-    const email = process.env.ADMIN_EMAILS;
-    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: 'longenoughpw' }),
-    });
-    assert.equal(reg.body.user.role, 'admin');
-    const cookie = (reg.setCookie || '').split(';')[0];
-    // admin user → /api/admin/summary 200
+    const email = `summary_admin_${Date.now()}@example.com`;
+    const { cookie } = await registerAndCookie(port, email);
+    await promoteToAdmin(email);
     const a = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie } });
     assert.equal(a.status, 200, `admin summary status=${a.status}`);
-  } finally {
-    srv.close();
-    process.env.ADMIN_EMAILS = '';
-  }
+  } finally { srv.close(); }
 });
 
 await step('admin endpoint — 일반 user 403, 비로그인 401', async () => {
@@ -3484,11 +3368,7 @@ await step('admin endpoint — 일반 user 403, 비로그인 401', async () => {
   const { srv, port } = await startServer(app);
   try {
     const email = `regular_${Date.now()}@example.com`;
-    const reg = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: 'longenoughpw' }),
-    });
-    const cookie = (reg.setCookie || '').split(';')[0];
+    const { cookie } = await registerAndCookie(port, email);
     const userCall = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie } });
     assert.equal(userCall.status, 403);
     const anonCall = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`);
@@ -3522,18 +3402,14 @@ await step('promoteConfiguredAdminEmails — 서버 부팅 시 기존 user 보�
 function cleanSeedEnv() {
   delete process.env.SEED_ACCOUNTS_ENABLED;
   delete process.env.SEED_ADMIN_EMAIL;
-  delete process.env.SEED_ADMIN_PASSWORD;
   delete process.env.SEED_TESTER_EMAIL;
-  delete process.env.SEED_TESTER_PASSWORD;
   delete process.env.SEED_ALLOW_PROMOTE_EXISTING;
-  delete process.env.SEED_RESET_PASSWORDS;
 }
 
-await step('seed — SEED_ACCOUNTS_ENABLED=false 면 아무 계정도 만들지 않음', async () => {
+await step('seed(Google only) — SEED_ACCOUNTS_ENABLED=false 면 아무 계정도 만들지 않음', async () => {
   cleanSeedEnv();
   process.env.SEED_ACCOUNTS_ENABLED = 'false';
   process.env.SEED_ADMIN_EMAIL = 'wontbeseeded@example.com';
-  process.env.SEED_ADMIN_PASSWORD = 'longenoughpw1234';
   const svc = await import('../src/services/seedAccounts.service.js');
   const out = svc.seedConfiguredAccounts();
   assert.equal(out.enabled, false);
@@ -3543,27 +3419,21 @@ await step('seed — SEED_ACCOUNTS_ENABLED=false 면 아무 계정도 만들지 
   cleanSeedEnv();
 });
 
-await step('seed — admin 계정 생성 + bcrypt 해시 + free 구독', async () => {
+await step('seed(Google only) — admin row 생성 + role=admin + dummy bcrypt hash + free 구독', async () => {
   cleanSeedEnv();
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   const email = `seed_admin_${Date.now()}@example.com`;
-  const password = 'valid-password-1234';
   process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = password;
+  // SEED_ADMIN_PASSWORD 는 더 이상 필요 없음 — 설정하지 않아도 row 가 생성되어야 한다.
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
 
   const { default: db } = await import('../src/db/database.js');
   const row = db.prepare('SELECT id, role, password_hash FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
-  assert(row, 'admin seed user not created');
+  assert(row, 'admin seed user not created (Google only 환경에서도 row 는 생성되어야 함)');
   assert.equal(row.role, 'admin');
-  // 평문과 동일하면 안 됨
-  assert.notEqual(row.password_hash, password, 'password 평문 저장 금지');
-  // bcrypt 해시 형식($2a$/$2b$ 시작 + 60자 길이)
-  assert(/^\$2[aby]\$/.test(row.password_hash), 'bcrypt 해시 형식 아님');
-  // 평문 비교 verify (bcrypt 가 살아 있는지)
-  const bcrypt = (await import('bcryptjs')).default;
-  assert(bcrypt.compareSync(password, row.password_hash), 'bcrypt 비교 실패');
+  // dummy bcrypt hash 형식 — 인증 경로는 없으므로 값 검증은 불필요하지만 형식만 확인.
+  assert(/^\$2[aby]\$/.test(row.password_hash), 'dummy bcrypt 해시 형식 아님');
   // free 구독 자동 생성
   const sub = db.prepare(`SELECT plan_code FROM subscriptions WHERE user_id = ? AND status IN ('active','trialing')`).get(row.id);
   assert(sub, 'free 구독 미생성');
@@ -3571,12 +3441,11 @@ await step('seed — admin 계정 생성 + bcrypt 해시 + free 구독', async (
   cleanSeedEnv();
 });
 
-await step('seed — tester 계정 role=user + free 구독', async () => {
+await step('seed(Google only) — tester 계정 role=user + free 구독 (password env 없이도 생성)', async () => {
   cleanSeedEnv();
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   const email = `seed_tester_${Date.now()}@example.com`;
   process.env.SEED_TESTER_EMAIL = email;
-  process.env.SEED_TESTER_PASSWORD = 'valid-password-1234';
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
   const { default: db } = await import('../src/db/database.js');
@@ -3588,12 +3457,11 @@ await step('seed — tester 계정 role=user + free 구독', async () => {
   cleanSeedEnv();
 });
 
-await step('seed — 두 번 실행해도 중복 생성 없음', async () => {
+await step('seed(Google only) — 두 번 실행해도 중복 생성 없음', async () => {
   cleanSeedEnv();
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   const email = `seed_dup_${Date.now()}@example.com`;
   process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = 'valid-password-1234';
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
   svc.seedConfiguredAccounts(); // 두 번째 호출
@@ -3603,18 +3471,17 @@ await step('seed — 두 번 실행해도 중복 생성 없음', async () => {
   cleanSeedEnv();
 });
 
-await step('seed — 기존 role=user 계정을 admin 으로 보정', async () => {
+await step('seed(Google only) — 기존 role=user 계정을 admin 으로 보정', async () => {
   cleanSeedEnv();
   const { default: db } = await import('../src/db/database.js');
   const { nanoid } = await import('nanoid');
   const bcrypt = (await import('bcryptjs')).default;
   const email = `seed_promote_${Date.now()}@example.com`;
-  // 미리 user 로 가입
+  // 미리 user 로 row 만 생성 (dummy hash)
   db.prepare(`INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'user')`)
-    .run(nanoid(), email, await bcrypt.hash('originalpw1234', 4));
+    .run(nanoid(), email, await bcrypt.hash('!dummy', 4));
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = 'newpw-not-used-existing-user-1234';
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
   const row = db.prepare('SELECT role FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
@@ -3622,34 +3489,16 @@ await step('seed — 기존 role=user 계정을 admin 으로 보정', async () =
   cleanSeedEnv();
 });
 
-await step('seed — 짧은 비밀번호면 skip + 사용자 미생성', async () => {
-  cleanSeedEnv();
-  process.env.SEED_ACCOUNTS_ENABLED = 'true';
-  const email = `seed_short_${Date.now()}@example.com`;
-  process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = '123';   // 8자 미만
-  const svc = await import('../src/services/seedAccounts.service.js');
-  const out = svc.seedConfiguredAccounts();
-  const adminResult = out.results.find((r) => r.kind === 'admin');
-  assert.equal(adminResult.skipped, true);
-  assert.equal(adminResult.reason, 'password_too_short');
-  const { default: db } = await import('../src/db/database.js');
-  const row = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
-  assert.equal(row, undefined, '짧은 비밀번호인데 계정 생성됨');
-  cleanSeedEnv();
-});
-
-await step('seed — tester 가 이미 admin 이면 강등하지 않음', async () => {
+await step('seed(Google only) — tester 가 이미 admin 이면 강등하지 않음', async () => {
   cleanSeedEnv();
   const { default: db } = await import('../src/db/database.js');
   const { nanoid } = await import('nanoid');
   const bcrypt = (await import('bcryptjs')).default;
   const email = `seed_protect_${Date.now()}@example.com`;
   db.prepare(`INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'admin')`)
-    .run(nanoid(), email, await bcrypt.hash('pw1234567890', 4));
+    .run(nanoid(), email, await bcrypt.hash('!dummy', 4));
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   process.env.SEED_TESTER_EMAIL = email;
-  process.env.SEED_TESTER_PASSWORD = 'valid-password-1234';
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
   const row = db.prepare('SELECT role FROM users WHERE LOWER(email) = ?').get(email.toLowerCase());
@@ -3657,26 +3506,26 @@ await step('seed — tester 가 이미 admin 이면 강등하지 않음', async 
   cleanSeedEnv();
 });
 
-await step('seed — admin 로그인 후 /api/me role=admin + /admin 200, tester 는 403', async () => {
+await step('seed(Google only) — seed 계정이 /api/me 에서 admin role 로 인증된다', async () => {
   cleanSeedEnv();
   const adminEmail = `seed_login_admin_${Date.now()}@example.com`;
   const testerEmail = `seed_login_tester_${Date.now()}@example.com`;
-  const pw = 'valid-password-1234';
   process.env.SEED_ACCOUNTS_ENABLED = 'true';
   process.env.SEED_ADMIN_EMAIL = adminEmail;
-  process.env.SEED_ADMIN_PASSWORD = pw;
   process.env.SEED_TESTER_EMAIL = testerEmail;
-  process.env.SEED_TESTER_PASSWORD = pw;
   process.env.DEMO_ALLOW_ANONYMOUS = 'false';
   const svc = await import('../src/services/seedAccounts.service.js');
   svc.seedConfiguredAccounts();
 
-  // express 앱 구성 (auth + admin)
+  // express 앱 구성 (auth + admin). Google 로그인 시뮬레이션 없이 — seed 가 만든 row 의 id 로
+  // signToken 만 호출해 cookie 를 만들면 Google 로그인 직후와 동일한 인증 컨텍스트가 된다.
   const t = Date.now() + Math.random();
   const { default: express } = await import('express');
   const { default: cookieParser } = await import('cookie-parser');
   const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
   const adminRoutes = (await import(`../src/routes/admin.routes.js?t=${t}`)).default;
+  const { signToken, COOKIE_NAME } = await import('../src/middleware/auth.middleware.js');
+  const { default: db } = await import('../src/db/database.js');
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
@@ -3685,28 +3534,17 @@ await step('seed — admin 로그인 후 /api/me role=admin + /admin 200, tester
   app.use('/api/admin', adminRoutes);
   const { srv, port } = await startServer(app);
   try {
-    // admin login
-    const aLogin = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: adminEmail, password: pw }),
-    });
-    assert.equal(aLogin.status, 200, `admin login status=${aLogin.status}`);
-    assert.equal(aLogin.body.user.role, 'admin');
-    assert(!('password_hash' in aLogin.body.user), 'password_hash 노출됨');
-    const aCookie = (aLogin.setCookie || '').split(';')[0];
+    const adminRow = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(adminEmail.toLowerCase());
+    const testerRow = db.prepare('SELECT id FROM users WHERE LOWER(email)=?').get(testerEmail.toLowerCase());
+    const aCookie = `${COOKIE_NAME}=${signToken({ sub: adminRow.id, email: adminEmail })}`;
+    const tCookie = `${COOKIE_NAME}=${signToken({ sub: testerRow.id, email: testerEmail })}`;
+
     const aMe = await jsonFetch(`http://127.0.0.1:${port}/api/me`, { headers: { cookie: aCookie } });
     assert.equal(aMe.body.user.role, 'admin');
+    assert(!('password_hash' in aMe.body.user), 'password_hash 노출됨');
     const aAdmin = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie: aCookie } });
     assert.equal(aAdmin.status, 200, `admin summary=${aAdmin.status}`);
 
-    // tester login → /admin 403
-    const tLogin = await jsonFetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: testerEmail, password: pw }),
-    });
-    assert.equal(tLogin.status, 200, `tester login=${tLogin.status}`);
-    assert.equal(tLogin.body.user.role, 'user');
-    const tCookie = (tLogin.setCookie || '').split(';')[0];
     const tMe = await jsonFetch(`http://127.0.0.1:${port}/api/me`, { headers: { cookie: tCookie } });
     assert.equal(tMe.body.user.role, 'user');
     const tAdmin = await jsonFetch(`http://127.0.0.1:${port}/api/admin/summary`, { headers: { cookie: tCookie } });
@@ -3745,96 +3583,9 @@ await step('seed reserved — getSeedAccountEmails 빈값 필터 + 정규화', a
   cleanSeedEnv();
 });
 
-await step('seed reserved — /register 예약 이메일은 409 RESERVED_ACCOUNT_EMAIL', async () => {
-  cleanSeedEnv();
-  const adminEmail = `reserved_admin_${Date.now()}@example.com`;
-  const testerEmail = `reserved_tester_${Date.now()}@example.com`;
-  process.env.SEED_ADMIN_EMAIL = adminEmail;
-  process.env.SEED_TESTER_EMAIL = testerEmail;
-  // 일부러 SEED_ACCOUNTS_ENABLED 는 켜지 않음 — 그래도 예약은 유효해야 한다
-  process.env.SEED_ACCOUNTS_ENABLED = 'false';
-
-  const t = Date.now() + Math.random();
-  const { default: express } = await import('express');
-  const { default: cookieParser } = await import('cookie-parser');
-  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use('/api/auth', authRoutes);
-  const { srv, port } = await startServer(app);
-  try {
-    const r1 = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: adminEmail, password: 'valid-password-1234', name: '시도자' }),
-    });
-    assert.equal(r1.status, 409, `admin reserved status=${r1.status}`);
-    assert.equal(r1.body.error, 'RESERVED_ACCOUNT_EMAIL');
-    // 보안: admin/tester 구분이 응답 메시지에 노출되지 않아야 한다
-    assert(!/admin/i.test(r1.body.message || ''), `message leaks admin: ${r1.body.message}`);
-    assert(!/tester|베타 테스터|beta tester/i.test(r1.body.message || ''),
-      `message leaks tester: ${r1.body.message}`);
-
-    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: testerEmail, password: 'valid-password-1234' }),
-    });
-    assert.equal(r2.status, 409, `tester reserved status=${r2.status}`);
-    assert.equal(r2.body.error, 'RESERVED_ACCOUNT_EMAIL');
-    assert.equal(r1.body.message, r2.body.message, 'admin/tester 응답 메시지가 동일해야 함');
-  } finally { srv.close(); cleanSeedEnv(); }
-});
-
-await step('seed reserved — 예약 이메일은 대소문자/공백 변형도 차단', async () => {
-  cleanSeedEnv();
-  const base = `reserved_case_${Date.now()}@example.com`;
-  process.env.SEED_ADMIN_EMAIL = base;
-
-  const t = Date.now() + Math.random();
-  const { default: express } = await import('express');
-  const { default: cookieParser } = await import('cookie-parser');
-  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use('/api/auth', authRoutes);
-  const { srv, port } = await startServer(app);
-  try {
-    const variant = base.toUpperCase();
-    const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: variant, password: 'valid-password-1234' }),
-    });
-    assert.equal(r.status, 409, `status=${r.status}`);
-    assert.equal(r.body.error, 'RESERVED_ACCOUNT_EMAIL');
-  } finally { srv.close(); cleanSeedEnv(); }
-});
-
-await step('seed reserved — 비예약 이메일은 정상 회원가입 통과', async () => {
-  cleanSeedEnv();
-  process.env.SEED_ADMIN_EMAIL = `reserved_only_${Date.now()}@example.com`;
-  process.env.SEED_TESTER_EMAIL = `reserved_only2_${Date.now()}@example.com`;
-
-  const t = Date.now() + Math.random();
-  const { default: express } = await import('express');
-  const { default: cookieParser } = await import('cookie-parser');
-  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use('/api/auth', authRoutes);
-  const { srv, port } = await startServer(app);
-  try {
-    const fresh = `normal_signup_${Date.now()}@example.com`;
-    const r = await jsonFetch(`http://127.0.0.1:${port}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: fresh, password: 'valid-password-1234' }),
-    });
-    assert.equal(r.status, 201, `status=${r.status}, body=${JSON.stringify(r.body)}`);
-    assert.equal(r.body.user.role, 'user');
-    assert(!('password_hash' in r.body.user), 'password_hash 노출됨');
-  } finally { srv.close(); cleanSeedEnv(); }
-});
+// /register 엔드포인트 자체가 제거되어 RESERVED_ACCOUNT_EMAIL 검증은 더 이상 의미 없음.
+// (Google 로그인 only — 예약 이메일을 모르는 사용자가 그 이메일의 Google 계정을 가질 수 없으므로
+// 자연스럽게 차단됨. isSeedReservedEmail / getSeedAccountEmails 자체는 위 두 테스트에서 검증.)
 
 await step('seed promote toggle — SEED_ALLOW_PROMOTE_EXISTING=false 면 기존 user 보정 안 함', async () => {
   cleanSeedEnv();
@@ -3883,57 +3634,8 @@ await step('seed promote toggle — 기본값(true)이면 기존 user 를 admin 
   cleanSeedEnv();
 });
 
-await step('seed password reset — SEED_RESET_PASSWORDS=false 면 기존 비밀번호 유지', async () => {
-  cleanSeedEnv();
-  const { default: db } = await import('../src/db/database.js');
-  const bcrypt = (await import('bcryptjs')).default;
-  const email = `seed_no_reset_${Date.now()}@example.com`;
-  const originalPw = 'original-password-1234';
-
-  // 1) 첫 부팅 — seed 가 계정 생성
-  process.env.SEED_ACCOUNTS_ENABLED = 'true';
-  process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = originalPw;
-  const svc = await import('../src/services/seedAccounts.service.js');
-  svc.seedConfiguredAccounts();
-  const beforeHash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
-    .get(email.toLowerCase()).password_hash;
-
-  // 2) env 비밀번호만 바꾸고 SEED_RESET_PASSWORDS 끈 채로 재부팅
-  process.env.SEED_ADMIN_PASSWORD = 'changed-password-9999';
-  process.env.SEED_RESET_PASSWORDS = 'false';
-  svc.seedConfiguredAccounts();
-  const afterHash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
-    .get(email.toLowerCase()).password_hash;
-  assert.equal(beforeHash, afterHash, 'reset=false 인데 해시가 바뀜');
-  // 원래 비밀번호로 여전히 검증 가능해야 함
-  assert.equal(bcrypt.compareSync(originalPw, afterHash), true);
-  cleanSeedEnv();
-});
-
-await step('seed password reset — SEED_RESET_PASSWORDS=true 면 env 값으로 재설정', async () => {
-  cleanSeedEnv();
-  const { default: db } = await import('../src/db/database.js');
-  const bcrypt = (await import('bcryptjs')).default;
-  const email = `seed_reset_${Date.now()}@example.com`;
-  const originalPw = 'original-password-1234';
-
-  process.env.SEED_ACCOUNTS_ENABLED = 'true';
-  process.env.SEED_ADMIN_EMAIL = email;
-  process.env.SEED_ADMIN_PASSWORD = originalPw;
-  const svc = await import('../src/services/seedAccounts.service.js');
-  svc.seedConfiguredAccounts();
-
-  const newPw = 'rotated-password-7777';
-  process.env.SEED_ADMIN_PASSWORD = newPw;
-  process.env.SEED_RESET_PASSWORDS = 'true';
-  svc.seedConfiguredAccounts();
-  const hash = db.prepare('SELECT password_hash FROM users WHERE LOWER(email) = ?')
-    .get(email.toLowerCase()).password_hash;
-  assert.equal(bcrypt.compareSync(newPw, hash), true, '새 비밀번호로 인증 실패');
-  assert.equal(bcrypt.compareSync(originalPw, hash), false, '옛 비밀번호가 여전히 통과');
-  cleanSeedEnv();
-});
+// SEED_RESET_PASSWORDS 토글은 Google 로그인 only 환경에서 의미 없음 — password 인증 경로 자체가 제거됨.
+// dummy hash 가 매번 같은 값이든 다르든 인증에 사용되지 않으므로 별도 회귀 불필요.
 
 // ──────────────────────────────────────────────
 // getReviewsForIssue 유틸 (프론트 순수 로직)
@@ -5059,8 +4761,11 @@ await step('rateLimit — 라우트가 limiter 를 import + 적용 (소스 패�
 
   const authSrc = read('../src/routes/auth.routes.js');
   assert(/authLimiter/.test(authSrc), 'auth.routes 가 authLimiter import 해야 함');
-  assert(/router\.post\(\s*['"]\/login['"]\s*,\s*authLimiter/.test(authSrc), '/login 에 authLimiter 적용');
-  assert(/router\.post\(\s*['"]\/register['"]\s*,\s*authLimiter/.test(authSrc), '/register 에 authLimiter 적용');
+  // Google 로그인 only 환경 — /register, /login 은 제거되었고 /google 만 authLimiter 적용 대상.
+  assert(/router\.post\(\s*['"]\/google['"]\s*,\s*authLimiter/.test(authSrc), '/google 에 authLimiter 적용');
+  // 제거된 엔드포인트가 부주의하게 복원되면 잡는다.
+  assert(!/router\.post\(\s*['"]\/login['"]/.test(authSrc), '/login 라우트가 다시 추가됨');
+  assert(!/router\.post\(\s*['"]\/register['"]/.test(authSrc), '/register 라우트가 다시 추가됨');
 
   const uploadSrc = read('../src/routes/upload.routes.js');
   assert(/uploadLimiter/.test(uploadSrc), 'upload.routes 가 uploadLimiter import 해야 함');

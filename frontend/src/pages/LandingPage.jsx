@@ -26,7 +26,7 @@ export default function LandingPage() {
     else navigate('/login', { state: { from: '/upload' } });
   }
   function goSampleDemo() {
-    // 비로그인은 회원가입 없이 바로 공개 샘플 리포트. 로그인 사용자는 기존 sample analysis 흐름 유지.
+    // 비로그인은 로그인 없이 바로 공개 샘플 리포트. 로그인 사용자는 기존 sample analysis 흐름 유지.
     if (user) navigate('/upload?sample=1');
     else navigate('/demo/sample-report');
   }
@@ -62,7 +62,7 @@ export default function LandingPage() {
             내 리뷰 파일 업로드하기
           </button>
         </div>
-        <div className="hero__note">샘플 리포트는 회원가입 없이 바로 확인할 수 있어요. 내 리뷰 파일 분석은 로그인 후 가능합니다.</div>
+        <div className="hero__note">샘플 리포트는 로그인 없이 바로 확인할 수 있어요. 내 리뷰 파일 분석은 Google 로그인 후 가능합니다.</div>
       </header>
 
       {/* 2) 문제 제기 */}
