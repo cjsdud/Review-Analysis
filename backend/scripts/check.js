@@ -5207,6 +5207,289 @@ await step('columnMapping — 영문 reviewDate / createdAt / registered_at 자�
   assert.equal(r3.createdAt?.column, '리뷰 등록일', '리뷰 등록일 자동 매핑 실패');
 });
 
+// ──────────────────────────────────────────────
+// 베타 샘플 분석 공유 (sharedReport.service + admin/share 라우트)
+// ──────────────────────────────────────────────
+async function makeShareApp() {
+  const t = Date.now() + Math.random();
+  const { default: express } = await import('express');
+  const { default: cookieParser } = await import('cookie-parser');
+  const authRoutes = (await import(`../src/routes/auth.routes.js?t=${t}`)).default;
+  const adminRoutes = (await import(`../src/routes/admin.routes.js?t=${t}`)).default;
+  const shareRoutes = (await import(`../src/routes/share.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/auth', authRoutes);
+  app.use('/api/admin', adminRoutes);
+  app.use('/api/shared-reports', shareRoutes);
+  return app;
+}
+
+// 분석 1건 + 상품 1건을 직접 INSERT — 실제 분석 파이프라인 호출은 생략.
+async function seedCompletedAnalysisForShare({ ownerId = null } = {}) {
+  const { default: db } = await import('../src/db/database.js');
+  const aid = `share_a_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const summary = {
+    totalReviews: 3,
+    productCount: 1,
+    aiComment: '샘플 분석 — 공유 코드 테스트용',
+    reviewHighlights: { positive: [], neutral: [], negative: [] },
+  };
+  const product = {
+    productKey: '테스트 셔츠',
+    productName: '테스트 셔츠',
+    totalReviews: 3,
+    negativeReviews: 1,
+    negativeRatio: 0.33,
+    positiveReviews: 2,
+    neutralReviews: 0,
+    sentimentCounts: { positive: 2, neutral: 0, negative: 1 },
+    sentimentRatios: { positive: 0.67, neutral: 0, negative: 0.33 },
+    issueReviewCount: 1,
+    totalIssueCount: 1,
+    issueRatio: 0.33,
+    averageRating: 4.2,
+    productStatus: 'normal',
+    topIssues: [{ category: '사이즈', issueLabel: '소매가 짧음', count: 1 }],
+    detailPageActions: ['실제 소매 길이 cm 안내'],
+    replyTemplates: [],
+    reviews: [
+      { id: 'r1', productName: '테스트 셔츠', content: '핏이 예뻐요', rating: 5 },
+      { id: 'r2', productName: '테스트 셔츠', content: '소매가 살짝 짧아요', rating: 3 },
+      { id: 'r3', productName: '테스트 셔츠', content: '재구매 의사 있어요', rating: 5 },
+    ],
+  };
+  db.prepare(
+    `INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id, is_sample, progress)
+     VALUES (?, ?, 'completed', ?, ?, 0, 100)`,
+  ).run(aid, null, JSON.stringify(summary), ownerId);
+  db.prepare(
+    `INSERT INTO product_analyses (id, analysis_id, product_key, product_name, data, user_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(`${aid}_0`, aid, product.productKey, product.productName, JSON.stringify(product), ownerId);
+  return aid;
+}
+
+await step('share — buildShareCode 형식 + normalizeShareCode', async () => {
+  const m = await import('../src/services/sharedReport.service.js');
+  for (let i = 0; i < 30; i++) {
+    const c = m.buildShareCode();
+    assert(/^RF-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c), `잘못된 코드 형식: ${c}`);
+    // 시각 혼동 글자 제외 alphabet
+    assert(!/[OIL01]/.test(c.slice(3)), `혼동 글자 포함: ${c}`);
+  }
+  assert.equal(m.normalizeShareCode('rf-abcd-1234'), 'RF-ABCD-1234', '소문자 정규화 실패');
+  assert.equal(m.normalizeShareCode('not-a-code'), null);
+  assert.equal(m.normalizeShareCode(''), null);
+});
+
+await step('share — admin 만 공유 코드를 생성할 수 있다 (일반 user 는 403)', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const aid = await seedCompletedAnalysisForShare();
+    const { cookie: userCookie } = await registerAndCookie(port, `su_${Date.now()}@x.com`);
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: userCookie },
+      body: JSON.stringify({}),
+    });
+    assert.equal(r.status, 403, `status=${r.status}`);
+    assert.equal(r.body?.error, 'FORBIDDEN');
+  } finally { srv.close(); }
+});
+
+await step('share — admin 이 공유 코드 생성 후 공개 GET 으로 결과 조회', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `sa_${Date.now()}@x.com`;
+    const { cookie: adminCookie } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const aid = await seedCompletedAnalysisForShare();
+
+    const create = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ reason: '베타 셀러 A' }),
+    });
+    assert.equal(create.status, 201, `status=${create.status}`);
+    const code = create.body?.share?.code;
+    assert(/^RF-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code), `잘못된 코드: ${code}`);
+    assert(create.body.share.expiresAt, 'expiresAt 누락');
+
+    // 공개 GET — 로그인 없이 조회 가능
+    const view = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    assert.equal(view.status, 200, `view status=${view.status}`);
+    assert.equal(view.body?.summary?.productCount, 1, 'summary 누락');
+    assert.equal(view.body?.products?.length, 1, 'products 누락');
+    // 공개 응답에 user_id/upload_id/관리자 id 같은 내부 식별자가 흘러가면 안 됨
+    const raw = JSON.stringify(view.body);
+    assert(!raw.includes('user_id'), '응답에 user_id 노출');
+    assert(!raw.includes('upload_id'), '응답에 upload_id 노출');
+    assert(!raw.includes('"createdBy"'), '응답에 createdBy 노출');
+  } finally { srv.close(); }
+});
+
+await step('share — 잘못된/존재하지 않는 코드는 SHARE_INVALID 404', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const r1 = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/INVALID-FORMAT`);
+    assert.equal(r1.status, 404);
+    assert.equal(r1.body?.error, 'SHARE_INVALID');
+    const r2 = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/RF-AAAA-BBBB`);
+    assert.equal(r2.status, 404);
+    assert.equal(r2.body?.error, 'SHARE_INVALID');
+    // POST /resolve 도 동일 메시지
+    const r3 = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'RF-AAAA-BBBB' }),
+    });
+    assert.equal(r3.status, 404);
+    assert.equal(r3.body?.error, 'SHARE_INVALID');
+  } finally { srv.close(); }
+});
+
+await step('share — 만료된 코드는 SHARE_INVALID 로 차단', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `se_${Date.now()}@x.com`;
+    const { cookie: adminCookie } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const aid = await seedCompletedAnalysisForShare();
+    const create = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({}),
+    });
+    const shareId = create.body.share.id;
+    const code = create.body.share.code;
+    // 만료일을 0(즉시 만료)으로 변경
+    const patch = await jsonFetch(`http://127.0.0.1:${port}/api/admin/shared-reports/${shareId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ expiresInDays: 0 }),
+    });
+    assert.equal(patch.status, 200);
+    assert(patch.body.share.isExpired, 'isExpired 가 true 가 아님');
+    const view = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    assert.equal(view.status, 404);
+    assert.equal(view.body?.error, 'SHARE_INVALID');
+  } finally { srv.close(); }
+});
+
+await step('share — 회수된 코드는 SHARE_INVALID 로 차단', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `sr_${Date.now()}@x.com`;
+    const { cookie: adminCookie } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const aid = await seedCompletedAnalysisForShare();
+    const create = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({}),
+    });
+    const shareId = create.body.share.id;
+    const code = create.body.share.code;
+    const revoke = await jsonFetch(`http://127.0.0.1:${port}/api/admin/shared-reports/${shareId}/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ reason: '테스트 회수' }),
+    });
+    assert.equal(revoke.status, 200);
+    assert(revoke.body.share.revokedAt, 'revokedAt 누락');
+    const view = await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    assert.equal(view.status, 404);
+    assert.equal(view.body?.error, 'SHARE_INVALID');
+  } finally { srv.close(); }
+});
+
+await step('share — 조회마다 view_count / last_viewed_at 갱신', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `sv_${Date.now()}@x.com`;
+    const { cookie: adminCookie } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const aid = await seedCompletedAnalysisForShare();
+    const create = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({}),
+    });
+    const shareId = create.body.share.id;
+    const code = create.body.share.code;
+    await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    await jsonFetch(`http://127.0.0.1:${port}/api/shared-reports/${code}`);
+    const list = await jsonFetch(`http://127.0.0.1:${port}/api/admin/shared-reports`, {
+      headers: { cookie: adminCookie },
+    });
+    const row = (list.body?.shares || []).find((s) => s.id === shareId);
+    assert(row, 'admin list 에서 누락');
+    assert.equal(row.viewCount, 3, `viewCount=${row.viewCount}`);
+    assert(row.lastViewedAt, 'lastViewedAt 누락');
+  } finally { srv.close(); }
+});
+
+await step('share — 완료되지 않은 분석은 공유 코드 생성 거부', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `sp_${Date.now()}@x.com`;
+    const { cookie: adminCookie } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const { default: db } = await import('../src/db/database.js');
+    const aid = `share_pending_${Date.now()}`;
+    db.prepare(
+      `INSERT INTO analysis_jobs (id, upload_id, status, summary, user_id, is_sample, progress)
+       VALUES (?, NULL, 'processing', NULL, NULL, 0, 50)`,
+    ).run(aid);
+    const r = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({}),
+    });
+    assert.equal(r.status, 400);
+    assert.equal(r.body?.error, 'ANALYSIS_NOT_COMPLETED');
+  } finally { srv.close(); }
+});
+
+await step('share — admin_action_logs 에 SHARE_CREATED / SHARE_REVOKED 기록', async () => {
+  const app = await makeShareApp();
+  const { srv, port } = await startServer(app);
+  try {
+    const adminEmail = `sl_${Date.now()}@x.com`;
+    const { cookie: adminCookie, userId: adminId } = await registerAndCookie(port, adminEmail);
+    await promoteToAdmin(adminEmail);
+    const aid = await seedCompletedAnalysisForShare();
+    const create = await jsonFetch(`http://127.0.0.1:${port}/api/admin/analyses/${aid}/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ reason: '베타 셀러 B' }),
+    });
+    const shareId = create.body.share.id;
+    await jsonFetch(`http://127.0.0.1:${port}/api/admin/shared-reports/${shareId}/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({}),
+    });
+    const { default: db } = await import('../src/db/database.js');
+    const logs = db.prepare(
+      `SELECT action_type FROM admin_action_logs WHERE target_id = ? AND admin_user_id = ? ORDER BY created_at`,
+    ).all(shareId, adminId);
+    const types = logs.map((l) => l.action_type);
+    assert(types.includes('SHARE_CREATED'), `SHARE_CREATED 로그 누락 (logs=${JSON.stringify(types)})`);
+    assert(types.includes('SHARE_REVOKED'), `SHARE_REVOKED 로그 누락 (logs=${JSON.stringify(types)})`);
+  } finally { srv.close(); }
+});
+
 if (failures.length) {
   console.error(`\n[check] 실패 ${failures.length}건: ${failures.join(', ')}`);
   process.exit(1);

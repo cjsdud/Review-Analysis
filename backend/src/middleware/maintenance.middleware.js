@@ -13,6 +13,9 @@ const PASS_THROUGH = [
   /^\/api\/me$/,
   /^\/api\/announcements\/active$/,
   /^\/api\/admin\//,
+  // 외부 셀러용 공유 결과 — 점검 중에도 베타 영업 흐름이 끊기지 않게 통과.
+  // (실제 분석 시작/업로드 등 비용 큰 API 는 여전히 차단됨.)
+  /^\/api\/shared-reports\//,
 ];
 
 function isAdmin(req) {

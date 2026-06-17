@@ -16,6 +16,7 @@ import billingRoutes from './routes/billing.routes.js';
 import plansRoutes from './routes/plans.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import announcementsRoutes from './routes/announcements.routes.js';
+import shareRoutes from './routes/share.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
 import { maintenanceGate } from './middleware/maintenance.middleware.js';
@@ -58,6 +59,9 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/plans', plansRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/announcements', announcementsRoutes);
+// 공유 코드(외부 셀러용 읽기 전용) — 비로그인 접근.
+// shareLimiter 가 라우터 내부에서 코드 무차별 대입을 차단.
+app.use('/api/shared-reports', shareRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/analyses', historyRoutes); // 분석 히스토리 목록 (복수형)

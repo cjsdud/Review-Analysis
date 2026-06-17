@@ -10,6 +10,8 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import PricingPage from './pages/PricingPage.jsx';
 import SampleReportPage from './pages/SampleReportPage.jsx';
+import SharePage from './pages/SharePage.jsx';
+import SharedReportPage from './pages/SharedReportPage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 import PrivacyPage from './pages/PrivacyPage.jsx';
 import ProtectedRoute from './auth/ProtectedRoute.jsx';
@@ -22,6 +24,7 @@ import AdminSettingsPage from './pages/admin/AdminSettingsPage.jsx';
 import AdminAnnouncementsPage from './pages/admin/AdminAnnouncementsPage.jsx';
 import AdminActionLogsPage from './pages/admin/AdminActionLogsPage.jsx';
 import AdminLlmLogsPage from './pages/admin/AdminLlmLogsPage.jsx';
+import AdminSharesPage from './pages/admin/AdminSharesPage.jsx';
 import { useAuth } from './auth/AuthContext.jsx';
 
 // / 진입 분기: 로그인 사용자는 분석 히스토리(앱 홈), 비로그인은 랜딩 페이지.
@@ -40,6 +43,9 @@ export default function App() {
       <Route path="/signup" element={<LoginPage initialMode="register" />} />
       {/* 공개 샘플 리포트 — 비로그인 접근 가능. 정적 데이터만 사용. */}
       <Route path="/demo/sample-report" element={<SampleReportPage />} />
+      {/* 외부 셀러용 공유 코드 입력 + 공유 분석 결과 — 비로그인 접근 가능. */}
+      <Route path="/share" element={<SharePage />} />
+      <Route path="/share/:code" element={<SharedReportPage />} />
       {/* 법적 페이지 — 비로그인 사용자도 접근 가능. Layout 의 user.role 참조를 피하기 위해 별도 라우트. */}
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
@@ -59,6 +65,7 @@ export default function App() {
           <Route path="announcements" element={<AdminAnnouncementsPage />} />
           <Route path="action-logs" element={<AdminActionLogsPage />} />
           <Route path="llm-logs" element={<AdminLlmLogsPage />} />
+          <Route path="shares" element={<AdminSharesPage />} />
         </Route>
       </Route>
     </Routes>

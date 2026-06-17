@@ -116,6 +116,23 @@ export const aiReplyLimiter = rateLimit({
   }),
 });
 
+// ── 4) shareLimiter — 공유 코드 무차별 대입 방지 ───────────────────────────
+// 기본: 1h / 30회. 항상 IP 기준 (외부 셀러는 로그인 없음).
+// 코드 alphabet 31자 * 8자리 = 8.5e11 가짓수라 충분히 큰 공간이지만, 봇이 분당
+// 수천 건씩 던지는 시나리오를 막기 위한 부가 가드.
+export const shareLimiter = rateLimit({
+  windowMs: envInt('SHARE_RATE_LIMIT_WINDOW_MS', 60 * 60 * 1000),
+  max: envInt('SHARE_RATE_LIMIT_MAX', 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipWhenDisabled,
+  keyGenerator: ipKey,
+  handler: rateLimitHandler({
+    errorText: '공유 코드 조회 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+    code: 'SHARE_RATE_LIMITED',
+  }),
+});
+
 // ── 운영 가시성 ────────────────────────────────────────────────────────────
 // 부팅 시 한 줄 요약을 콘솔에 남겨 정책 변경이 적용됐는지 운영자가 확인.
 export function logRateLimitConfig() {

@@ -306,3 +306,24 @@ CREATE TABLE IF NOT EXISTS llm_usage_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_llm_usage_user ON llm_usage_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_llm_usage_analysis ON llm_usage_logs(analysis_id);
+
+-- ===== 베타 샘플 분석 공유 코드 =====
+-- 관리자가 특정 analysis_jobs row 에 대해 발급하는 읽기 전용 공유 코드.
+-- 외부 셀러는 로그인 없이 code 만으로 분석 결과(마스킹된 리뷰 + 요약)를 조회한다.
+-- 모든 마스킹 / 권한 / 다운로드 차단은 share.routes.js + 프론트 SharedReportPage 에서 강제.
+CREATE TABLE IF NOT EXISTS shared_reports (
+  id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  code TEXT NOT NULL UNIQUE,             -- RF-XXXX-XXXX 형태, 추측 어려운 랜덤
+  expires_at TEXT,                       -- ISO timestamp, NULL 이면 무기한(관리자 수동 설정용)
+  revoked_at TEXT,                       -- NOT NULL 이면 회수된 코드
+  view_count INTEGER NOT NULL DEFAULT 0,
+  last_viewed_at TEXT,
+  created_by TEXT NOT NULL,              -- admin user_id
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT,
+  FOREIGN KEY (analysis_id) REFERENCES analysis_jobs(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_shared_reports_analysis ON shared_reports(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_shared_reports_created ON shared_reports(created_at);

@@ -9,6 +9,7 @@ const TABS = [
   { to: '/admin/announcements', label: '공지/배너' },
   { to: '/admin/action-logs', label: '액션 로그' },
   { to: '/admin/llm-logs', label: 'AI 분석 로그' },
+  { to: '/admin/shares', label: '공유 코드' },
 ];
 
 export default function AdminLayout() {

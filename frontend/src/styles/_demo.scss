@@ -185,3 +185,185 @@
     &__title { font-size: 18px; }
   }
 }
+
+// ===== /share — 공유 코드 입력 폼 =====
+.share-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+
+  &__input {
+    flex: 1 1 220px;
+    min-width: 0;
+    padding: 12px 14px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid $border;
+    border-radius: 10px;
+    background: #fff;
+    color: $text-main;
+    &:focus-visible {
+      @include focus-ring;
+      border-color: $primary;
+    }
+    &[aria-invalid='true'] {
+      border-color: $danger;
+    }
+  }
+  &__submit {
+    min-height: 48px;
+    min-width: 120px;
+    flex-shrink: 0;
+  }
+  &__error {
+    font-size: 13px;
+    color: $danger;
+    text-align: center;
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); border: 0;
+}
+
+// ===== /share/:code — 상품 블록 (읽기 전용) =====
+.shared-product-list {
+  display: grid;
+  gap: 20px;
+}
+
+.shared-product {
+  background: $card;
+  border: 1px solid $border;
+  border-radius: $r-lg;
+  padding: 18px 20px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+
+  &__head {
+    margin-bottom: 12px;
+  }
+  &__title {
+    font-size: 17px;
+    font-weight: 800;
+    color: $text-main;
+  }
+  &__meta {
+    font-size: 12.5px;
+    margin-top: 4px;
+  }
+  &__section {
+    margin-top: 16px;
+  }
+  &__sec-label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: $text-sub;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+}
+
+.shared-issue-list,
+.shared-action-list,
+.shared-reply-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.shared-issue {
+  border: 1px solid $border;
+  border-left: 3px solid $primary;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  &__label {
+    color: $text-main;
+  }
+  &__count {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  &__action {
+    margin-top: 6px;
+    font-size: 13px;
+    color: $text-main;
+    background: $brand-50;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  &__evi {
+    margin: 6px 0 0;
+    padding: 6px 10px;
+    background: #f8fafc;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: $text-sub;
+    line-height: 1.5;
+  }
+}
+
+.shared-action-list li {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: $text-main;
+}
+
+.shared-reply {
+  border: 1px solid $border;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+
+  &__head {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  &__body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: $text-main;
+    white-space: pre-wrap;
+  }
+}
+
+// ===== /admin/shares — 관리자 공유 코드 관리 =====
+.admin-share-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+}
+.admin-share-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.admin-share-status {
+  &.is-revoked { color: $danger; font-weight: 700; }
+  &.is-expired { color: $warning; font-weight: 700; }
+  &.is-active  { color: $success; font-weight: 700; }
+}
+

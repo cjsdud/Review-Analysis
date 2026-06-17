@@ -16,6 +16,17 @@ import {
   createPendingJob,
   runAnalysisJob,
 } from '../services/analysisJob.service.js';
+import {
+  createShareForAnalysis,
+  listSharesForAnalysis,
+  listAllShares,
+  revokeShare,
+  updateShareExpiry,
+  getShareById,
+  isAnalysisShareable,
+  serializeShareForAdmin,
+  DEFAULT_SHARE_EXPIRES_DAYS,
+} from '../services/sharedReport.service.js';
 // admin retry 라우트가 사용 — loadReviews / loadAllCorrections 는 analysis.routes.js 에
 // export 되어 있다. 누락하면 POST /admin/analyses/:id/retry 호출 시
 // ReferenceError: loadReviews is not defined 로 즉시 500 응답이 나간다.
@@ -573,6 +584,113 @@ router.post('/analyses/:analysisId/retry', async (req, res) => {
     status: 'processing',
     message: '분석을 다시 시작했습니다.',
   });
+});
+
+// ===== 베타 샘플 공유 코드 관리 =====
+// 외부 셀러에게 분석 결과를 보여주기 위한 읽기 전용 공유 코드.
+// 모든 변경 작업은 admin_action_logs 에 기록.
+
+// 전체 공유 코드 목록 — admin 콘솔 "공유 코드" 탭 메인 뷰.
+router.get('/shared-reports', (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const rows = listAllShares({ limit, offset });
+  res.json({ shares: rows.map(serializeShareForAdmin) });
+});
+
+// 특정 analysis 의 공유 코드 목록.
+router.get('/analyses/:analysisId/share', (req, res) => {
+  const rows = listSharesForAnalysis(req.params.analysisId);
+  res.json({ shares: rows.map(serializeShareForAdmin) });
+});
+
+// 공유 코드 생성. body: { expiresInDays?: number | null, reason?: string }
+router.post('/analyses/:analysisId/share', (req, res) => {
+  const analysisId = req.params.analysisId;
+  const guard = isAnalysisShareable(analysisId);
+  if (!guard.ok) {
+    if (guard.reason === 'not_found') {
+      return res.status(404).json({ error: 'ANALYSIS_NOT_FOUND', message: '분석을 찾을 수 없습니다.' });
+    }
+    return res.status(400).json({
+      error: 'ANALYSIS_NOT_COMPLETED',
+      message: '완료된 분석에 대해서만 공유 코드를 만들 수 있어요.',
+    });
+  }
+  const bodySchema = z.object({
+    expiresInDays: z.number().int().min(0).max(3650).nullable().optional(),
+    reason: z.string().max(500).optional(),
+  });
+  const parsed = bodySchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'INVALID_INPUT', message: '입력 값이 올바르지 않습니다.' });
+  }
+  const expiresInDays = parsed.data.expiresInDays === undefined
+    ? DEFAULT_SHARE_EXPIRES_DAYS
+    : parsed.data.expiresInDays;
+  const share = createShareForAnalysis({
+    analysisId,
+    createdBy: req.user.id,
+    expiresInDays,
+  });
+  logAdminAction({
+    adminUserId: req.user.id,
+    actionType: 'SHARE_CREATED',
+    targetType: 'shared_report',
+    targetId: share.id,
+    after: { analysisId, code: share.code, expiresAt: share.expires_at },
+    reason: parsed.data.reason || null,
+  });
+  res.status(201).json({ share: serializeShareForAdmin(share) });
+});
+
+// 만료일 변경. body: { expiresInDays: number | null, reason?: string }
+router.patch('/shared-reports/:shareId', (req, res) => {
+  const current = getShareById(req.params.shareId);
+  if (!current) return res.status(404).json({ error: 'SHARE_NOT_FOUND', message: '공유 코드를 찾을 수 없습니다.' });
+  const bodySchema = z.object({
+    expiresInDays: z.number().int().min(0).max(3650).nullable(),
+    reason: z.string().max(500).optional(),
+  });
+  const parsed = bodySchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'INVALID_INPUT', message: '입력 값이 올바르지 않습니다.' });
+  }
+  const ok = updateShareExpiry(req.params.shareId, parsed.data.expiresInDays);
+  if (!ok) return res.status(500).json({ error: 'UPDATE_FAILED', message: '만료일 변경에 실패했어요.' });
+  const updated = getShareById(req.params.shareId);
+  logAdminAction({
+    adminUserId: req.user.id,
+    actionType: 'SHARE_EXPIRY_UPDATED',
+    targetType: 'shared_report',
+    targetId: req.params.shareId,
+    before: { expiresAt: current.expires_at },
+    after: { expiresAt: updated.expires_at },
+    reason: parsed.data.reason || null,
+  });
+  res.json({ share: serializeShareForAdmin(updated) });
+});
+
+// 공유 코드 회수(비활성화). body: { reason?: string }
+router.post('/shared-reports/:shareId/revoke', (req, res) => {
+  const current = getShareById(req.params.shareId);
+  if (!current) return res.status(404).json({ error: 'SHARE_NOT_FOUND', message: '공유 코드를 찾을 수 없습니다.' });
+  if (current.revoked_at) {
+    // 이미 회수됨 — idempotent 200.
+    return res.json({ share: serializeShareForAdmin(current) });
+  }
+  revokeShare(req.params.shareId);
+  const updated = getShareById(req.params.shareId);
+  logAdminAction({
+    adminUserId: req.user.id,
+    actionType: 'SHARE_REVOKED',
+    targetType: 'shared_report',
+    targetId: req.params.shareId,
+    before: { revokedAt: null },
+    after: { revokedAt: updated.revoked_at },
+    reason: (req.body?.reason || '').slice(0, 500) || null,
+  });
+  res.json({ share: serializeShareForAdmin(updated) });
 });
 
 export default router;
