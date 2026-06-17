@@ -3,7 +3,7 @@
 //
 // - 상단: 요약 카드 (오늘/이번 달 token, 예상 비용, OpenAI 호출, cache hit, fallback)
 // - 하단: 필터 + 로그 테이블 + 페이지네이션. 상세는 같은 화면에 펼침/접힘.
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { adminApi } from '../../api/adminApi.js';
 import LoadingState from '../../components/LoadingState.jsx';
 
@@ -178,8 +178,12 @@ export default function AdminLlmLogsPage() {
           </thead>
           <tbody>
             {data.logs.map((l) => (
-              <>
-                <tr key={l.id}>
+              // map 의 직접 자식에 key 가 와야 React 가 안정적으로 reconcile 한다.
+              // 이전엔 <> </> 단축 fragment 라 key 를 줄 수 없어 안쪽 <tr> 두 개에 따로
+              // key 를 박았는데, React 가 단축 fragment 키를 무시해 콘솔에 warning 이
+              // 떴다. Fragment 명시형은 key prop 을 받는다.
+              <Fragment key={l.id}>
+                <tr>
                   <td>{formatDate(l.createdAt)}</td>
                   <td>{l.userEmail || l.userId || '—'}</td>
                   <td><code style={{ fontSize: 11 }}>{l.analysisId || '—'}</code></td>
@@ -206,7 +210,7 @@ export default function AdminLlmLogsPage() {
                   </td>
                 </tr>
                 {openId === l.id && (
-                  <tr key={`${l.id}-detail`}>
+                  <tr>
                     <td colSpan={13} className="muted">
                       <div style={{ fontSize: 12, padding: 8, lineHeight: 1.6 }}>
                         <div>promptVersion: <code>{l.promptVersion || '—'}</code> · analysisVersion: <code>{l.analysisVersion || '—'}</code></div>
@@ -222,7 +226,7 @@ export default function AdminLlmLogsPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

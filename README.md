@@ -779,7 +779,7 @@ HTTP 409
 |---|---|---|
 | 🟥 높음 | **체크리스트 DB 영속화** | 현재 localStorage. 멀티 디바이스 대응. 별도 라우트 1개 추가 예정 |
 | 🟥 높음 | **실제 셀러 파일 기반 검증** | `docs/seller-validation-template.md` 양식으로 인터뷰 수집 |
-| 🟧 중간 | **카페24 OAuth 실제 연동** | 설계: `docs/cafe24-oauth-plan.md` |
+| 🟧 중간 | **카페24 OAuth 실제 연동 (검토 중 · 미구현)** | 설계만 명문화. 현재 MVP는 **엑셀/CSV 업로드 전용**이며 자동 수집/플랫폼 계정 연동을 제공하지 않습니다. 설계: `docs/cafe24-oauth-plan.md` |
 | 🟧 중간 | **`user_corrections` 고도화** | 현재 키워드 ≥2개 substring 매칭. 임베딩/유사도 매칭으로 정밀도 ↑ |
 | 🟧 중간 | **샘플 데이터 지속 확장** | 14상품/133건 → 카테고리/상품군 추가 |
 | 🟨 낮음 | **ECharts tree-shaking 세부 최적화** | 필요 차트만 import → gzipped 추가 절감 |
@@ -792,6 +792,7 @@ HTTP 409
 
 ### 별도 문서
 
+- `docs/operations-runbook.md` — **운영 런북** (env 점검 / smoke test / 운영 QA / 실패 대응 시나리오)
 - `docs/deploy-render.md` — Render 단일 Web Service 배포 가이드
 - `docs/seller-validation-template.md` — 셀러당 1부 작성하는 인터뷰/평가 양식
 - `docs/validation-results.md` — 실제 셀러 검증 결과 누적 기록 (검증 요약표 + 검증 N 블록)
