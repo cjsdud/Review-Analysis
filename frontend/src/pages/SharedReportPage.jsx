@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import BrandTitle from '../components/BrandTitle.jsx';
 import SummaryCards from '../components/SummaryCards.jsx';
 import SectionCard from '../components/SectionCard.jsx';
+import SectionNavigator from '../components/SectionNavigator.jsx';
 import LoadingState from '../components/LoadingState.jsx';
 import SentimentBar from '../components/SentimentBar.jsx';
 import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
@@ -12,9 +13,14 @@ import { getSharedReport } from '../api/shareApi.js';
 
 // 외부 셀러용 읽기 전용 공유 분석 리포트.
 // 라우팅: /share/:code (App.jsx 의 공개 라우트)
-// 권한: 비로그인 접근 가능. /api/shared-reports/:code 가 PII 마스킹된 데이터만 반환.
 //
-// ※ 노출 금지 — 절대 추가하지 말 것:
+// UI 원칙:
+//   1) 상단 sticky SectionNavigator 로 현재 위치를 항상 알 수 있게 한다.
+//   2) 상품을 한 화면에 나열하지 않는다 — 셀렉터 chips + 선택된 1개 상품 상세.
+//      (분석된 상품이 8개+ 인 경우 세로 나열은 정보 과부하)
+//   3) 죽은 링크 없음 — "전체 보기" / 상품 카드 클릭 / 다음·이전 상품 모두 동작 연결.
+//
+// ※ 노출 금지 (절대 추가하지 말 것):
 //   - 원본 파일 다운로드 / 엑셀 / CSV / 인쇄 리포트
 //   - 삭제 / 재분석 / 새 파일 업로드
 //   - 관리자 페이지 이동 / 다른 분석 목록 / 계정/결제 정보
@@ -98,73 +104,147 @@ function SharedTopbar() {
 function SharedReportView({ data }) {
   const summary = data.summary || {};
   const products = data.products || [];
-  // 우선 점검 TOP — 분석 시점 ranking 우선, 없으면 즉석 계산.
-  const top3 = useMemo(() => sortFixTargets(products).slice(0, 3), [products]);
+  // 우선 점검 순으로 정렬 — top3 + 상품 셀렉터 둘 다 같은 우선순위 사용.
+  const sortedProducts = useMemo(() => sortFixTargets(products), [products]);
+  const top3 = sortedProducts.slice(0, 3);
+
+  // 선택된 상품 — 기본은 우선순위 가장 높은 1개.
+  const [selectedKey, setSelectedKey] = useState(() => sortedProducts[0]?.productKey || null);
+  const selectedIndex = sortedProducts.findIndex((p) => p.productKey === selectedKey);
+  const selectedProduct = selectedIndex >= 0 ? sortedProducts[selectedIndex] : sortedProducts[0];
+
+  // 외부 트리거 — TopFixTargets / 셀렉터 chip 등에서 상품 점프 시 사용.
+  // ① 그 상품을 선택, ② '상품별 분석' 섹션으로 부드럽게 스크롤.
+  function jumpToProduct(productKey) {
+    setSelectedKey(productKey);
+    requestAnimationFrame(() => {
+      const el = document.getElementById('shared-sec-products');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  // CTA 섹션 ref — '전체 보기' 등 죽은 링크 대신 베타 안내 CTA 로 부드럽게 스크롤.
+  const ctaRef = useRef(null);
+  function scrollToCta() {
+    if (ctaRef.current) ctaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // SectionNavigator 섹션 목록 — 데이터에 따라 동적으로 구성.
+  const navSections = [
+    { id: 'shared-sec-summary', label: '한 줄 요약' },
+    sortedProducts.length > 0 ? { id: 'shared-sec-top-fix', label: '먼저 고칠 상품' } : null,
+    summary.reviewHighlights ? { id: 'shared-sec-highlights', label: '리뷰 반응' } : null,
+    sortedProducts.length > 0 ? { id: 'shared-sec-products', label: '상품별 분석' } : null,
+  ].filter(Boolean);
 
   return (
-    <div className="demo-shell">
+    <div className="demo-shell shared-shell">
       <SharedTopbar />
+      <SectionNavigator
+        sections={navSections}
+        stickyMode="always"
+        enableKeyboard
+        offset={120}
+      />
       <main className="demo-main">
-        <div className="demo-hero">
-          <h1 className="demo-hero__title">샘플 분석 리포트</h1>
-          <p className="demo-hero__lede">의류 리뷰 분석 결과</p>
+        {/* Hero — 짧게, 분석 메타 (분석 시각 / 상품 수 / 리뷰 수) 노출해 어떤 분석인지 한눈에 */}
+        <div className="demo-hero shared-hero">
+          <span className="tag tag--neutral shared-hero__chip">공유 분석 리포트 · 읽기 전용</span>
+          <h1 className="demo-hero__title">의류 리뷰 분석 결과</h1>
+          <div className="shared-hero__meta muted">
+            상품 <b>{summary.productCount ?? products.length}개</b>
+            {' · '}리뷰 <b>{(summary.totalReviews ?? 0).toLocaleString('ko-KR')}건</b> 분석
+            {data.analysis?.createdAt && (
+              <> · 분석일 {formatDate(data.analysis.createdAt)}</>
+            )}
+          </div>
           <div className="demo-hero__notice">
-            <b>공유용 읽기 전용 리포트입니다.</b>{' '}
-            분석을 요청한 셀러에게 ReviewFit 이 만들어 드린 베타 샘플 리포트로, 원본 파일/리뷰 데이터는 다운로드할 수 없어요.
-            모든 리뷰 인용은 개인정보가 가려진 데이터입니다.
+            분석을 요청한 셀러에게 ReviewFit 이 만들어 드린 베타 샘플 리포트입니다.
+            원본 파일·리뷰 데이터는 다운로드할 수 없으며, 모든 리뷰 인용은 개인정보가 가려진 데이터입니다.
           </div>
         </div>
 
-        {summary.aiComment && (
-          <div className="ai-comment">
-            <span className="ai-comment__ico">📌</span>
-            <div className="ai-comment__text">{summary.aiComment}</div>
-          </div>
-        )}
+        {/* ── § 한 줄 요약 ──────────────────────────── */}
+        <section id="shared-sec-summary" className="report-section">
+          {summary.aiComment && (
+            <div className="ai-comment">
+              <span className="ai-comment__ico">📌</span>
+              <div className="ai-comment__text">{summary.aiComment}</div>
+            </div>
+          )}
+          <SummaryCards summary={summary} />
+        </section>
 
-        <SummaryCards summary={summary} />
-
+        {/* ── § 먼저 고칠 상품 — 카드 클릭하면 상품별 분석으로 점프 ──── */}
         {top3.length > 0 && (
-          <>
+          <section id="shared-sec-top-fix" className="report-section">
             <div className="page-head" style={{ marginBottom: 12, marginTop: 24 }}>
               <div>
                 <div className="page-head__title" style={{ fontSize: 17 }}>이번에 먼저 고칠 상품 TOP 3</div>
-                <div className="page-head__sub">부정 비율, 반복 이슈, 리뷰 수를 함께 보고 우선 점검할 상품을 추천합니다.</div>
+                <div className="page-head__sub">
+                  부정 비율, 반복 이슈, 리뷰 수를 함께 보고 우선 점검할 상품을 추천합니다.
+                  카드를 클릭하면 해당 상품의 상세 분석으로 이동합니다.
+                </div>
               </div>
             </div>
-            {/* onSelect 미지정 — 클릭해도 동작 없음 (읽기 전용) */}
-            <TopFixTargets items={top3} />
-          </>
+            <TopFixTargets items={top3} onSelect={jumpToProduct} />
+          </section>
         )}
 
+        {/* ── § 리뷰 반응 — '전체 보기' 는 CTA 섹션으로 안내 스크롤 ──── */}
         {summary.reviewHighlights && (
-          <SectionCard
-            title="이번 분석의 리뷰 반응"
-            subtitle="고객 리뷰에서 자주 보이는 긍정·중립·부정 의견을 정리했습니다."
-            className="mt-5"
-          >
-            {/* onOpenSentiment 미지정 — '전체 보기' 클릭 시 동작 없음 */}
-            <ReviewHighlightsSection highlights={summary.reviewHighlights} />
-          </SectionCard>
+          <section id="shared-sec-highlights" className="report-section">
+            <SectionCard
+              title="이번 분석의 리뷰 반응"
+              subtitle="고객 리뷰에서 자주 보이는 긍정·중립·부정 의견을 정리했습니다. 전체 리뷰 데이터 탐색은 정식 분석에서 제공됩니다."
+              className="mt-5"
+            >
+              {/* onOpenSentiment 를 명시 — 공유 페이지에서는 분석 API 호출 권한이 없으므로
+                  모달을 열지 않고 CTA 로 안내 스크롤. 죽은 빈 모달 노출 차단. */}
+              <ReviewHighlightsSection
+                highlights={summary.reviewHighlights}
+                onOpenSentiment={scrollToCta}
+              />
+            </SectionCard>
+          </section>
         )}
 
-        <SectionCard
-          title="상품별 반복 이슈"
-          subtitle="상품마다 어떤 의견이 반복되는지, 개선 힌트와 CS 답글 초안까지 한 화면에서 확인할 수 있어요."
-          className="mt-5"
-        >
-          {products.length === 0 ? (
-            <div className="muted" style={{ padding: 16 }}>분석된 상품이 없습니다.</div>
-          ) : (
-            <div className="shared-product-list">
-              {products.map((p) => (
-                <SharedProductBlock key={p.productKey} product={p} />
-              ))}
-            </div>
-          )}
-        </SectionCard>
+        {/* ── § 상품별 분석 — 셀렉터 chips + 선택된 1개 상품 상세 ──── */}
+        {sortedProducts.length > 0 && (
+          <section id="shared-sec-products" className="report-section">
+            <SectionCard
+              title="상품별 분석"
+              subtitle="아래 상품 칩에서 보고 싶은 상품을 선택하세요. 한 상품씩 반복 이슈와 CS 답글 초안을 확인할 수 있어요."
+              className="mt-5"
+            >
+              <ProductSelector
+                products={sortedProducts}
+                selectedKey={selectedProduct?.productKey}
+                onSelect={(k) => setSelectedKey(k)}
+              />
+              {selectedProduct && (
+                <SharedProductBlock product={selectedProduct} />
+              )}
+              {sortedProducts.length > 1 && (
+                <ProductPager
+                  index={Math.max(0, selectedIndex)}
+                  total={sortedProducts.length}
+                  onPrev={() => {
+                    const prev = sortedProducts[Math.max(0, (selectedIndex || 0) - 1)];
+                    if (prev) setSelectedKey(prev.productKey);
+                  }}
+                  onNext={() => {
+                    const next = sortedProducts[Math.min(sortedProducts.length - 1, (selectedIndex || 0) + 1)];
+                    if (next) setSelectedKey(next.productKey);
+                  }}
+                />
+              )}
+            </SectionCard>
+          </section>
+        )}
 
-        <section className="demo-cta" style={{ marginTop: 32 }}>
+        {/* ── § CTA ──────────────────────────────── */}
+        <section ref={ctaRef} className="demo-cta" style={{ marginTop: 32 }}>
           <div className="demo-cta__title">더 많은 상품을 분석하고 싶다면?</div>
           <div className="demo-cta__desc">
             의류 리뷰 분석 무료 베타 모집 중이에요. 메시지로 <b>'리뷰핏 베타'</b>를 보내주세요.
@@ -173,7 +253,7 @@ function SharedReportView({ data }) {
             <Link to="/demo/sample-report" className="btn btn--ghost">샘플 리포트 더 보기</Link>
           </div>
           <div className="demo-cta__foot muted">
-            이 페이지는 공유용 읽기 전용 리포트입니다. 원본 파일/리뷰 데이터는 다운로드할 수 없습니다.
+            이 페이지는 공유용 읽기 전용 리포트입니다. 원본 파일·리뷰 데이터는 다운로드할 수 없습니다.
           </div>
         </section>
       </main>
@@ -181,7 +261,60 @@ function SharedReportView({ data }) {
   );
 }
 
-// 상품 1개 블록 — 요약 + 이슈 카드 + 마스킹 리뷰 인용 + CS 답글 초안(있을 때).
+// 상품 셀렉터 — 가로 스크롤 가능한 chip 그리드. 부정 비율을 작게 표기해 빠르게 비교.
+function ProductSelector({ products, selectedKey, onSelect }) {
+  return (
+    <div className="shared-selector" role="tablist" aria-label="분석된 상품 선택">
+      {products.map((p) => {
+        const isActive = p.productKey === selectedKey;
+        const negPct = Math.round((p.negativeRatio || 0) * 100);
+        return (
+          <button
+            key={p.productKey}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            className={`shared-selector__chip${isActive ? ' is-active' : ''}`}
+            onClick={() => onSelect(p.productKey)}
+            title={`${p.productName} — 리뷰 ${p.totalReviews ?? 0}건 · 부정 ${negPct}%`}
+          >
+            <span className="shared-selector__name">{p.productName}</span>
+            <span className="shared-selector__count muted">{p.totalReviews ?? 0}건</span>
+            {negPct >= 25 && (
+              <span className="shared-selector__neg" aria-label={`부정 ${negPct}%`}>{negPct}%</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProductPager({ index, total, onPrev, onNext }) {
+  return (
+    <div className="shared-pager">
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={onPrev}
+        disabled={index <= 0}
+      >
+        ← 이전 상품
+      </button>
+      <span className="muted shared-pager__count">{index + 1} / {total}</span>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={onNext}
+        disabled={index >= total - 1}
+      >
+        다음 상품 →
+      </button>
+    </div>
+  );
+}
+
+// 선택된 상품 1개 상세 — 헤더 + 감성바 + 반복 이슈 + 보완 힌트 + CS 답글 초안.
 function SharedProductBlock({ product: p }) {
   const counts = p.sentimentCounts || {
     positive: p.positiveReviews || 0,
@@ -267,4 +400,13 @@ function SharedProductBlock({ product: p }) {
       )}
     </article>
   );
+}
+
+// ISO timestamp → "2026-06-17" 형식으로 짧게.
+function formatDate(iso) {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  } catch { return ''; }
 }

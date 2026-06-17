@@ -232,10 +232,106 @@
   overflow: hidden; clip: rect(0,0,0,0); border: 0;
 }
 
-// ===== /share/:code — 상품 블록 (읽기 전용) =====
-.shared-product-list {
-  display: grid;
-  gap: 20px;
+// ===== /share/:code — 공유 분석 리포트 (읽기 전용) =====
+//
+// SectionNavigator (sticky) + demo-shell 의 sticky topbar 가 함께 떠야 하므로
+// CSS 변수로 모바일 헤더 높이를 알려준다. SectionNavigator 의 sticky 동작은 이미
+// _dashboard.scss 가 .report-section 의 scroll-margin-top 으로 보정하고 있다.
+.shared-shell {
+  --mobile-header-height: 56px;
+}
+
+.shared-hero {
+  position: relative;
+
+  &__chip {
+    display: inline-block;
+    margin-bottom: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  &__meta {
+    font-size: 13px;
+    margin: 0 0 12px;
+    line-height: 1.55;
+    word-break: keep-all;
+  }
+}
+
+// ── 상품 셀렉터 chips — 가로 스크롤 ───────────────────────────────────
+.shared-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px dashed $border;
+
+  &__chip {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: $card;
+    border: 1px solid $border;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-main;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    max-width: 100%;
+
+    &:hover { background: $brand-50; border-color: $brand-200; }
+    &:focus-visible { @include focus-ring; }
+
+    &.is-active {
+      background: $primary;
+      border-color: $primary;
+      color: #fff;
+      .muted { color: rgba(255, 255, 255, 0.85); }
+    }
+  }
+  &__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+  }
+  &__count {
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  // 부정 비율 25%+ 만 강조 — 시각 노이즈 줄이기
+  &__neg {
+    background: rgba(220, 38, 38, 0.12);
+    color: #b91c1c;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 800;
+    .is-active & {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+  }
+}
+
+.shared-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed $border;
+
+  &__count {
+    font-size: 12.5px;
+    font-weight: 600;
+  }
 }
 
 .shared-product {
