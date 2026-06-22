@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ReviewFit sitemap — 비로그인 접근 가능한 공개 페이지만 포함.
+  /upload, /history, /dashboard/*, /products/*, /admin/* 등 인증 필요 라우트와
+  /share/:code (개별 공유 코드, admin 만 가짐) 는 외부 노출이 부적절하므로 제외.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/demo/sample-report</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/share</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/terms</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://reviewfit-ribyupis.onrender.com/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

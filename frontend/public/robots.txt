@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://reviewfit-ribyupis.onrender.com/sitemap.xml
