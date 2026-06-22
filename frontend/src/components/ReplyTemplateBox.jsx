@@ -130,7 +130,8 @@ export default function ReplyTemplateBox({
     <div className="reply-box">
       <div className="reply-box__head">
         <div className="reply-box__title">“{issueLabel}”</div>
-        <div className="segmented" role="tablist" aria-label="답글 말투 선택">
+        {/* h-scroll-snap--inset: 카드 안에 있어 gutter bleed 없이 mobile 가로 스크롤만. */}
+        <div className="segmented h-scroll-snap--inset" role="tablist" aria-label="답글 말투 선택">
           {REPLY_TONES.map((t) => {
             const isActive = selectedTone === t;
             const locked = isToneLocked(t);

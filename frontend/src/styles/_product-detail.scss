@@ -22,10 +22,19 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
+    // .h-scroll-snap 가 mobile 에서 nowrap + overflow-x:auto 로 override.
+  }
+
+  @media (max-width: $bp-tablet) {
+    margin-bottom: $sp-4;
+    &__title { font-size: 20px; }
+    &__lede { font-size: 12.5px; margin-bottom: 10px; }
   }
 }
 
 // ===== 이슈 카드 =====
+// mobile 에서는 evidence + action 영역이 <Disclosure> 로 접혀 있어
+// 카드 한 장당 높이가 ~60-80px 로 압축됨 (헤더만 표시).
 .issue-card {
   position: relative;
   border: 1px solid $border;
@@ -33,6 +42,11 @@
   padding: $sp-4 $sp-5;
   margin-bottom: $sp-3;
   background: $card;
+
+  @media (max-width: $bp-tablet) {
+    padding: $sp-3 $sp-4;
+    margin-bottom: 8px;
+  }
   border-left: 4px solid $border-strong;
   transition: box-shadow $transition;
 

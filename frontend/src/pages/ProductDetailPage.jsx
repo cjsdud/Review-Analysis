@@ -197,7 +197,9 @@ export default function ProductDetailPage() {
           )}
         </div>
         <div className="product-header__lede">{lede}</div>
-        <div className="product-header__stats">
+        {/* h-scroll-snap: desktop 은 wrap, mobile 은 한 줄 가로 스크롤로 7-8개 tag 가
+            3-4줄 차지하지 않게. _mobile-primitives.scss 가 처리. */}
+        <div className="product-header__stats h-scroll-snap">
           <span className="tag tag--neutral">전체 리뷰 {product.totalReviews}건</span>
           <span className="tag tag--success">긍정 {counts.positive}건</span>
           <span className="tag tag--neutral">중립 {counts.neutral}건</span>

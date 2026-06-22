@@ -260,13 +260,19 @@
 }
 
 // ── 상품 셀렉터 chips — 가로 스크롤 ───────────────────────────────────
+// 셀렉터: 기본은 wrap (desktop), .h-scroll-snap 클래스가 붙으면 mobile 에서
+// 자동으로 한 줄 가로 스크롤. _mobile-primitives.scss 가 처리.
 .shared-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   padding: 4px 0 12px;
   margin-bottom: 16px;
   border-bottom: 1px dashed $border;
+
+  // h-scroll-snap 의 mobile gutter-bleed 와 충돌 방지 — mobile 에서 negative margin
+  // 은 _mobile-primitives 가 담당. 여기선 좌우 padding 0.
+  @media (max-width: $bp-tablet) {
+    padding: 4px 0 8px;
+    margin-bottom: 12px;
+  }
 
   &__chip {
     appearance: none;
@@ -283,6 +289,7 @@
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s, color 0.12s;
     max-width: 100%;
+    min-height: var(--touch-target-md, 44px);
 
     &:hover { background: $brand-50; border-color: $brand-200; }
     &:focus-visible { @include focus-ring; }
@@ -299,6 +306,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 220px;
+    @media (max-width: $bp-tablet) {
+      max-width: 160px; // mobile chip 폭 압축 — 가로 스크롤 한 줄에 더 많이 보이게.
+    }
   }
   &__count {
     font-size: 11.5px;
@@ -319,20 +329,7 @@
   }
 }
 
-.shared-pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px dashed $border;
-
-  &__count {
-    font-size: 12.5px;
-    font-weight: 600;
-  }
-}
+// (구) .shared-pager 는 <MobilePager> + .m-pager 로 흡수됨 — _mobile-primitives.scss 참고.
 
 .shared-product {
   background: $card;

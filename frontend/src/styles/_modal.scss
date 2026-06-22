@@ -175,6 +175,12 @@
     border-color: $primary;
     color: #fff;
   }
+
+  @media (max-width: $bp-tablet) {
+    min-height: var(--touch-target-md, 44px);
+    padding: 8px 14px;
+    font-size: 12.5px;
+  }
 }
 
 // 카테고리 필터 칩 + 개수 배지 (가로 스크롤되며 줄바꿈되지 않도록)

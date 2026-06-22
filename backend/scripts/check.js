@@ -4185,21 +4185,28 @@ await step('auth.routes — POST /api/auth/google 등록 + authLimiter + credent
   assert(!/console\.(log|info|warn|error)\([^)]*credential\b/.test(src), 'credential 로그 금지');
 });
 
-await step('frontend — GoogleLoginButton + AuthContext.loginWithGoogle 통합 + LoginPage 노출 (소스 패턴)', async () => {
+await step('frontend — GoogleLoginButton + AuthContext.loginWithGoogle 통합 + LoginPage Google only (소스 패턴)', async () => {
   const fs = await import('node:fs');
   const read = (rel) => fs.readFileSync(new URL(`../../frontend/src/${rel}`, import.meta.url), 'utf-8');
   const ctx = read('auth/AuthContext.jsx');
   assert(/loginWithGoogle/.test(ctx), 'AuthContext 에 loginWithGoogle');
+  // 이메일/비밀번호 인증은 완전히 제거되어야 한다 — login/register 메소드 export 금지.
+  assert(!/authApi\.login\(/.test(ctx), 'AuthContext 에 authApi.login 호출이 남아 있음');
+  assert(!/authApi\.register\(/.test(ctx), 'AuthContext 에 authApi.register 호출이 남아 있음');
   const api = read('api/authApi.js');
   assert(/googleLogin\(credential\)/.test(api), 'authApi.googleLogin');
   assert(/getGoogleLoginConfig/.test(api), 'authApi.getGoogleLoginConfig');
+  assert(!/export\s+async\s+function\s+register\s*\(/.test(api), 'authApi 에 register export 가 남아 있음');
+  assert(!/export\s+async\s+function\s+login\s*\(/.test(api), 'authApi 에 login export 가 남아 있음');
   const btn = read('components/GoogleLoginButton.jsx');
   assert(/VITE_GOOGLE_CLIENT_ID/.test(btn), 'GoogleLoginButton 이 VITE_GOOGLE_CLIENT_ID 사용');
   assert(/getGoogleLoginConfig/.test(btn), '백엔드 활성 여부 사전 확인');
   assert(/loginWithGoogle/.test(btn), 'AuthContext 의 loginWithGoogle 호출');
   const login = read('pages/LoginPage.jsx');
   assert(/<GoogleLoginButton/.test(login), 'LoginPage 에 GoogleLoginButton');
-  assert(/auth-card__divider/.test(login), '구분선 — 이메일 로그인은 보조 영역');
+  // Google only 전환 후 — 이메일 폼 / 비밀번호 input 이 LoginPage 에 절대 없어야 함.
+  assert(!/type=["']password["']/.test(login), 'LoginPage 에 password input 이 남아 있음');
+  assert(!/auth-card__divider/.test(login), 'LoginPage 에 이메일/Google 구분선이 남아 있음 (Google only 전환 후 제거되어야 함)');
   // 금지 표현 — 쇼핑몰 OAuth 처럼 보이지 않게.
   for (const re of [/스마트스토어\s*계정\s*연동/, /카페24\s*계정\s*연동/, /리뷰\s*자동\s*수집/, /플랫폼\s*OAuth\s*연동/]) {
     assert(!re.test(login), `금지 표현: ${re}`);

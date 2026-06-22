@@ -38,6 +38,19 @@
   gap: 6px;
   flex-wrap: wrap;
   margin-top: $sp-3;
+
+  // mobile: 7개 탭이 2-3줄로 wrap 되는 대신 한 줄 가로 스크롤로.
+  @media (max-width: $bp-tablet) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+    > * { flex: 0 0 auto; scroll-snap-align: start; }
+  }
 }
 
 .admin-tab {
@@ -48,6 +61,10 @@
   color: $text-sub;
   text-decoration: none;
   border: 1px solid transparent;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-md, 44px);
 
   &:hover {
     background: $primary-soft;
@@ -56,6 +73,10 @@
   &.is-active {
     background: $primary;
     color: #fff;
+  }
+
+  @media (max-width: $bp-tablet) {
+    padding: 8px 14px;
   }
 }
 

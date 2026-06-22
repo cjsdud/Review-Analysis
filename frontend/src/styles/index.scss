@@ -13,3 +13,6 @@
 @use 'admin';
 @use 'demo';
 @use 'print';
+// 모바일 공통 primitives — 항상 마지막에 import 해서 다른 partial 의 모바일 override 보다
+// 우선순위가 높게 되도록 (필요할 때만 자식 컴포넌트가 .h-scroll-snap / .disc 등 선택).
+@use 'mobile-primitives';

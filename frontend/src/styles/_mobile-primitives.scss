@@ -1,0 +1,251 @@
+// 모바일 UI 공통 primitives — 페이지/컴포넌트 어디에서나 재사용.
+//
+// 원칙:
+//   - CSS-only. JS 의 window.innerWidth 분기 없음.
+//   - desktop 영향 0 — 모든 효과는 @media (max-width: $bp-tablet) 안에 갇혀 있다.
+//   - 터치 타깃은 최소 44px (var(--touch-target-md)) 유지.
+//   - 새 색/간격 토큰 만들지 않고 기존 _variables.scss / _global.scss 만 사용.
+
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ──────────────────────────────────────────────────────────────────
+// 1) 가로 스크롤 + scroll-snap strip (.h-scroll-snap)
+//    desktop 은 wrap, mobile 은 한 줄 가로 스크롤(snap).
+//    - hero 의 수치 chip 묶음
+//    - 셀렉터 chip (셀러 공유 페이지의 상품 셀렉터 등)
+//    - segmented control(예: CS 답글 톤 탭)이 wrap 되지 않게
+//    적용: 부모에 .h-scroll-snap, 자식에 .h-scroll-snap__item (스냅 단위)
+// ──────────────────────────────────────────────────────────────────
+// 데스크톱 영향 0 — 기존 부모의 display/flex-wrap/gap 을 그대로 유지하고,
+// 모바일에서만 nowrap + overflow-x:auto + scroll-snap 으로 전환한다.
+.h-scroll-snap {
+  @media (max-width: $bp-tablet) {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    // 가장자리 끝에서 끊겨 보이지 않도록 안쪽 여백
+    padding: 4px var(--app-page-padding-mobile, 16px);
+    // 부모 컨테이너의 좌우 padding 을 상쇄해 화면 끝까지 스크롤 가능하게.
+    margin: 0 calc(-1 * var(--app-page-padding-mobile, 16px));
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+
+    &::-webkit-scrollbar { height: 4px; }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(15, 23, 42, 0.18);
+      border-radius: 2px;
+    }
+
+    > * {
+      flex: 0 0 auto;
+      scroll-snap-align: center;
+    }
+  }
+}
+
+// gutter bleed 가 부적절한 컨테이너(이미 margin/padding 0 인 카드 내부) 용
+// — h-scroll 효과는 살리되 negative margin 은 안 쓰는 변형.
+.h-scroll-snap--inset {
+  @media (max-width: $bp-tablet) {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 4px 0;
+    margin: 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+
+    &::-webkit-scrollbar { height: 4px; }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(15, 23, 42, 0.18);
+      border-radius: 2px;
+    }
+
+    > * {
+      flex: 0 0 auto;
+      scroll-snap-align: start;
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 2) Disclosure (accordion) — components/Disclosure.jsx 가 사용
+//    mobile 에서만 접힘/펼침, desktop 에서는 항상 펼쳐진 상태로 표시.
+// ──────────────────────────────────────────────────────────────────
+.disc {
+  // root <details>
+  & > summary { list-style: none; }
+  & > summary::-webkit-details-marker { display: none; }
+
+  // desktop: 항상 열린 것처럼 보이게 (summary 헤더는 그대로 유지하되 chevron 회전 안 함)
+  &__head {
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--touch-target-md, 44px);
+    padding: 6px 0;
+    user-select: none;
+  }
+  &__chev {
+    display: none; // desktop 에선 chevron 숨김
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    transition: transform 0.15s ease;
+    color: $text-sub;
+  }
+  &__title {
+    font-size: 13px;
+    font-weight: 700;
+    color: $text-sub;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex: 1 1 auto;
+  }
+  &__meta {
+    font-size: 12px;
+    color: $text-sub;
+    flex-shrink: 0;
+  }
+  &__body {
+    padding-top: 4px;
+  }
+
+  // mobile: 클릭 가능한 summary + chevron + collapsible body
+  @media (max-width: $bp-tablet) {
+    border-top: 1px solid $border;
+    & > summary { cursor: pointer; }
+    &__head {
+      padding: 10px 2px;
+    }
+    &__chev {
+      display: inline-block;
+    }
+    &__title {
+      font-size: 13.5px;
+    }
+    &[open] &__chev {
+      transform: rotate(90deg);
+    }
+    &__body {
+      padding: 4px 2px 12px;
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 3) MobilePager — desktop 은 inline 페이저, mobile 은 sticky 하단 바
+//    safe-area-inset-bottom (iOS 노치) 고려.
+// ──────────────────────────────────────────────────────────────────
+.m-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  // desktop: inline. 카드 안에 들어가도 자연스럽게.
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed $border;
+
+  &__count {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: $text-sub;
+    white-space: nowrap;
+  }
+
+  // mobile: viewport 하단 sticky. CTA 와 같은 위치라 z-index 9.
+  @media (max-width: $bp-tablet) {
+    position: sticky;
+    bottom: 0;
+    margin: 16px calc(-1 * var(--app-page-padding-mobile, 16px)) 0;
+    padding:
+      10px var(--app-page-padding-mobile, 16px)
+      calc(10px + var(--safe-bottom, 0px));
+    border-top: 1px solid $border;
+    border-bottom: none;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    z-index: 9;
+    .btn { min-height: var(--touch-target-md, 44px); }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 4) CompactStatStrip — components/CompactStatStrip.jsx 가 사용
+//    mobile 한정 hero 요약 — 핵심 지표 chip 가로 스크롤.
+// ──────────────────────────────────────────────────────────────────
+.stat-strip {
+  display: none; // desktop 에선 노출 X (SummaryCards 가 대신 그림)
+
+  @media (max-width: $bp-tablet) {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    gap: 8px;
+    padding: 4px var(--app-page-padding-mobile, 16px);
+    margin: 0 calc(-1 * var(--app-page-padding-mobile, 16px));
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__item {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    min-width: 140px;
+    padding: 10px 12px;
+    background: $card;
+    border: 1px solid $border;
+    border-radius: $r-md;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    &--success { border-left: 3px solid $success; }
+    &--danger  { border-left: 3px solid $danger; }
+    &--brand   { border-left: 3px solid $primary; }
+    &--muted   { border-left: 3px solid $border-strong; }
+  }
+  &__label {
+    font-size: 11.5px;
+    color: $text-sub;
+    font-weight: 600;
+  }
+  &__value {
+    font-size: 18px;
+    font-weight: 800;
+    color: $text-main;
+    line-height: 1.1;
+  }
+  &__sub {
+    font-size: 11px;
+    color: $text-sub;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 5) 가시성 유틸 — mobile 전용 / desktop 전용 표시
+//    (기존 .print-only, .visually-hidden 과 같은 결.)
+// ──────────────────────────────────────────────────────────────────
+.mobile-only {
+  @media (min-width: ($bp-tablet + 1px)) {
+    display: none !important;
+  }
+}
+.desktop-only {
+  @media (max-width: $bp-tablet) {
+    display: none !important;
+  }
+}

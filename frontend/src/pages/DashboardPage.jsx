@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SummaryCards from '../components/SummaryCards.jsx';
+import CompactStatStrip from '../components/CompactStatStrip.jsx';
+import Disclosure from '../components/Disclosure.jsx';
 // CategoryChart는 ECharts를 포함해 무거우므로 lazy import — 대시보드 접근 시에만 로드
 const CategoryChart = lazy(() => import('../components/CategoryChart.jsx'));
 import ProductsTable from '../components/ProductsTable.jsx';
@@ -228,10 +230,11 @@ export default function DashboardPage() {
         }
       />
 
-      {/* sticky 는 데스크톱만 — 모바일에서 topbar 와 누적되어 본문이 가려지지 않도록 */}
-      <SectionNavigator sections={navSections} stickyMode="desktop" enableKeyboard offset={120} />
+      {/* sticky nav — desktop/mobile 모두 sticky. mobile compact nav 가 약 46px 라
+          .report-section scroll-margin (110px) 와 함께 본문이 가려지지 않도록 조정됨. */}
+      <SectionNavigator sections={navSections} stickyMode="always" enableKeyboard offset={110} />
 
-      {/* 전체 요약 */}
+      {/* 전체 요약: desktop 은 6장 grid (SummaryCards), mobile 은 4개 핵심 chip 가로 스크롤. */}
       <section id="sec-summary" className="report-section">
         {summary.aiComment && (
           <div className="ai-comment">
@@ -239,7 +242,10 @@ export default function DashboardPage() {
             <div className="ai-comment__text">{summary.aiComment}</div>
           </div>
         )}
-        <SummaryCards summary={summary} />
+        <div className="desktop-only">
+          <SummaryCards summary={summary} />
+        </div>
+        <CompactStatStrip summary={summary} />
       </section>
 
       {/* 이번에 먼저 고칠 상품 TOP 3 */}

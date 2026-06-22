@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import EvidenceReviewList from './EvidenceReviewList.jsx';
+import Disclosure from './Disclosure.jsx';
 import { FASHION_CATEGORIES } from '../constants.js';
 import { saveCorrection } from '../api/analysisApi.js';
 
@@ -115,15 +116,18 @@ export default function IssueCard({ issue, analysisId, productKey }) {
         </div>
       )}
 
-      <div className="issue-card__evi-label">근거 리뷰 (실제 고객 코멘트)</div>
-      <EvidenceReviewList reviews={(issue.evidenceReviews || []).slice(0, 3)} />
-
-      {issue.recommendedAction && (
-        <div className="issue-card__action">
-          <strong>👉 추천 조치: </strong>
-          {issue.recommendedAction}
-        </div>
-      )}
+      {/* mobile 에서는 근거 리뷰 + 추천 조치를 Disclosure 로 접어 카드 한 장당 높이 압축
+          (제목+카테고리+건수만 보이고 탭하면 본문 펼침).
+          desktop 에서는 Disclosure 가 항상 펼친 상태로 노출 — 기존 UX 유지. */}
+      <Disclosure title="근거 리뷰" meta={`${(issue.evidenceReviews || []).length}건`}>
+        <EvidenceReviewList reviews={(issue.evidenceReviews || []).slice(0, 3)} />
+        {issue.recommendedAction && (
+          <div className="issue-card__action">
+            <strong>👉 추천 조치: </strong>
+            {issue.recommendedAction}
+          </div>
+        )}
+      </Disclosure>
     </div>
   );
 }

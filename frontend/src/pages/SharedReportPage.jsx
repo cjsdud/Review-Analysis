@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import BrandTitle from '../components/BrandTitle.jsx';
 import SummaryCards from '../components/SummaryCards.jsx';
+import CompactStatStrip from '../components/CompactStatStrip.jsx';
 import SectionCard from '../components/SectionCard.jsx';
 import SectionNavigator from '../components/SectionNavigator.jsx';
 import LoadingState from '../components/LoadingState.jsx';
@@ -9,6 +10,8 @@ import SentimentBar from '../components/SentimentBar.jsx';
 import ProductStatusBadge from '../components/ProductStatusBadge.jsx';
 import TopFixTargets, { sortFixTargets } from '../components/TopFixTargets.jsx';
 import ReviewHighlightsSection from '../components/ReviewHighlightsSection.jsx';
+import Disclosure from '../components/Disclosure.jsx';
+import MobilePager from '../components/MobilePager.jsx';
 import { getSharedReport } from '../api/shareApi.js';
 
 // 외부 셀러용 읽기 전용 공유 분석 리포트.
@@ -172,7 +175,11 @@ function SharedReportView({ data }) {
               <div className="ai-comment__text">{summary.aiComment}</div>
             </div>
           )}
-          <SummaryCards summary={summary} />
+          {/* desktop: 6장 그리드 카드 / mobile: 4개 핵심 chip 가로 스크롤. CSS 가 분기. */}
+          <div className="desktop-only">
+            <SummaryCards summary={summary} />
+          </div>
+          <CompactStatStrip summary={summary} />
         </section>
 
         {/* ── § 먼저 고칠 상품 — 카드 클릭하면 상품별 분석으로 점프 ──── */}
@@ -225,20 +232,20 @@ function SharedReportView({ data }) {
               {selectedProduct && (
                 <SharedProductBlock product={selectedProduct} />
               )}
-              {sortedProducts.length > 1 && (
-                <ProductPager
-                  index={Math.max(0, selectedIndex)}
-                  total={sortedProducts.length}
-                  onPrev={() => {
-                    const prev = sortedProducts[Math.max(0, (selectedIndex || 0) - 1)];
-                    if (prev) setSelectedKey(prev.productKey);
-                  }}
-                  onNext={() => {
-                    const next = sortedProducts[Math.min(sortedProducts.length - 1, (selectedIndex || 0) + 1)];
-                    if (next) setSelectedKey(next.productKey);
-                  }}
-                />
-              )}
+              <MobilePager
+                index={Math.max(0, selectedIndex)}
+                total={sortedProducts.length}
+                prevLabel="이전 상품"
+                nextLabel="다음 상품"
+                onPrev={() => {
+                  const prev = sortedProducts[Math.max(0, (selectedIndex || 0) - 1)];
+                  if (prev) setSelectedKey(prev.productKey);
+                }}
+                onNext={() => {
+                  const next = sortedProducts[Math.min(sortedProducts.length - 1, (selectedIndex || 0) + 1)];
+                  if (next) setSelectedKey(next.productKey);
+                }}
+              />
             </SectionCard>
           </section>
         )}
@@ -261,10 +268,26 @@ function SharedReportView({ data }) {
   );
 }
 
-// 상품 셀렉터 — 가로 스크롤 가능한 chip 그리드. 부정 비율을 작게 표기해 빠르게 비교.
+// 상품 셀렉터 — 모바일에서 wrap 대신 가로 스크롤(h-scroll-snap)로 한 줄. 부정 비율 chip.
+// 활성 상품은 스크롤 위치도 자동 보정해 항상 화면 가운데로.
 function ProductSelector({ products, selectedKey, onSelect }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const el = root.querySelector('.is-active');
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [selectedKey]);
+
   return (
-    <div className="shared-selector" role="tablist" aria-label="분석된 상품 선택">
+    <div
+      ref={ref}
+      className="shared-selector h-scroll-snap"
+      role="tablist"
+      aria-label="분석된 상품 선택"
+    >
       {products.map((p) => {
         const isActive = p.productKey === selectedKey;
         const negPct = Math.round((p.negativeRatio || 0) * 100);
@@ -286,30 +309,6 @@ function ProductSelector({ products, selectedKey, onSelect }) {
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function ProductPager({ index, total, onPrev, onNext }) {
-  return (
-    <div className="shared-pager">
-      <button
-        type="button"
-        className="btn btn--ghost btn--sm"
-        onClick={onPrev}
-        disabled={index <= 0}
-      >
-        ← 이전 상품
-      </button>
-      <span className="muted shared-pager__count">{index + 1} / {total}</span>
-      <button
-        type="button"
-        className="btn btn--ghost btn--sm"
-        onClick={onNext}
-        disabled={index >= total - 1}
-      >
-        다음 상품 →
-      </button>
     </div>
   );
 }
@@ -351,51 +350,56 @@ function SharedProductBlock({ product: p }) {
 
       {issues.length > 0 && (
         <div className="shared-product__section">
-          <div className="shared-product__sec-label">반복 이슈</div>
-          <ul className="shared-issue-list">
-            {issues.map((iss, i) => (
-              <li key={i} className="shared-issue">
-                <div className="shared-issue__head">
-                  <span className="tag tag--neutral">[{iss.category}]</span>
-                  <span className="shared-issue__label">{iss.issueLabel}</span>
-                  <span className="muted shared-issue__count">{iss.count}건</span>
-                </div>
-                {iss.recommendedAction && (
-                  <div className="shared-issue__action">💡 {iss.recommendedAction}</div>
-                )}
-                {(iss.evidence || []).slice(0, 2).map((ev, ei) => (
-                  <blockquote key={ei} className="shared-issue__evi">"{ev}"</blockquote>
-                ))}
-              </li>
-            ))}
-          </ul>
+          {/* 반복 이슈는 가장 중요한 정보 — mobile 에서도 default 펼침 */}
+          <Disclosure title="반복 이슈" meta={`${issues.length}건`} defaultOpen>
+            <ul className="shared-issue-list">
+              {issues.map((iss, i) => (
+                <li key={i} className="shared-issue">
+                  <div className="shared-issue__head">
+                    <span className="tag tag--neutral">[{iss.category}]</span>
+                    <span className="shared-issue__label">{iss.issueLabel}</span>
+                    <span className="muted shared-issue__count">{iss.count}건</span>
+                  </div>
+                  {iss.recommendedAction && (
+                    <div className="shared-issue__action">💡 {iss.recommendedAction}</div>
+                  )}
+                  {(iss.evidence || []).slice(0, 2).map((ev, ei) => (
+                    <blockquote key={ei} className="shared-issue__evi">"{ev}"</blockquote>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
         </div>
       )}
 
       {actions.length > 0 && (
         <div className="shared-product__section">
-          <div className="shared-product__sec-label">상세페이지 보완 힌트</div>
-          <ul className="shared-action-list">
-            {actions.map((a, i) => (<li key={i}>{a}</li>))}
-          </ul>
+          {/* 보완 힌트는 부가 정보 — mobile default 접힘 (desktop 에선 강제 펼침) */}
+          <Disclosure title="상세페이지 보완 힌트" meta={`${actions.length}개`}>
+            <ul className="shared-action-list">
+              {actions.map((a, i) => (<li key={i}>{a}</li>))}
+            </ul>
+          </Disclosure>
         </div>
       )}
 
       {replyTemplates.length > 0 && (
         <div className="shared-product__section">
-          <div className="shared-product__sec-label">CS 답글 초안</div>
-          <ul className="shared-reply-list">
-            {replyTemplates.map((rt, i) => {
-              const v = (rt.variants || [])[0];
-              if (!v?.template) return null;
-              return (
-                <li key={i} className="shared-reply">
-                  <div className="shared-reply__head muted">"{rt.issueLabel}" · 정중한 말투</div>
-                  <div className="shared-reply__body">{v.template}</div>
-                </li>
-              );
-            })}
-          </ul>
+          <Disclosure title="CS 답글 초안" meta={`${replyTemplates.length}개`}>
+            <ul className="shared-reply-list">
+              {replyTemplates.map((rt, i) => {
+                const v = (rt.variants || [])[0];
+                if (!v?.template) return null;
+                return (
+                  <li key={i} className="shared-reply">
+                    <div className="shared-reply__head muted">"{rt.issueLabel}" · 정중한 말투</div>
+                    <div className="shared-reply__body">{v.template}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Disclosure>
         </div>
       )}
     </article>
