@@ -17,6 +17,7 @@ import plansRoutes from './routes/plans.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import announcementsRoutes from './routes/announcements.routes.js';
 import shareRoutes from './routes/share.routes.js';
+import seoRoutes from './routes/seo.routes.js';
 import { aiMode } from './services/aiClient.service.js';
 import { purgeStaleUploadRows } from './db/database.js';
 import { maintenanceGate } from './middleware/maintenance.middleware.js';
@@ -67,6 +68,12 @@ app.use('/api/analysis', analysisRoutes);
 app.use('/api/analyses', historyRoutes); // 분석 히스토리 목록 (복수형)
 app.use('/api/ai', aiRoutes);
 
+// ===== SEO 정적 라우트 =====
+// robots.txt / sitemap.xml — 반드시 express.static + SPA fallback 보다 먼저 등록한다.
+// 그렇지 않으면 SPA fallback 이 index.html 을 돌려줘 Google Search Console 이 "가져올 수 없음" 으로 표시.
+// 도메인은 PUBLIC_SITE_URL → SITE_URL → CLIENT_ORIGIN → 기본값 순으로 해석 (seo.routes.js).
+app.use('/', seoRoutes);
+
 // ===== Production: 프론트 정적 파일 + SPA fallback =====
 // 로컬에서는 Vite dev server 가 프론트를 서빙하므로 prod 모드에서만 활성.
 // SPA fallback은 path-to-regexp 안전한 미들웨어 방식(`app.use`)으로 작성.
@@ -77,6 +84,8 @@ if (isProd && distExists) {
   app.use((req, res, next) => {
     if (req.method !== 'GET') return next();
     if (req.path.startsWith('/api')) return next();
+    // robots.txt / sitemap.xml 은 위 seoRoutes 가 먼저 처리. 여기에 오면 정적 미들웨어도
+    // 못 잡은 경로 — SPA 라우트로 처리.
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
 } else if (isProd && !distExists) {

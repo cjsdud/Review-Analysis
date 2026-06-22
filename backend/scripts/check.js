@@ -5202,6 +5202,130 @@ await step('share — admin_action_logs 에 SHARE_CREATED / SHARE_REVOKED 기록
   } finally { srv.close(); }
 });
 
+// ──────────────────────────────────────────────
+// SEO 라우트 — robots.txt / sitemap.xml
+// ──────────────────────────────────────────────
+
+await step('seo — resolveSiteUrl: PUBLIC_SITE_URL > SITE_URL > CLIENT_ORIGIN > 기본값', async () => {
+  const prev = { p: process.env.PUBLIC_SITE_URL, s: process.env.SITE_URL, c: process.env.CLIENT_ORIGIN };
+  try {
+    delete process.env.PUBLIC_SITE_URL;
+    delete process.env.SITE_URL;
+    delete process.env.CLIENT_ORIGIN;
+    // cache buster — resolveSiteUrl 은 매 호출마다 env 조회하므로 import 1번이면 충분.
+    const t = Date.now();
+    const mod = await import(`../src/routes/seo.routes.js?t=${t}`);
+    assert.equal(mod.resolveSiteUrl(), 'https://reviewfit-ribyupis.onrender.com', '기본값');
+    process.env.CLIENT_ORIGIN = 'https://app.example.com';
+    assert.equal(mod.resolveSiteUrl(), 'https://app.example.com', 'CLIENT_ORIGIN 우선');
+    process.env.SITE_URL = 'https://reviewfit.kr';
+    assert.equal(mod.resolveSiteUrl(), 'https://reviewfit.kr', 'SITE_URL 우선');
+    process.env.PUBLIC_SITE_URL = 'https://www.reviewfit.kr';
+    assert.equal(mod.resolveSiteUrl(), 'https://www.reviewfit.kr', 'PUBLIC_SITE_URL 최우선');
+    // trailing path / slash 가 들어와도 origin 만 사용
+    process.env.PUBLIC_SITE_URL = 'https://www.reviewfit.kr/some/path/';
+    assert.equal(mod.resolveSiteUrl(), 'https://www.reviewfit.kr', 'path 제거');
+    // 잘못된 URL 은 기본값으로 fallback (빈 sitemap 방지)
+    process.env.PUBLIC_SITE_URL = 'not a url';
+    assert.equal(mod.resolveSiteUrl(), 'https://reviewfit-ribyupis.onrender.com', '잘못된 URL → 기본값');
+  } finally {
+    if (prev.p === undefined) delete process.env.PUBLIC_SITE_URL; else process.env.PUBLIC_SITE_URL = prev.p;
+    if (prev.s === undefined) delete process.env.SITE_URL;        else process.env.SITE_URL = prev.s;
+    if (prev.c === undefined) delete process.env.CLIENT_ORIGIN;   else process.env.CLIENT_ORIGIN = prev.c;
+  }
+});
+
+await step('seo — /robots.txt 가 200 text/plain + 필수 라인 모두 포함', async () => {
+  const t = Date.now();
+  const { default: express } = await import('express');
+  const seo = (await import(`../src/routes/seo.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use('/', seo);
+  const { srv, port } = await startServer(app);
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/robots.txt`);
+    assert.equal(r.status, 200, `status=${r.status}`);
+    const ct = r.headers.get('content-type') || '';
+    assert(/text\/plain/.test(ct), `content-type=${ct}`);
+    assert(/charset=utf-8/i.test(ct), `charset=${ct}`);
+    const body = await r.text();
+    assert(/User-agent:\s*\*/.test(body), `User-agent 누락: ${body}`);
+    assert(/Allow:\s*\//.test(body), `Allow: / 누락: ${body}`);
+    assert(/Sitemap:\s*https?:\/\/[^/]+\/sitemap\.xml/.test(body), `Sitemap URL 누락: ${body}`);
+  } finally { srv.close(); }
+});
+
+await step('seo — /sitemap.xml 가 200 application/xml + 유효한 XML + 홈페이지 URL 포함', async () => {
+  const t = Date.now();
+  const { default: express } = await import('express');
+  const seo = (await import(`../src/routes/seo.routes.js?t=${t}`)).default;
+  const app = express();
+  app.use('/', seo);
+  const { srv, port } = await startServer(app);
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/sitemap.xml`);
+    assert.equal(r.status, 200, `status=${r.status}`);
+    const ct = r.headers.get('content-type') || '';
+    assert(/application\/xml|text\/xml/.test(ct), `content-type=${ct}`);
+    assert(/charset=utf-8/i.test(ct), `charset=${ct}`);
+    const body = await r.text();
+    assert(/^<\?xml version="1.0" encoding="UTF-8"\?>/.test(body), `XML 선언 누락: ${body.slice(0, 80)}`);
+    assert(/<urlset\s+xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/.test(body), 'urlset 네임스페이스 누락');
+    // 홈페이지 URL 포함
+    assert(/<loc>https?:\/\/[^/]+\/<\/loc>/.test(body), '홈페이지 URL 누락');
+    // 공개 페이지 path 들이 sitemap 에 모두 포함되어야 함
+    for (const p of ['/demo/sample-report', '/pricing', '/terms', '/privacy', '/login', '/share']) {
+      assert(body.includes(`${p}</loc>`), `sitemap 에 ${p} 누락`);
+    }
+    // 비공개 라우트는 절대 sitemap 에 노출되지 않아야 한다
+    for (const banned of ['/upload', '/history', '/dashboard', '/products/', '/admin']) {
+      assert(!body.includes(`${banned}</loc>`), `sitemap 에 비공개 라우트 노출: ${banned}`);
+    }
+  } finally { srv.close(); }
+});
+
+await step('seo — PUBLIC_SITE_URL 변경 시 robots/sitemap 도 함께 반영', async () => {
+  const prev = process.env.PUBLIC_SITE_URL;
+  process.env.PUBLIC_SITE_URL = 'https://www.reviewfit.kr';
+  try {
+    const t = Date.now();
+    const { default: express } = await import('express');
+    const seo = (await import(`../src/routes/seo.routes.js?t=${t}`)).default;
+    const app = express();
+    app.use('/', seo);
+    const { srv, port } = await startServer(app);
+    try {
+      const robots = await (await fetch(`http://127.0.0.1:${port}/robots.txt`)).text();
+      assert(robots.includes('Sitemap: https://www.reviewfit.kr/sitemap.xml'), `robots Sitemap 미반영: ${robots}`);
+      const sitemap = await (await fetch(`http://127.0.0.1:${port}/sitemap.xml`)).text();
+      assert(sitemap.includes('<loc>https://www.reviewfit.kr/</loc>'), `sitemap 홈 URL 미반영: ${sitemap.slice(0, 200)}`);
+    } finally { srv.close(); }
+  } finally {
+    if (prev === undefined) delete process.env.PUBLIC_SITE_URL;
+    else process.env.PUBLIC_SITE_URL = prev;
+  }
+});
+
+await step('seo — server.js 에 seoRoutes 가 express.static / SPA fallback 보다 먼저 등록', async () => {
+  // 소스 패턴 회귀 — 누군가 라우트 순서를 바꿔서 SPA fallback 이 먼저 잡으면 잡힘.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/server.js', import.meta.url), 'utf-8');
+  const idxSeo = src.indexOf("app.use('/', seoRoutes)");
+  const idxStatic = src.indexOf('express.static(frontendDist)');
+  const idxFallback = src.indexOf('res.sendFile(path.join(frontendDist');
+  assert(idxSeo > 0, 'seoRoutes 등록 라인이 server.js 에 없음');
+  assert(idxStatic > 0 && idxSeo < idxStatic, 'seoRoutes 가 express.static 보다 뒤에 등록됨');
+  assert(idxFallback > 0 && idxSeo < idxFallback, 'seoRoutes 가 SPA fallback 보다 뒤에 등록됨');
+});
+
+await step('seo — index.html 에 noindex / Disallow 같은 색인 차단 없음', async () => {
+  const fs = await import('node:fs');
+  const indexHtml = fs.readFileSync(
+    new URL('../../frontend/index.html', import.meta.url), 'utf-8',
+  );
+  assert(!/name=["']robots["'][^>]*noindex/i.test(indexHtml), 'index.html 에 <meta name="robots" content="noindex"> 발견');
+});
+
 if (failures.length) {
   console.error(`\n[check] 실패 ${failures.length}건: ${failures.join(', ')}`);
   process.exit(1);
