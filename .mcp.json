@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vibetrack": {
+      "type": "http",
+      "url": "https://vibetracker.onrender.com/mcp",
+      "headers": {
+        "Authorization": "Bearer vtk__xZXw-uZZuC5jDjnjelHcRO2Ge8Ucne6nVNlM9Tpty4"
+      }
+    }
+  }
+}
